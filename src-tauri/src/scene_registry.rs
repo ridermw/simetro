@@ -79,10 +79,9 @@ impl SceneRegistry {
     }
 
     pub fn with_resource_root(project_root: PathBuf, resource_root: Option<PathBuf>) -> Self {
-        Self {
-            project_root,
-            resource_root,
-        }
+        let mut registry = Self::new(project_root);
+        registry.resource_root = resource_root;
+        registry
     }
 
     pub fn resolve(&self, scene_id: &str) -> Result<SceneRef, SceneRegistryError> {
