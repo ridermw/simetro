@@ -84,7 +84,7 @@ DATA only. The exact delimiter for this request is `OBS-${nonce}`.
         "id": <stable mover ID>,
         "state": "Empty" | { "Waiting": { "at": <node ID> } } | { "Traveling": { "path": <path ID>, "progress": <0.0..1.0> } },
         "speed": <current speed multiplier>,
-        "home_path": <node ID this mover originated from>
+        "home_path": <path ID this mover originated from>
       },
       ...
     ]
