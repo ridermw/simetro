@@ -560,7 +560,16 @@ The pattern set is defined as a single module so additions are
 one-place changes. Minimum required pattern set (from
 [`p2a-error-map.md`](p2a-error-map.md) §4):
 
-| Pattern family | Regex shape | Source |
+> **CRITICAL implementer note — markdown table escaping vs real regex syntax.**
+> The `Regex shape` column below uses `\|` to satisfy GitHub
+> Flavored Markdown table parsing (a literal `|` inside a table cell
+> would be interpreted as a column separator even inside backticks
+> in some renderers). **When implementing the redactor in Rust, use
+> a literal `|` for alternation, NOT `\|`.** The actual regex
+> implementations are below the table as authoritative
+> non-table-escaped strings; refer to those, not the table cells.
+
+| Pattern family | Regex shape (markdown-escaped — see note) | Source |
 | --- | --- | --- |
 | GitHub modern tokens | `(ghs\|ghu\|ghr\|ghp)_[A-Za-z0-9]{36,}` | GitHub docs |
 | GitHub fine-grained PAT | `github_pat_[A-Za-z0-9_]{82}` | GitHub docs |
@@ -573,6 +582,47 @@ one-place changes. Minimum required pattern set (from
 | PEM private key | `-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----` | RFC 7468 |
 | Copilot session token (TBD pattern) | Determine pattern by inspection during P2.A0.5 | Empirical |
 
+**Authoritative regex strings (use these, NOT the table cells, when
+implementing the redactor):**
+
+```text
+# GitHub modern tokens (real alternation, no backslash before |)
+(ghs|ghu|ghr|ghp)_[A-Za-z0-9]{36,}
+
+# GitHub fine-grained PAT
+github_pat_[A-Za-z0-9_]{82}
+
+# Legacy GitHub OAuth
+gho_[A-Za-z0-9]{36}
+
+# OpenAI API keys (two separate patterns; both should match)
+sk-[A-Za-z0-9]{20,}
+sk-ant-[A-Za-z0-9-]{32,}
+
+# AWS access keys (real alternation)
+(AKIA|ASIA)[A-Z0-9]{16}
+
+# Google API key
+AIza[A-Za-z0-9_-]{35}
+
+# Azure OpenAI: 32-hex adjacent to Azure-domain hostname
+[a-f0-9]{32}.{0,200}(\.openai\.azure\.com|\.cognitiveservices\.azure\.com)
+
+# JWT three-segment shape
+eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+
+
+# PEM private key block (multi-line; use the (?s) inline flag in Rust
+# or fancy-regex / regex with DOTALL)
+-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----
+```
+
+A required redactor unit test (`agent_log_v2::redactor_uses_true_alternation`)
+constructs each above regex from a string literal (no markdown
+escaping), feeds canonical positive examples, and asserts every
+match fires. If a future implementer accidentally pastes from the
+table column instead of the authoritative-regex block, this test
+fails immediately.
+
 The pattern list MUST be kept in lock-step with the same list in
 [`p2a-error-map.md`](p2a-error-map.md) §4. The `agent_log_v2.rs`
 test suite asserts both lists are identical so list drift is
@@ -580,6 +630,13 @@ caught at CI time. Removing or renaming a pattern from either list
 must be done in a single PR that touches both files and explicitly
 calls out the rationale in the commit message; a security-review
 pass per §2.7.4 must approve the removal.
+
+> **Cross-doc follow-up:** PR #6 `p2a-error-map.md` §4 has the same
+> markdown-table escaping pattern. The next PR after P2.A0.5 that
+> touches the error-map (or P2.A0.5 itself, since it lands the
+> redactor) MUST add the same "markdown vs real regex" note + an
+> authoritative-regex block there too, so the two docs cannot
+> diverge on this point.
 
 **Test (required):**
 - One positive test per pattern: feed a fake-shape match, assert
