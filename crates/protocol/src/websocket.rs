@@ -3,7 +3,7 @@
 //! This module intentionally does not open sockets or choose a runtime.
 //! It defines the language-neutral payload that a Rust, Python, JS, or
 //! other WebSocket implementation sends in each text message: exactly one
-//! JSON [`Envelope`](crate::Envelope) using the current schema version.
+//! JSON [`Envelope`] using the current schema version.
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
