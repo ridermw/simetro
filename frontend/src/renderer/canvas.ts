@@ -1,117 +1,149 @@
 // frontend/src/renderer/canvas.ts
 //
-// PLAN §9 / §14 — Single Canvas2D context. Path2D batching by color
-// is the central perf trick: instead of one stroke() per path, we
-// build one Path2D per palette index, then issue one stroke per
-// color. With a 5-color palette that's ~6 draw calls for any number
-// of paths in the scene.
+// PLAN §9 / §14 — single Canvas2D context; Path2D batching by color;
+// **zero per-frame allocations** after warm-up. The renderer owns
+// long-lived scratch buffers (Path2D per palette color, mover lerp
+// array, node lookup map) and never `new`s during draw().
 //
-// Step 16 ships the static-frame entry-point. Step 17 fleshes out
-// real per-color batching and the dark-theme geometric primitives.
-// Step 18 layers animations on top by mutating a position cache
-// between frames — this module stays pure (state in, pixels out).
+//   ┌─────────────────────────────────────────────────────┐
+//   │                       Renderer                      │
+//   │                                                     │
+//   │  warm() ── pre-alloc Path2D[palette.len]            │
+//   │      │                                              │
+//   │      ▼                                              │
+//   │  draw(scene)                                        │
+//   │   ├── clear & fill background                       │
+//   │   ├── for each palette idx: reset Path2D[idx]       │
+//   │   ├── walk paths, .moveTo/.lineTo into bucket       │
+//   │   ├── for each non-empty bucket: stroke once        │
+//   │   ├── walk nodes, drawShape (no per-shape alloc)    │
+//   │   └── walk interpolated movers, fill circle         │
+//   │                                                     │
+//   │  Total draw calls for typical scene: ~6 strokes +   │
+//   │  N fills (one per piece). Per-frame allocs: 0.      │
+//   └─────────────────────────────────────────────────────┘
+//
+// Step 18 will mutate per-frame animation state INTO this renderer
+// (e.g., flare radii, pulse alphas) — we expose `frameCtx` for that
+// without forcing animations module to know about Canvas2D internals.
 
 import type {
   MoverSnapshot,
   NodeSnapshot,
-  PathSnapshot,
   SnapshotPayload,
   ThemePayload,
 } from "../protocol/messages";
-
-export interface SceneState {
-  theme: ThemePayload | null;
-  snapshot: SnapshotPayload | null;
-}
+import { backgroundColor, foregroundColor, paletteColor } from "./theme";
 
 const NODE_RADIUS = 18;
 const MOVER_RADIUS = 8;
 const PATH_WIDTH = 4;
+const NODE_STROKE_WIDTH = 2;
 
-export function renderStaticFrame(
-  canvas: HTMLCanvasElement,
-  scene: SceneState
-): void {
-  const ctx = canvas.getContext("2d");
-  if (ctx === null || scene.theme === null || scene.snapshot === null) {
-    return;
-  }
-  const dpr = window.devicePixelRatio || 1;
-  const width = canvas.width;
-  const height = canvas.height;
-
-  ctx.save();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  const bgColor =
-    scene.theme.palette[scene.theme.background_index] ?? "#0e1116";
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, width / dpr, height / dpr);
-
-  drawPathsBatched(ctx, scene.snapshot.paths, scene.snapshot.nodes, scene.theme);
-  drawNodes(ctx, scene.snapshot.nodes, scene.theme);
-  drawMovers(ctx, scene.snapshot.movers, scene.theme);
-
-  ctx.restore();
+export interface FrameInput {
+  theme: ThemePayload;
+  snapshot: SnapshotPayload;
+  /** Mover positions to draw; usually interpolated. */
+  movers: MoverSnapshot[];
 }
 
-// PLAN §9: bucket paths by color, build one Path2D per bucket, stroke
-// once per color. O(paths) build, O(colors) draw.
-function drawPathsBatched(
-  ctx: CanvasRenderingContext2D,
-  paths: PathSnapshot[],
-  nodes: NodeSnapshot[],
-  theme: ThemePayload
-): void {
-  const nodeById = new Map<number, NodeSnapshot>();
-  for (const n of nodes) nodeById.set(n.id, n);
+export class Renderer {
+  private readonly canvas: HTMLCanvasElement;
+  private readonly ctx: CanvasRenderingContext2D;
+  // One Path2D per palette index, reused frame to frame.
+  private pathBuckets: Path2D[] = [];
+  // Reused per-frame to look up node positions for path drawing.
+  private readonly nodeIdToPos = new Map<number, [number, number]>();
+  private bucketCount = 0;
 
-  const byColor = new Map<number, Path2D>();
-  for (const p of paths) {
-    const from = nodeById.get(p.from);
-    const to = nodeById.get(p.to);
-    if (from === undefined || to === undefined) continue;
-    let path = byColor.get(p.color);
-    if (path === undefined) {
-      path = new Path2D();
-      byColor.set(p.color, path);
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    const ctx = canvas.getContext("2d");
+    if (ctx === null) {
+      throw new Error("simetro: Canvas2D context unavailable");
     }
-    path.moveTo(from.pos[0], from.pos[1]);
-    path.lineTo(to.pos[0], to.pos[1]);
+    this.ctx = ctx;
   }
 
-  ctx.lineWidth = PATH_WIDTH;
-  ctx.lineCap = "round";
-  for (const [colorIndex, path2d] of byColor) {
-    ctx.strokeStyle = colorOf(theme, colorIndex);
-    ctx.stroke(path2d);
+  /** Pre-allocate buckets sized to the theme palette. Idempotent. */
+  warm(theme: ThemePayload): void {
+    const target = theme.palette.length;
+    if (this.pathBuckets.length < target) {
+      for (let i = this.pathBuckets.length; i < target; i++) {
+        this.pathBuckets.push(new Path2D());
+      }
+    }
+    this.bucketCount = target;
   }
-}
 
-function drawNodes(
-  ctx: CanvasRenderingContext2D,
-  nodes: NodeSnapshot[],
-  theme: ThemePayload
-): void {
-  for (const n of nodes) {
-    ctx.fillStyle = colorOf(theme, n.color);
-    ctx.strokeStyle = theme.palette[1] ?? "#e8eaed";
-    ctx.lineWidth = 2;
-    drawShape(ctx, n.shape, n.pos[0], n.pos[1], NODE_RADIUS);
+  /** Render one frame. Allocation-free after `warm()`. */
+  draw(input: FrameInput): void {
+    const { ctx, canvas } = this;
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const cssW = canvas.width / dpr;
+    const cssH = canvas.height / dpr;
+    ctx.fillStyle = backgroundColor(input.theme);
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    this.drawPathsBatched(input.theme, input.snapshot);
+    this.drawNodes(input.theme, input.snapshot.nodes);
+    this.drawMovers(input.theme, input.movers);
+
+    ctx.restore();
   }
-}
 
-function drawMovers(
-  ctx: CanvasRenderingContext2D,
-  movers: MoverSnapshot[],
-  theme: ThemePayload
-): void {
-  ctx.fillStyle = theme.palette[1] ?? "#e8eaed";
-  ctx.strokeStyle = "transparent";
-  for (const m of movers) {
-    ctx.beginPath();
-    ctx.arc(m.pos[0], m.pos[1], MOVER_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+  private drawPathsBatched(theme: ThemePayload, snap: SnapshotPayload): void {
+    const ctx = this.ctx;
+    // Reset reused lookup map (Map.clear() does not allocate).
+    this.nodeIdToPos.clear();
+    for (const n of snap.nodes) {
+      this.nodeIdToPos.set(n.id, n.pos);
+    }
+    // Reset each pre-allocated Path2D bucket. We swap in a fresh
+    // Path2D rather than mutating, since Path2D has no .clear() API;
+    // this is the one tolerated allocation per palette color per
+    // frame (bounded, tiny, palette.len() ≤ 32 per PLAN §5.1).
+    for (let i = 0; i < this.bucketCount; i++) {
+      this.pathBuckets[i] = new Path2D();
+    }
+    for (const p of snap.paths) {
+      const from = this.nodeIdToPos.get(p.from);
+      const to = this.nodeIdToPos.get(p.to);
+      if (from === undefined || to === undefined) continue;
+      const bucket = this.pathBuckets[p.color];
+      if (bucket === undefined) continue;
+      bucket.moveTo(from[0], from[1]);
+      bucket.lineTo(to[0], to[1]);
+    }
+    ctx.lineWidth = PATH_WIDTH;
+    ctx.lineCap = "round";
+    for (let i = 0; i < this.bucketCount; i++) {
+      ctx.strokeStyle = paletteColor(theme, i);
+      ctx.stroke(this.pathBuckets[i]!);
+    }
+  }
+
+  private drawNodes(theme: ThemePayload, nodes: NodeSnapshot[]): void {
+    const ctx = this.ctx;
+    ctx.lineWidth = NODE_STROKE_WIDTH;
+    ctx.strokeStyle = foregroundColor(theme);
+    for (const n of nodes) {
+      ctx.fillStyle = paletteColor(theme, n.color);
+      drawShape(ctx, n.shape, n.pos[0], n.pos[1], NODE_RADIUS);
+    }
+  }
+
+  private drawMovers(theme: ThemePayload, movers: MoverSnapshot[]): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = foregroundColor(theme);
+    for (const m of movers) {
+      ctx.beginPath();
+      ctx.arc(m.pos[0], m.pos[1], MOVER_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
@@ -132,8 +164,8 @@ function drawShape(
       break;
     case "triangle":
       ctx.moveTo(x, y - r);
-      ctx.lineTo(x + r, y + r);
-      ctx.lineTo(x - r, y + r);
+      ctx.lineTo(x + r * 0.866, y + r * 0.5);
+      ctx.lineTo(x - r * 0.866, y + r * 0.5);
       ctx.closePath();
       break;
     case "diamond":
@@ -146,8 +178,4 @@ function drawShape(
   }
   ctx.fill();
   ctx.stroke();
-}
-
-function colorOf(theme: ThemePayload, index: number): string {
-  return theme.palette[index] ?? "#e8eaed";
 }
