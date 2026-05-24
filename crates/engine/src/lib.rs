@@ -21,6 +21,7 @@ pub mod events;
 pub mod loader;
 pub mod rng;
 pub mod snapshot;
+pub mod state_hash;
 pub mod systems;
 pub mod tick;
 pub mod world;
@@ -34,5 +35,6 @@ pub use events::{agent_error_to_message, engine_fault_to_payload, load_error_to_
 pub use loader::{load_scene_str, AgentSpec, Goal, IdMap, LoadedScene, Theme};
 pub use rng::SimRng;
 pub use snapshot::{color_batches, encode_snapshot, encode_static};
+pub use state_hash::{hash_run, hash_world};
 pub use tick::{tick_accumulator, tick_once, TickOutput, TickRunner};
 pub use world::{RunState, World};
