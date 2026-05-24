@@ -24,9 +24,16 @@
 use serde::{Deserialize, Serialize};
 
 pub mod capabilities;
+pub mod decision_timeline;
 pub mod version;
 pub mod websocket;
 
+pub use decision_timeline::{
+    DecisionEntry, DecisionResponse, DecisionStatus, DecisionTimeline, DecisionTimelineError,
+    DecisionTimelineSnapshot, FromJsonError as DecisionTimelineFromJsonError, RawResponseRef,
+    SchemaVersionMismatch as DecisionTimelineSchemaMismatch, TimelineId,
+    DECISION_TIMELINE_SCHEMA_VERSION, DEFAULT_TIMELINE_CAPACITY,
+};
 pub use version::SCHEMA_VERSION;
 
 /// Wrapping envelope for every wire message. Consumers MUST check
