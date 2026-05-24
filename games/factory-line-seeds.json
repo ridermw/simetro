@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "name": "factory-line-seeds",
+  "catalog": {
+    "slug": "factory-line-seeds",
+    "title": "Factory Line Seeds",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A belt-and-resource factory line where seed packets are extracted, cut, painted, stacked, inspected, and recycled.",
+    "tags": ["factory", "belts", "resources", "seeds", "shape-factory", "v1"],
+    "palette_note": "Graphite factory floor and pale readout foreground carry conveyor blue, raw-resource amber, cutter magenta, painter cyan, seed green, warning orange, and stacker violet accents.",
+    "layout_note": "Twelve nodes form a stepped assembly-line silhouette: left resource patches feed a central belt bus, upper cutter/painter machines climb to a right warehouse, and a low recycle belt returns scrap.",
+    "node_language_note": "Triangles mark extractors or chutes, circles mark resource pools and paint drums, diamonds mark mergers/sorters, squares mark cutter/recycle workstations, and hexagons mark stacker or warehouse hubs.",
+    "mover_path_note": "Seven movers start on visible extractor, seed, cutter, painter, stacker, launch, and recycle belts so the first frame reads as active factory throughput across the whole line.",
+    "review_note": "Visual review target: default 960x540 #scene first-frame screenshot; checked for v1 JSON validity, v2-capable loader compatibility, factory palette separation, stepped belt silhouette, resource-machine node language, local catalog/registry paths, and visible mover starts."
+  },
+  "theme": {
+    "palette": ["#071014", "#f2f7e8", "#00c2ff", "#ffb11b", "#ff4fd8", "#18e6a7", "#78e044", "#ff6b2a", "#9f7bff"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "raw_ore_patch", "pos": [75, 385], "shape": "triangle", "color": 3 },
+      { "id": "seed_quarry", "pos": [125, 190], "shape": "circle", "color": 6 },
+      { "id": "belt_merger", "pos": [245, 300], "shape": "diamond", "color": 2 },
+      { "id": "shape_cutter", "pos": [340, 145], "shape": "square", "color": 4 },
+      { "id": "paint_drum", "pos": [480, 110], "shape": "circle", "color": 5 },
+      { "id": "stacker_press", "pos": [605, 220], "shape": "hexagon", "color": 8 },
+      { "id": "warehouse_hub", "pos": [745, 260], "shape": "hexagon", "color": 3 },
+      { "id": "launch_chute", "pos": [885, 180], "shape": "triangle", "color": 7 },
+      { "id": "seed_vault", "pos": [875, 380], "shape": "circle", "color": 6 },
+      { "id": "quality_sorter", "pos": [660, 395], "shape": "diamond", "color": 4 },
+      { "id": "return_belt", "pos": [470, 445], "shape": "square", "color": 6 },
+      { "id": "scrap_grinder", "pos": [290, 430], "shape": "triangle", "color": 7 }
+    ],
+    "paths": [
+      { "id": "ore_to_merger", "from": "raw_ore_patch", "to": "belt_merger", "color": 3 },
+      { "id": "seed_to_merger", "from": "seed_quarry", "to": "belt_merger", "color": 6 },
+      { "id": "merger_to_cutter", "from": "belt_merger", "to": "shape_cutter", "color": 2 },
+      { "id": "cutter_to_painter", "from": "shape_cutter", "to": "paint_drum", "color": 4 },
+      { "id": "painter_to_stacker", "from": "paint_drum", "to": "stacker_press", "color": 5 },
+      { "id": "stacker_to_hub", "from": "stacker_press", "to": "warehouse_hub", "color": 8 },
+      { "id": "hub_to_launch", "from": "warehouse_hub", "to": "launch_chute", "color": 7 },
+      { "id": "launch_to_vault", "from": "launch_chute", "to": "seed_vault", "color": 3 },
+      { "id": "vault_to_quality", "from": "seed_vault", "to": "quality_sorter", "color": 6 },
+      { "id": "quality_to_return", "from": "quality_sorter", "to": "return_belt", "color": 4 },
+      { "id": "return_to_scrap", "from": "return_belt", "to": "scrap_grinder", "color": 6 },
+      { "id": "scrap_to_ore", "from": "scrap_grinder", "to": "raw_ore_patch", "color": 7 },
+      { "id": "cutter_to_stacker", "from": "shape_cutter", "to": "stacker_press", "color": 8 },
+      { "id": "painter_to_sorter", "from": "paint_drum", "to": "quality_sorter", "color": 5 },
+      { "id": "merger_to_return", "from": "belt_merger", "to": "return_belt", "color": 2 },
+      { "id": "sorter_to_hub", "from": "quality_sorter", "to": "warehouse_hub", "color": 4 },
+      { "id": "return_to_cutter", "from": "return_belt", "to": "shape_cutter", "color": 6 }
+    ],
+    "movers": [
+      { "id": "ore_chip", "on_path": "ore_to_merger", "speed": 0.82 },
+      { "id": "seed_capsule", "on_path": "seed_to_merger", "speed": 0.72 },
+      { "id": "cut_square", "on_path": "merger_to_cutter", "speed": 0.88 },
+      { "id": "paint_drop", "on_path": "cutter_to_painter", "speed": 1.0 },
+      { "id": "stacked_seed", "on_path": "painter_to_stacker", "speed": 0.76 },
+      { "id": "warehouse_crate", "on_path": "stacker_to_hub", "speed": 0.9 },
+      { "id": "recycle_chip", "on_path": "quality_to_return", "speed": 1.06 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 40 }]
+}

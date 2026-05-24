@@ -71,6 +71,5 @@ export const easings = {
   easeOutQuad: (t: number) => 1 - (1 - t) * (1 - t),
   easeInOutQuad: (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
   easeOutCubic: (t: number) => 1 - Math.pow(1 - t, 3),
-  easeInOutCubic: (t: number) =>
-    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  easeInOutCubic: (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
 };

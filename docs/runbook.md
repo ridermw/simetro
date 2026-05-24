@@ -11,8 +11,15 @@ operational response.
 points at the JSON path; the `message` is the typed reason
 (`UnknownPieceId`, `BadColorIndex`, `MoverOnUnknownPath`, etc.).
 
-**Action.** Edit `games/<scene>.json`, fix the field. Click ↻
-Reload (P2). In P1, restart the binary.
+**Action.** Edit `games/<scene>.json` and fix the field. The desktop
+shell reloads the watched scene automatically after the file is stable;
+↻ Reload is still available as a manual fallback. A failed reload does
+**not** discard the current running scene; the driver keeps the old
+world active until a replacement validates.
+
+For future scene switching, an unknown `scene_id` is handled the same
+way: show the typed fault, keep the old scene, and resolve the id via
+the local scene registry rather than asking for a path.
 
 ### `Fault::AgentCrashed { agent_id, message }`
 
@@ -74,9 +81,10 @@ cd frontend && npm run build
 
 ### `Warning::InvalidAction { agent_id, reason }`
 
-**Meaning.** An agent tool-called an `Action` the engine rejects
-(currently any author action — Place/Connect/Remove — in P1).
-Expected during P1.
+**Meaning.** An agent tool-called an `Action` the engine rejects, such
+as a malformed or unsafe author action (Place/Connect/Remove; see
+[`agents.md` § Author actions](agents.md#author-actions)).
+Expected during P1 while policies are still narrow.
 
 ### `Warning::Behind { lag_frames }`
 

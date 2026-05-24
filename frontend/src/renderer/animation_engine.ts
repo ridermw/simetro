@@ -120,6 +120,11 @@ export class AnimationEngine {
     return n;
   }
 
+  clear(): void {
+    for (const s of this.slots) s.alive = false;
+    this.nextIndex = 0;
+  }
+
   /** Test/diagnostic only. */
   capacity(): number {
     return SLOT_CAPACITY;

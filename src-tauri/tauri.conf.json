@@ -26,6 +26,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "../games/*.json": "games/"
+    },
     "icon": [
       "icons/icon.png"
     ]

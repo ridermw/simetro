@@ -1,12 +1,8 @@
 // frontend/src/tests/unit/inspector.test.ts
 import { describe, it, expect } from "vitest";
 import { InspectorPanel } from "../../inspector/panel";
-import { hitTestPiece, summarizeNode } from "../../inspector/hover";
-import type {
-  AgentReport,
-  SnapshotPayload,
-  StaticPayload,
-} from "../../protocol/messages";
+import { HoverTooltip, hitTestPiece, summarizeNode } from "../../inspector/hover";
+import type { AgentReport, SnapshotPayload, StaticPayload } from "../../protocol/messages";
 
 function report(over: Partial<AgentReport> = {}): AgentReport {
   return {
@@ -81,6 +77,18 @@ describe("InspectorPanel", () => {
     expect(chosenLine).toBeDefined();
     expect(chosenLine).toContain("●");
   });
+
+  it("clear resets the latest report and timeline", () => {
+    const parent = document.createElement("div");
+    const panel = new InspectorPanel(parent);
+    panel.show(report());
+    panel.clear();
+    const text = panel.__testRoot().textContent ?? "";
+    expect(text).toContain("AGENT  —");
+    expect(text).toContain("CHOSEN  —");
+    expect(text).not.toContain("speed_tuner_0");
+    expect(text).not.toContain("TIMELINE");
+  });
 });
 
 describe("hover hit-testing", () => {
@@ -132,5 +140,20 @@ describe("hover hit-testing", () => {
   it("summarizeNode returns label + shape + color", () => {
     const node = scene.nodes[0]!;
     expect(summarizeNode(node, scene)).toBe("alpha  shape=circle  color=2");
+  });
+
+  it("HoverTooltip.clear removes scene/snapshot state and hides the tooltip", () => {
+    const parent = document.createElement("div");
+    const canvas = document.createElement("canvas");
+    const tooltip = new HoverTooltip(parent);
+    tooltip.setScene(scene);
+    tooltip.setSnapshot(snap);
+    tooltip.attach(canvas);
+
+    canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: 250, clientY: 250 }));
+    expect(tooltip.__testEl().style.display).toBe("block");
+
+    tooltip.clear();
+    expect(tooltip.__testEl().style.display).toBe("none");
   });
 });

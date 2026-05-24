@@ -21,11 +21,7 @@
 //   │  TIMELINE  ▎▎▌▌▎▌▎▎▎▎  (latest 16 ticks)         │
 //   └──────────────────────────────────────────────────┘
 
-import {
-  formatAction,
-  type Action,
-  type AgentReport,
-} from "../protocol/messages";
+import { formatAction, type Action, type AgentReport } from "../protocol/messages";
 
 const TIMELINE_CAP = 16;
 
@@ -55,6 +51,17 @@ export class InspectorPanel {
     this.recent.push(report);
     if (this.recent.length > TIMELINE_CAP) this.recent.shift();
     this.render();
+  }
+
+  clear(): void {
+    this.recent.length = 0;
+    this.handles.agentLine.textContent = "AGENT  —   tick —   confidence —";
+    this.handles.chosen.textContent = "CHOSEN  —";
+    while (this.handles.considered.firstChild !== null) {
+      this.handles.considered.removeChild(this.handles.considered.firstChild);
+    }
+    this.handles.rationale.textContent = "";
+    this.handles.timeline.textContent = "";
   }
 
   setVisible(visible: boolean): void {
@@ -88,13 +95,11 @@ export class InspectorPanel {
       const row = document.createElement("div");
       row.className = "simetro-inspector-row";
       const dot = actionsEqual(latest.chosen, c.action) ? " ●" : "";
-      row.textContent =
-        `  • ${formatAction(c.action)}    ${c.confidence.toFixed(2)}${dot}`;
+      row.textContent = `  • ${formatAction(c.action)}    ${c.confidence.toFixed(2)}${dot}`;
       this.handles.considered.appendChild(row);
     }
 
-    this.handles.rationale.textContent =
-      `RATIONALE\n${latest.rationale || "(no rationale)"}`;
+    this.handles.rationale.textContent = `RATIONALE\n${latest.rationale || "(no rationale)"}`;
 
     // Timeline: one glyph per recent report, weighted by confidence.
     const glyphs: string[] = [];
@@ -133,8 +138,7 @@ function buildDom(parent: HTMLElement): PanelHandles {
   agentLine.textContent = "AGENT  —   tick —   confidence —";
 
   const divider = document.createElement("div");
-  divider.style.cssText =
-    "border-bottom: 1px solid rgba(232, 234, 237, 0.15); margin: 6px 0";
+  divider.style.cssText = "border-bottom: 1px solid rgba(232, 234, 237, 0.15); margin: 6px 0";
 
   const chosen = document.createElement("div");
   chosen.className = "simetro-inspector-chosen";

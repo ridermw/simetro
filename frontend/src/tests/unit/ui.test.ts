@@ -64,23 +64,23 @@ describe("FaultOverlay", () => {
   });
 
   it("formatFault covers every fault kind", () => {
-    expect(
-      formatFault({ kind: "load_error", message: "bad", line: 1, col: 2 })
-    ).toContain("SCENE LOAD");
-    expect(
-      formatFault({ kind: "load_error", message: "bad", line: null, col: null })
-    ).toContain("SCENE LOAD");
-    expect(
-      formatFault({ kind: "agent_crashed", agent_id: "a", message: "m" })
-    ).toContain("AGENT CRASHED");
+    expect(formatFault({ kind: "load_error", message: "bad", line: 1, col: 2 })).toContain(
+      "SCENE LOAD"
+    );
+    expect(formatFault({ kind: "load_error", message: "bad", line: null, col: null })).toContain(
+      "SCENE LOAD"
+    );
+    expect(formatFault({ kind: "agent_crashed", agent_id: "a", message: "m" })).toContain(
+      "AGENT CRASHED"
+    );
     expect(formatFault({ kind: "numeric_drift", tick: 5 })).toContain("NUMERIC DRIFT");
     expect(formatFault({ kind: "engine_fault", message: "kaboom" })).toContain("ENGINE FAULT");
     expect(
       formatFault({ kind: "baseline_hash_mismatch", expected: "aaa", found: "bbb" })
     ).toContain("BASELINE HASH MISMATCH");
-    expect(
-      formatFault({ kind: "schema_mismatch", expected: 1, found: 99 })
-    ).toContain("SCHEMA MISMATCH");
+    expect(formatFault({ kind: "schema_mismatch", expected: 1, found: 99 })).toContain(
+      "SCHEMA MISMATCH"
+    );
     expect(formatFault({ kind: "transport_lost" })).toContain("TRANSPORT LOST");
   });
 
@@ -103,10 +103,20 @@ describe("WarningStrip", () => {
     expect(s.__testCount()).toBe(0);
   });
 
+  it("clear removes all active warning pills", () => {
+    const parent = document.createElement("div");
+    const s = new WarningStrip(parent);
+    s.push({ kind: "behind", lag_frames: 3 });
+    s.push({ kind: "agent_log_slow" });
+    s.clear();
+    expect(s.__testCount()).toBe(0);
+    expect(parent.textContent).toBe("");
+  });
+
   it("formatWarning covers every kind", () => {
-    expect(
-      formatWarning({ kind: "invalid_action", agent_id: "a", reason: "x" })
-    ).toContain("invalid action");
+    expect(formatWarning({ kind: "invalid_action", agent_id: "a", reason: "x" })).toContain(
+      "invalid action"
+    );
     expect(formatWarning({ kind: "behind", lag_frames: 4 })).toContain("behind");
     expect(formatWarning({ kind: "tick_over_budget", ms: 12.3 })).toContain("over budget");
     expect(formatWarning({ kind: "agent_log_slow" })).toContain("slow");

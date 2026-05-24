@@ -40,9 +40,30 @@ const DEMO_PALETTE = ["#0e1116", "#e8eaed", "#7aa2f7", "#bb9af7", "#9ece6a"];
 
 /** Path definitions: id, from_pos, to_pos, and routing to next path. */
 const PATHS = [
-  { id: 4, from_pos: [200, 200] as [number, number], to_pos: [600, 200] as [number, number], fromNode: 1, toNode: 2, next: 5 },
-  { id: 5, from_pos: [600, 200] as [number, number], to_pos: [400, 480] as [number, number], fromNode: 2, toNode: 3, next: 6 },
-  { id: 6, from_pos: [400, 480] as [number, number], to_pos: [200, 200] as [number, number], fromNode: 3, toNode: 1, next: 4 },
+  {
+    id: 4,
+    from_pos: [200, 200] as [number, number],
+    to_pos: [600, 200] as [number, number],
+    fromNode: 1,
+    toNode: 2,
+    next: 5,
+  },
+  {
+    id: 5,
+    from_pos: [600, 200] as [number, number],
+    to_pos: [400, 480] as [number, number],
+    fromNode: 2,
+    toNode: 3,
+    next: 6,
+  },
+  {
+    id: 6,
+    from_pos: [400, 480] as [number, number],
+    to_pos: [200, 200] as [number, number],
+    fromNode: 3,
+    toNode: 1,
+    next: 4,
+  },
 ];
 
 function pathById(id: number) {
@@ -53,7 +74,7 @@ interface MockMover {
   id: number;
   pathId: number;
   progress: number; // 0..1 along current segment
-  speed: number;    // units per second (path length normalized to ~400px)
+  speed: number; // units per second (path length normalized to ~400px)
 }
 
 const TICK_INTERVAL_MS = 50;
@@ -174,12 +195,22 @@ export class MockTransport implements Transport {
       while (m.progress >= 1.0) {
         m.progress -= 1.0;
         const arrivedPath = pathById(m.pathId);
-        events.push({ kind: "mover_arrived", mover: m.id, at_node: arrivedPath.toNode, path: m.pathId });
+        events.push({
+          kind: "mover_arrived",
+          mover: m.id,
+          at_node: arrivedPath.toNode,
+          path: m.pathId,
+        });
         events.push({ kind: "path_pulsed", path: m.pathId });
         // Route to next segment.
         m.pathId = arrivedPath.next;
         const departedPath = pathById(m.pathId);
-        events.push({ kind: "mover_departed", mover: m.id, from_node: departedPath.fromNode, path: m.pathId });
+        events.push({
+          kind: "mover_departed",
+          mover: m.id,
+          from_node: departedPath.fromNode,
+          path: m.pathId,
+        });
       }
     }
 

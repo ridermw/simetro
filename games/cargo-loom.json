@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "name": "cargo-loom",
+  "catalog": {
+    "slug": "cargo-loom",
+    "title": "Cargo Loom",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "An industrial blueprint loop where cargo threads through gantries, sorters, cranes, and outbound docks.",
+    "tags": ["cargo", "industrial", "blueprint", "logistics", "v1"],
+    "palette_note": "Blueprint midnight and chalk foreground support amber cargo, cyan conveyors, magenta sorters, blue steel, and green return lines.",
+    "layout_note": "Nodes sketch a wide loom silhouette: left intake, upper sorter run, central hex core, lower return strand, and right dispatch dock.",
+    "node_language_note": "Squares mark freight handling, circles mark rollers/vats, diamonds mark switches/docks, triangles mark lifts, and hexagons mark structural machinery.",
+    "mover_path_note": "Five movers start on intake, sorter, core shuttle, dispatch, and return paths so the first frame shows cargo entering multiple loom threads.",
+    "review_note": "Reviewed at the default 960x540 #scene screenshot target for v1 validity, v2-loader compatibility, palette separation, loom silhouette, node language, and visible mover starts."
+  },
+  "theme": {
+    "palette": ["#08111f", "#e7f2ff", "#f5a524", "#27d3c2", "#c65cff", "#5b8def", "#8bd450"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "intake_yard", "pos": [90, 270], "shape": "square", "color": 2 },
+      { "id": "spool_gate", "pos": [220, 145], "shape": "circle", "color": 3 },
+      { "id": "rail_fork", "pos": [365, 145], "shape": "diamond", "color": 4 },
+      { "id": "loom_core", "pos": [500, 270], "shape": "hexagon", "color": 5 },
+      { "id": "crane_hook", "pos": [365, 395], "shape": "triangle", "color": 6 },
+      { "id": "dye_vat", "pos": [635, 130], "shape": "circle", "color": 4 },
+      { "id": "pallet_press", "pos": [735, 270], "shape": "square", "color": 3 },
+      { "id": "outbound_dock", "pos": [875, 270], "shape": "diamond", "color": 2 },
+      { "id": "return_silo", "pos": [635, 415], "shape": "hexagon", "color": 6 }
+    ],
+    "paths": [
+      { "id": "intake_to_spool", "from": "intake_yard", "to": "spool_gate", "color": 2 },
+      { "id": "spool_to_fork", "from": "spool_gate", "to": "rail_fork", "color": 3 },
+      { "id": "fork_to_dye", "from": "rail_fork", "to": "dye_vat", "color": 4 },
+      { "id": "dye_to_press", "from": "dye_vat", "to": "pallet_press", "color": 4 },
+      { "id": "press_to_outbound", "from": "pallet_press", "to": "outbound_dock", "color": 2 },
+      { "id": "outbound_to_return", "from": "outbound_dock", "to": "return_silo", "color": 6 },
+      { "id": "return_to_crane", "from": "return_silo", "to": "crane_hook", "color": 6 },
+      { "id": "crane_to_intake", "from": "crane_hook", "to": "intake_yard", "color": 2 },
+      { "id": "fork_to_core", "from": "rail_fork", "to": "loom_core", "color": 5 },
+      { "id": "core_to_press", "from": "loom_core", "to": "pallet_press", "color": 5 },
+      { "id": "spool_to_core", "from": "spool_gate", "to": "loom_core", "color": 3 },
+      { "id": "core_to_crane", "from": "loom_core", "to": "crane_hook", "color": 3 },
+      { "id": "press_to_core", "from": "pallet_press", "to": "loom_core", "color": 5 }
+    ],
+    "movers": [
+      { "id": "cotton_crate", "on_path": "intake_to_spool", "speed": 0.78 },
+      { "id": "dye_canister", "on_path": "fork_to_dye", "speed": 0.92 },
+      { "id": "steel_bobbin", "on_path": "fork_to_core", "speed": 0.68 },
+      { "id": "pallet_train", "on_path": "press_to_outbound", "speed": 0.84 },
+      { "id": "return_hook", "on_path": "return_to_crane", "speed": 1.05 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

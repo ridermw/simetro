@@ -60,6 +60,37 @@ fn feed_world(h: &mut Sha256, world: &World) {
         h.update(m.speed.to_le_bytes());
         feed_mover_state(h, m.state());
     }
+    if !world.resources.is_empty()
+        || !world.inventory.is_empty()
+        || !world.producers.is_empty()
+        || !world.consumers.is_empty()
+    {
+        h.update(b"resources.v1");
+        h.update((world.resources.len() as u64).to_le_bytes());
+        for (id, r) in &world.resources {
+            h.update(id.0.to_le_bytes());
+            h.update([r.color]);
+        }
+        h.update((world.inventory.len() as u64).to_le_bytes());
+        for (id, amount) in &world.inventory {
+            h.update(id.0.to_le_bytes());
+            h.update(amount.to_le_bytes());
+        }
+        h.update((world.producers.len() as u64).to_le_bytes());
+        for (id, p) in &world.producers {
+            h.update(id.0.to_le_bytes());
+            h.update(p.resource.0.to_le_bytes());
+            h.update(p.amount.to_le_bytes());
+            h.update(p.interval_ticks.to_le_bytes());
+        }
+        h.update((world.consumers.len() as u64).to_le_bytes());
+        for (id, c) in &world.consumers {
+            h.update(id.0.to_le_bytes());
+            h.update(c.resource.0.to_le_bytes());
+            h.update(c.amount.to_le_bytes());
+            h.update(c.interval_ticks.to_le_bytes());
+        }
+    }
 }
 
 fn feed_mover_state(h: &mut Sha256, s: MoverState) {

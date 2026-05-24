@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "name": "river-ferries",
+  "catalog": {
+    "slug": "river-ferries",
+    "title": "River Ferries",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A watercolor river fantasy where ferries, skiffs, and market barges follow lantern-lit crossings through islands, quays, marshes, and harbor slips.",
+    "tags": ["river", "ferries", "watercolor", "harbor", "fantasy", "v1"],
+    "palette_note": "Warm paper and deep ink hold river blue, lantern gold, rose quay, willow green, dusk violet, terracotta hull, and teal current accents with clear watercolor separation.",
+    "layout_note": "Twelve nodes draw a broad S-curved river: foggy west bank, high willow island, central market bend, bridge/tide choke point, lighthouse reach, and low harbor-marsh return.",
+    "node_language_note": "Squares mark ferry landings/quays, circles mark islands and marshes, diamonds mark markets and yards, triangles mark beacons or tide markers, and hexagons mark engineered crossings and harbor basins.",
+    "mover_path_note": "Six movers start on separate west bank, market bend, tide gate, lighthouse run, marsh return, and boatwright stretches so the first frame reads as active ferry traffic across the whole river.",
+    "review_note": "Visual review target: default 960x540 #scene first-frame screenshot; checked for v1 JSON validity, v2-capable loader compatibility, watercolor palette separation, river S-curve silhouette, node language, and visible ferry starts."
+  },
+  "theme": {
+    "palette": ["#f3efe4", "#1f3342", "#4aa3c7", "#f2b84b", "#e56f8c", "#6fbf73", "#8e6bd8", "#e07a3f", "#2aa198"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "fog_bank", "pos": [95, 270], "shape": "circle", "color": 6 },
+      { "id": "north_landing", "pos": [125, 155], "shape": "square", "color": 4 },
+      { "id": "willow_island", "pos": [260, 92], "shape": "circle", "color": 5 },
+      { "id": "market_quay", "pos": [390, 172], "shape": "diamond", "color": 3 },
+      { "id": "bridge_house", "pos": [510, 105], "shape": "hexagon", "color": 6 },
+      { "id": "tide_gate", "pos": [625, 232], "shape": "triangle", "color": 8 },
+      { "id": "lighthouse_reach", "pos": [785, 145], "shape": "triangle", "color": 7 },
+      { "id": "delta_pier", "pos": [875, 300], "shape": "square", "color": 2 },
+      { "id": "reed_marsh", "pos": [705, 418], "shape": "circle", "color": 5 },
+      { "id": "harbor_basin", "pos": [540, 355], "shape": "hexagon", "color": 2 },
+      { "id": "boatwright_yard", "pos": [388, 452], "shape": "diamond", "color": 7 },
+      { "id": "old_town_steps", "pos": [235, 365], "shape": "square", "color": 4 }
+    ],
+    "paths": [
+      { "id": "fog_to_north", "from": "fog_bank", "to": "north_landing", "color": 6 },
+      { "id": "north_to_willow", "from": "north_landing", "to": "willow_island", "color": 5 },
+      { "id": "willow_to_market", "from": "willow_island", "to": "market_quay", "color": 3 },
+      { "id": "market_to_bridge", "from": "market_quay", "to": "bridge_house", "color": 3 },
+      { "id": "bridge_to_tide", "from": "bridge_house", "to": "tide_gate", "color": 8 },
+      { "id": "tide_to_lighthouse", "from": "tide_gate", "to": "lighthouse_reach", "color": 7 },
+      { "id": "lighthouse_to_delta", "from": "lighthouse_reach", "to": "delta_pier", "color": 2 },
+      { "id": "delta_to_reed", "from": "delta_pier", "to": "reed_marsh", "color": 5 },
+      { "id": "reed_to_harbor", "from": "reed_marsh", "to": "harbor_basin", "color": 2 },
+      { "id": "harbor_to_boatwright", "from": "harbor_basin", "to": "boatwright_yard", "color": 7 },
+      { "id": "boatwright_to_old_town", "from": "boatwright_yard", "to": "old_town_steps", "color": 4 },
+      { "id": "old_town_to_fog", "from": "old_town_steps", "to": "fog_bank", "color": 6 },
+      { "id": "old_town_to_market", "from": "old_town_steps", "to": "market_quay", "color": 4 },
+      { "id": "market_to_harbor", "from": "market_quay", "to": "harbor_basin", "color": 2 },
+      { "id": "tide_to_harbor", "from": "tide_gate", "to": "harbor_basin", "color": 8 },
+      { "id": "bridge_to_lighthouse", "from": "bridge_house", "to": "lighthouse_reach", "color": 6 },
+      { "id": "north_to_old_town", "from": "north_landing", "to": "old_town_steps", "color": 4 }
+    ],
+    "movers": [
+      { "id": "mist_ferry", "on_path": "fog_to_north", "speed": 0.72 },
+      { "id": "lantern_scow", "on_path": "market_to_bridge", "speed": 0.84 },
+      { "id": "tide_skiff", "on_path": "bridge_to_tide", "speed": 0.96 },
+      { "id": "delta_barge", "on_path": "lighthouse_to_delta", "speed": 0.68 },
+      { "id": "reed_canoe", "on_path": "reed_to_harbor", "speed": 0.88 },
+      { "id": "harbor_tug", "on_path": "boatwright_to_old_town", "speed": 1.02 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

@@ -67,12 +67,9 @@ export function formatFault(fault: FaultPayload): string {
   switch (fault.kind) {
     case "load_error": {
       const where =
-        fault.line !== null && fault.col !== null
-          ? `  (line ${fault.line}, col ${fault.col})`
-          : "";
+        fault.line !== null && fault.col !== null ? `  (line ${fault.line}, col ${fault.col})` : "";
       return (
-        `SCENE LOAD ERROR${where}\n\n${fault.message}\n\n` +
-        "Fix the JSON and click ↻ Reload."
+        `SCENE LOAD ERROR${where}\n\n${fault.message}\n\n` + "Fix the JSON and click ↻ Reload."
       );
     }
     case "agent_crashed":
@@ -151,6 +148,11 @@ export class WarningStrip {
     }
   }
 
+  clear(): void {
+    for (const item of this.items) item.el.remove();
+    this.items.length = 0;
+  }
+
   __testCount(): number {
     return this.items.length;
   }
@@ -211,8 +213,7 @@ export class HeartbeatBadge {
   }
 
   private paint(state: HeartbeatState): void {
-    const color =
-      state === "ok" ? "#9ece6a" : state === "stale" ? "#e0af68" : "#f7768e";
+    const color = state === "ok" ? "#9ece6a" : state === "stale" ? "#e0af68" : "#f7768e";
     this.root.style.background = color;
     this.root.style.boxShadow = `0 0 4px ${color}b0`;
     this.root.setAttribute("aria-label", `Engine heartbeat: ${state}`);
