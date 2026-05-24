@@ -23,6 +23,7 @@
 // the slots already present in this wiring.
 
 import { MockTransport, type Transport } from "./transport/mock";
+import { TauriTransport } from "./transport/tauri";
 import type {
   MoverState,
   NodeView,
@@ -208,6 +209,18 @@ function nowMs(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
+/** Detect Tauri runtime. When present, use the real engine transport. */
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function createTransport(): Transport {
+  if (isTauri()) {
+    return new TauriTransport();
+  }
+  return new MockTransport();
+}
+
 function resize(canvas: HTMLCanvasElement): void {
   const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
   const w = canvas.clientWidth;
@@ -271,7 +284,7 @@ function boot(): void {
     }
   });
 
-  const transport: Transport = new MockTransport();
+  const transport: Transport = createTransport();
   transport.connect((msg) => handleMessage(msg, state, renderer));
 
   // Tone.js / WebAudio cannot start without a user gesture; wire
