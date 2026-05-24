@@ -97,7 +97,7 @@ User → trusts → gh auth → trusts → copilot --acp → trusts → bridge
 2. **Compromised scene JSON** — attacker authors a scene file with a
    prompt-injection payload in a label, mover name, or goal text,
    intending to subvert the LLM into emitting unsafe actions or
-   leaking the system prompt. Detection: XPIA isolation (§4).
+   leaking the system prompt. Detection: XPIA isolation (§7).
 3. **Compromised `copilot --acp` subprocess** — if the subprocess is
    itself owned (e.g. via a Copilot CLI vulnerability), it can return
    arbitrary tool calls. Mitigation: tool calls validated against
@@ -298,7 +298,7 @@ SIGTERM → 5s wait → SIGKILL → re-spawn if allowed.
 
 ---
 
-## 3. ACP wire-protocol parsing (PR #4 sec Finding 3 + 4)
+## 3. ACP wire-protocol parsing (PR #4 sec Finding 3)
 
 ### 3.1 Threat: Frame-desync attack
 
@@ -641,7 +641,7 @@ visibility into degradation.
 
 ---
 
-## 6. Tool-call invocation: LLM-as-engine-author (PR #4 sec Finding 5)
+## 6. Tool-call invocation: LLM-as-engine-author
 
 ### 6.1 Threat: LLM mutates world in ways scene author didn't intend
 
