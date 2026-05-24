@@ -7,30 +7,36 @@
 
 use simetro_protocol::SimEvent;
 
-use crate::components::{MoverState, NodeId, PathId};
+use crate::components::{MoverId, MoverState, NodeId, PathId};
 use crate::world::World;
+
+/// Scratch entry: `(mover, path)` ids of arrivals this tick.
+pub type ArrivalScratch = (MoverId, PathId);
 
 /// Advance every `Traveling` mover. Returns the number of arrivals
 /// this tick (handy for benches/asserts).
-pub fn run(world: &mut World, events: &mut Vec<SimEvent>) -> u32 {
+///
+/// `scratch` is reused across ticks (zero-alloc target — PLAN §14).
+pub fn run(
+    world: &mut World,
+    events: &mut Vec<SimEvent>,
+    scratch: &mut Vec<ArrivalScratch>,
+) -> u32 {
     let dt = world.dt;
-    let mut arrivals: Vec<(crate::components::MoverId, PathId)> = Vec::new();
+    scratch.clear();
 
     for (mid, mover) in world.movers.iter_mut() {
         if let MoverState::Traveling { path, .. } = mover.state() {
-            // `advance` saturates at 1.0; we detect arrival here.
             if let Ok(progress) = mover.advance(dt) {
                 if progress >= 1.0 {
-                    arrivals.push((*mid, path));
+                    scratch.push((*mid, path));
                 }
             }
-            // Err means state changed under us; nothing to do.
         }
     }
 
     let mut n = 0_u32;
-    for (mid, path_id) in arrivals {
-        // Look up destination node deterministically via the paths map.
+    for &(mid, path_id) in scratch.iter() {
         let to_node: Option<NodeId> = world.paths.get(&path_id).map(|p| p.to);
         if let (Some(mover), Some(to)) = (world.movers.get_mut(&mid), to_node) {
             if mover.arrive(to).is_ok() {
@@ -59,13 +65,14 @@ mod tests {
     #[test]
     fn advances_progress_each_tick() {
         let mut loaded = load_scene_str(SCENE, 0).unwrap();
-        // Use a generous dt so we can predict progress.
         loaded.world.dt = 0.1;
         let mut events = Vec::new();
-        lifecycle::run(&mut loaded.world, &mut events);
+        let mut spawn_scratch = Vec::new();
+        let mut arrival_scratch = Vec::new();
+        lifecycle::run(&mut loaded.world, &mut events, &mut spawn_scratch);
         events.clear();
 
-        run(&mut loaded.world, &mut events);
+        run(&mut loaded.world, &mut events, &mut arrival_scratch);
         for m in loaded.world.movers.values() {
             match m.state() {
                 MoverState::Traveling { progress, .. } => {
@@ -80,14 +87,15 @@ mod tests {
     #[test]
     fn emits_arrived_when_progress_saturates() {
         let mut loaded = load_scene_str(SCENE, 0).unwrap();
-        // Force a single huge step so progress saturates immediately.
         loaded.world.dt = 100.0;
         let mut events = Vec::new();
-        lifecycle::run(&mut loaded.world, &mut events);
+        let mut spawn_scratch = Vec::new();
+        let mut arrival_scratch = Vec::new();
+        lifecycle::run(&mut loaded.world, &mut events, &mut spawn_scratch);
         events.clear();
 
-        let arrivals = run(&mut loaded.world, &mut events);
-        assert_eq!(arrivals, 3, "all three movers arrive");
+        let arrivals = run(&mut loaded.world, &mut events, &mut arrival_scratch);
+        assert_eq!(arrivals, 3);
         assert_eq!(events.len(), 3);
         for e in &events {
             assert!(matches!(e, SimEvent::MoverArrived { .. }));

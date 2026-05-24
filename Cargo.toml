@@ -32,6 +32,7 @@ rand_pcg = "0.3"
 rand = { version = "0.8", default-features = false }
 glam = { version = "0.27", features = ["serde"] }
 hecs = "0.10"
+dhat = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

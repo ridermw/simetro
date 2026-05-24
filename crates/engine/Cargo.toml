@@ -21,3 +21,6 @@ rand_pcg = { workspace = true }
 rand = { workspace = true }
 glam = { workspace = true }
 hecs = { workspace = true }
+
+[dev-dependencies]
+dhat = { workspace = true }

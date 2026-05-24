@@ -7,34 +7,38 @@
 
 use simetro_protocol::SimEvent;
 
-use crate::components::{MoverState, PathId};
+use crate::components::{MoverId, MoverState, NodeId, PathId};
 use crate::world::World;
+
+/// Scratch entry: `(mover, next_path, from_node)`.
+pub type RouteScratch = (MoverId, PathId, NodeId);
 
 /// For every mover that is `Waiting`, pick the lowest-id outgoing path
 /// from the current node and begin travel. Emits `MoverDeparted`.
-pub fn run(world: &mut World, events: &mut Vec<SimEvent>) {
-    let mut transitions: Vec<(crate::components::MoverId, PathId, u32, u32)> = Vec::new();
+///
+/// `scratch` is reused across ticks (zero-alloc target — PLAN §14).
+pub fn run(world: &mut World, events: &mut Vec<SimEvent>, scratch: &mut Vec<RouteScratch>) {
+    scratch.clear();
 
     for (mid, mover) in &world.movers {
         if let MoverState::Waiting { at } = mover.state() {
-            // Find lowest-id path whose `from` is `at`.
-            if let Some((pid, path)) = world
+            if let Some((pid, _path)) = world
                 .paths
                 .iter()
                 .find(|(_, p)| p.from == at)
-                .map(|(pid, p)| (*pid, p.clone()))
+                .map(|(pid, p)| (*pid, p))
             {
-                transitions.push((*mid, pid, at.0, path.to.0));
+                scratch.push((*mid, pid, at));
             }
         }
     }
 
-    for (mid, pid, from_node, _to_node) in transitions {
+    for &(mid, pid, from_node) in scratch.iter() {
         if let Some(mover) = world.movers.get_mut(&mid) {
             if mover.begin_travel(pid).is_ok() {
                 events.push(SimEvent::MoverDeparted {
                     mover: mid.0,
-                    from_node,
+                    from_node: from_node.0,
                     path: pid.0,
                 });
             }
@@ -46,7 +50,6 @@ pub fn run(world: &mut World, events: &mut Vec<SimEvent>) {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::components::MoverId;
     use crate::loader::load_scene_str;
     use crate::systems::{lifecycle, movement};
 
@@ -55,53 +58,43 @@ mod tests {
     #[test]
     fn arrived_movers_get_rerouted() {
         let mut loaded = load_scene_str(SCENE, 0).unwrap();
-        loaded.world.dt = 100.0; // saturate immediately
+        loaded.world.dt = 100.0;
         let mut events = Vec::new();
-        lifecycle::run(&mut loaded.world, &mut events);
+        let mut spawn = Vec::new();
+        let mut arrivals = Vec::new();
+        let mut routes = Vec::new();
+        lifecycle::run(&mut loaded.world, &mut events, &mut spawn);
         events.clear();
-        movement::run(&mut loaded.world, &mut events); // arrive
+        movement::run(&mut loaded.world, &mut events, &mut arrivals);
         events.clear();
-        run(&mut loaded.world, &mut events); // re-depart
-        assert_eq!(events.len(), 3, "all three movers re-depart");
+        run(&mut loaded.world, &mut events, &mut routes);
+        assert_eq!(events.len(), 3);
         for e in &events {
             assert!(matches!(e, SimEvent::MoverDeparted { .. }));
         }
-        // All movers should be Traveling again.
         for m in loaded.world.movers.values() {
-            assert!(matches!(
-                m.state(),
-                crate::components::MoverState::Traveling { .. }
-            ));
+            assert!(matches!(m.state(), MoverState::Traveling { .. }));
         }
     }
 
     #[test]
     fn cycle_completes_in_expected_steps() {
-        // Demo scene is a→b→c→a; each mover should return to its start
-        // node after exactly 3 arrivals.
         let mut loaded = load_scene_str(SCENE, 0).unwrap();
-        loaded.world.dt = 100.0; // each tick = full traversal
+        loaded.world.dt = 100.0;
         let mut events = Vec::new();
-        lifecycle::run(&mut loaded.world, &mut events);
+        let mut spawn = Vec::new();
+        let mut arrivals = Vec::new();
+        let mut routes = Vec::new();
+        lifecycle::run(&mut loaded.world, &mut events, &mut spawn);
 
-        // After 3 arrivals each mover should be back at its starting node.
-        // m1 starts at a (path ab from a). After ab→arrived@b,
-        //   bc→arrived@c, ca→arrived@a. So mover 0 should be Waiting at a.
         for _ in 0..3 {
             events.clear();
-            movement::run(&mut loaded.world, &mut events); // arrive
-            run(&mut loaded.world, &mut events); // re-depart
+            movement::run(&mut loaded.world, &mut events, &mut arrivals);
+            run(&mut loaded.world, &mut events, &mut routes);
         }
-        // We've done 3 arrivals + 3 redepartures, so movers are now
-        // Traveling on their 4th leg. To check position we step one more
-        // arrival without redeparture.
         events.clear();
-        movement::run(&mut loaded.world, &mut events);
+        movement::run(&mut loaded.world, &mut events, &mut arrivals);
         let m1 = loaded.world.movers.get(&MoverId(0)).unwrap();
-        // After 4 arrivals, m1 has traversed ab, bc, ca, ab (returned to b).
-        assert!(matches!(
-            m1.state(),
-            crate::components::MoverState::Waiting { .. }
-        ));
+        assert!(matches!(m1.state(), MoverState::Waiting { .. }));
     }
 }
