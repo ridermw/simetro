@@ -38,6 +38,8 @@ import { SnapshotBuffer } from "./store/snapshots";
 import { EventQueue } from "./store/events";
 import { AudioEngine } from "./audio/engine";
 import { fallbackArrivalTone, toneForShape } from "./audio/mappings";
+import { InspectorPanel } from "./inspector/panel";
+import { HoverTooltip } from "./inspector/hover";
 
 interface AppState {
   theme: ThemePayload;
@@ -45,6 +47,10 @@ interface AppState {
   events: EventQueue;
   animations: AnimationEngine;
   audio: AudioEngine;
+  inspector: InspectorPanel | null;
+  hover: HoverTooltip | null;
+  /** id_map from the last Static message, for hover labels. */
+  idMap: Record<number, string>;
   lastSnapshotAt: number;
   /** Estimated ms between snapshots; refined as we receive more. */
   snapshotPeriodMs: number;
@@ -64,6 +70,9 @@ function createAppState(): AppState {
     events: new EventQueue(),
     animations: new AnimationEngine(),
     audio: new AudioEngine(),
+    inspector: null,
+    hover: null,
+    idMap: {},
     lastSnapshotAt: 0,
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
     moverScratch: [],
@@ -81,7 +90,11 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
   switch (msg.type) {
     case "Static":
       state.theme = msg.payload.theme;
+      state.idMap = msg.payload.id_map;
       renderer.warm(state.theme);
+      if (state.hover !== null) {
+        state.hover.setSnapshot(state.snapshots.current(), state.idMap);
+      }
       break;
     case "Snapshot": {
       const now = nowMs();
@@ -94,6 +107,9 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       }
       state.lastSnapshotAt = now;
       state.snapshots.push(msg.payload);
+      if (state.hover !== null) {
+        state.hover.setSnapshot(msg.payload, state.idMap);
+      }
       break;
     }
     case "Events": {
@@ -102,7 +118,6 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       for (const ev of msg.payload) {
         state.events.enqueue(ev);
         state.animations.spawn(ev, now);
-        // Audio: ping on arrivals, pitched by the destination node's shape.
         if (ev.tag === "MoverArrived" && snap !== null) {
           const node = findArrivalNode(snap, ev.at_node);
           const tone = node !== undefined ? toneForShape(node.shape) : fallbackArrivalTone();
@@ -112,9 +127,13 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       break;
     }
     case "AgentReport":
+      if (state.inspector !== null) {
+        state.inspector.show(msg.payload);
+      }
+      return;
     case "Fault":
     case "Warning":
-      // Wired in Steps 20-21.
+      // Wired in Step 21 (UI shell + overlays).
       return;
   }
 }
@@ -162,6 +181,13 @@ function boot(): void {
   const renderer = new Renderer(canvas);
   renderer.warm(DEFAULT_THEME);
   const state = createAppState();
+
+  const appRoot = document.getElementById("app");
+  if (appRoot !== null) {
+    state.inspector = new InspectorPanel(appRoot);
+    state.hover = new HoverTooltip(appRoot);
+    state.hover.attach(canvas);
+  }
 
   window.addEventListener("resize", () => resize(canvas));
 
