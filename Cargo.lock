@@ -1026,6 +1026,7 @@ dependencies = [
  "hecs",
  "rand",
  "rand_pcg",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
