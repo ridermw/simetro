@@ -20,8 +20,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use simetro_engine::{
-    encode_snapshot, encode_static, load_error_to_fault, load_scene_str, AgentHost, LoadError,
-    LoadedScene, RunState, SpeedTuner, TickRunner, World,
+    encode_snapshot, encode_static, encode_static_parts, load_error_to_fault, load_scene_str,
+    AgentHost, LoadError, LoadedScene, RunState, SpeedTuner, TickRunner, World,
 };
 use simetro_protocol::{Envelope, SimEvent, SimMessage, SnapshotPayload};
 use tauri::{AppHandle, Emitter};
@@ -443,6 +443,25 @@ fn tick_and_emit(app: &AppHandle, state: &mut SimState, ticks_since_snapshot: &m
         );
         state.seq += 1;
         return;
+    }
+
+    if state.runner.topology_dirty() {
+        state.last_static = encode_static_parts(
+            &state.meta.name,
+            &state.meta.theme,
+            &state.meta.id_map,
+            &state.world,
+        );
+        emit_sim(app, state.seq, SimMessage::Static(state.last_static.clone()));
+        state.seq += 1;
+        encode_snapshot(&state.world, &mut state.snapshot_buf);
+        emit_sim(
+            app,
+            state.seq,
+            SimMessage::Snapshot(state.snapshot_buf.clone()),
+        );
+        state.seq += 1;
+        *ticks_since_snapshot = 0;
     }
 
     // Emit semantic events (skip tick-only batches).

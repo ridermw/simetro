@@ -53,6 +53,7 @@ pub struct TickRunner {
     /// present, every successful agent action is written here.
     agent_log: Option<AgentLog>,
     last_arrivals: u32,
+    topology_dirty: bool,
 }
 
 impl std::fmt::Debug for TickRunner {
@@ -127,6 +128,13 @@ impl TickRunner {
         self.last_arrivals
     }
 
+    /// True when the most recent tick changed nodes or paths. Drivers
+    /// should re-emit a static payload and fresh snapshot before continuing.
+    #[must_use]
+    pub fn topology_dirty(&self) -> bool {
+        self.topology_dirty
+    }
+
     /// Advance the world by exactly one fixed timestep. Returns the
     /// number of mover arrivals this tick.
     ///
@@ -143,6 +151,7 @@ impl TickRunner {
             self.events.clear();
             self.messages.clear();
             self.last_arrivals = 0;
+            self.topology_dirty = false;
             return 0;
         }
         if matches!(world.state, RunState::Idle | RunState::Loaded) {
@@ -152,6 +161,7 @@ impl TickRunner {
 
         self.events.clear();
         self.messages.clear();
+        self.topology_dirty = false;
         lifecycle::run(world, &mut self.events, &mut self.spawn_scratch);
         let arrivals = movement::run(world, &mut self.events, &mut self.arrival_scratch);
 
@@ -191,6 +201,10 @@ impl TickRunner {
                         let outcome = apply_action(world, &agent_id, &action, &mut self.events);
                         if let Outcome::Rejected(w) = outcome {
                             self.messages.push(SimMessage::Warning(w));
+                        } else if matches!(outcome, Outcome::Applied)
+                            && action_changes_topology(&action)
+                        {
+                            self.topology_dirty = true;
                         }
                         self.events.push(SimEvent::AgentDecided {
                             agent_id: agent_id.clone(),
@@ -229,6 +243,15 @@ impl TickRunner {
             }
         }
     }
+}
+
+fn action_changes_topology(action: &simetro_protocol::Action) -> bool {
+    matches!(
+        action,
+        simetro_protocol::Action::PlacePiece { .. }
+            | simetro_protocol::Action::ConnectPieces { .. }
+            | simetro_protocol::Action::RemovePiece { .. }
+    )
 }
 
 /// Convenience wrapper for callers that don't need a long-lived
@@ -365,6 +388,32 @@ mod tests {
         }
     }
 
+    struct ValidAuthorAgent;
+    impl Agent for ValidAuthorAgent {
+        fn id(&self) -> &str {
+            "author"
+        }
+        fn interval_ticks(&self) -> u32 {
+            1
+        }
+        fn observe(&mut self, _w: &World) -> Observation {
+            Observation::default()
+        }
+        fn act(&mut self, _o: &Observation) -> Result<AgentReport, AgentError> {
+            Ok(AgentReport {
+                tick: 0,
+                agent_id: "author".into(),
+                considered: vec![],
+                chosen: Some(Action::PlacePiece {
+                    piece_kind: "circle".into(),
+                    pos: [10.0, 20.0],
+                }),
+                rationale: "place a visible node".into(),
+                confidence: 1.0,
+            })
+        }
+    }
+
     #[test]
     fn agent_panic_emits_fault_and_pauses_engine() {
         let mut loaded = load_scene_str(SCENE, 0).unwrap();
@@ -390,6 +439,18 @@ mod tests {
             SimMessage::Warning(WarningPayload::InvalidAction { agent_id, reason })
                 if agent_id == "author" && reason.contains("unsupported piece_kind")
         )));
+        assert!(!runner.topology_dirty());
+    }
+
+    #[test]
+    fn valid_author_action_marks_topology_dirty() {
+        let mut world = World::new(0);
+        let mut runner = TickRunner::new();
+        runner.register_agent(AgentHost::new(Box::new(ValidAuthorAgent)));
+        runner.tick_once(&mut world);
+
+        assert!(runner.topology_dirty());
+        assert_eq!(world.nodes.len(), 1);
     }
 
     /// Once an agent panics and the world is `Faulted`, subsequent
