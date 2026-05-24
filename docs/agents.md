@@ -122,6 +122,156 @@ The plugin host must catch traps the same way `AgentHost` catches panics:
 one bad guest can produce a typed fault or warning, but it must not unwind
 through the engine tick or bypass deterministic scheduling.
 
+## Running with a live LLM (P2.A)
+
+> **Status (end of P2.A autonomous week).** The engine-side
+> machinery is in place: request/reply lifecycle (PR #12),
+> addressable DecisionTimeline (PR #13), `AgentRuntime` orchestrator
+> (PR #14), AgentLog v2 schema + secret-pattern redactor
+> (PR #8 + #15), system prompt + `LlmError` mapping
+> (PR #10 + #11), and tool-spec round-trip tests (PR #9). The
+> remaining pieces are the engine-side `LlmAgent` Agent-trait
+> wrapper, loader support for `kind: "llm"`, scene wiring, the real
+> `copilot --acp` bridge subprocess (gated on a captured
+> happy-path fixture; see spec §2.5), and the recorded-fixture test
+> suite. Bracket your expectations accordingly.
+
+### Conceptual model
+
+An LLM-backed agent does **not** block the engine. Decisions are
+async behind a deterministic outbox/inbox boundary:
+
+```text
+   Tick N             Tick N+1                  Tick N+k (k ≤ deadline)
+     │                   │                            │
+     ▼                   ▼                            ▼
+  ┌────────┐         ┌────────┐                  ┌────────────┐
+  │  emit  │         │ engine │   bridge fulfils │  drain     │
+  │ Agent  │──┐      │ ticks  │   in background  │ inbox →    │
+  │Request │  │      │ on the │ ─ ─ ─ ─ ─ ─ ─ ─▶ │ apply      │
+  │ to     │  │      │ deter- │                  │ Action     │
+  │ outbox │  │      │ minist │                  │ via tools/ │
+  └────────┘  │      │ ic     │                  │ actions    │
+              ▼      │ path   │                  └────────────┘
+        (bounded     └────────┘                        │
+         queue,                                        ▼
+         stable                                   AgentLog v2
+         id order)                                  row
+```
+
+Spec §10 has the full architecture diagram; the request-lifecycle
+formalism is in §10.2.1.
+
+### Engine-side state machines
+
+Two cooperating types own the deterministic part of the boundary:
+
+- [`simetro_engine::lifecycle::RequestLifecycle`] — the spec §10.2.1
+  state machine: `pending` / `completed` / `expired` keyed by full
+  `RequestId { timeline_id, agent_id, source_tick, attempt }`. Drain
+  rules in order: duplicate → stale → on-time apply → unknown-id.
+  Re-issue with `attempt += 1` if `attempt < MAX_ATTEMPTS` (default
+  2; total attempts allowed = 3); else `GiveUp`.
+- [`simetro_protocol::DecisionTimeline`] — first-class, addressable,
+  version-pinned ledger of every decision (spec §3 task 7). Each
+  entry carries `(TimelineId, source_tick, agent_id, status,
+  attempts, response?, last_warning?, last_expired_tick?)`. Sliding
+  window (default 4096 entries); `TimelineId` is monotonic and never
+  reused even after eviction. Bundle-export snapshot via
+  `DecisionTimeline::snapshot()`.
+
+[`simetro_engine::AgentRuntime`] is the single place that owns both
+and synchronizes them. Callers go through `AgentRuntime` so the two
+state machines cannot drift:
+
+```rust
+let mut rt = AgentRuntime::new();
+
+// Engine side: agent fires
+match rt.enqueue_decision("trafficker", obs_json, deadline_ticks, current_tick) {
+    EnqueueDecisionOutcome::Enqueued { id } => { /* timeline id for the inspector */ }
+    EnqueueDecisionOutcome::BackpressureDropped { message } => { /* emit warning */ }
+}
+
+// Bridge side: pull pending requests
+let requests: Vec<AgentRequest> = rt.drain_outbox();
+
+// Bridge side: write replies back
+match rt.process_reply(reply, current_tick) {
+    ProcessReplyOutcome::Apply { id, agent_id, chosen, .. } => { /* apply via apply_action() */ }
+    ProcessReplyOutcome::Drop { message } => { /* emit warning */ }
+}
+
+// Engine side: every tick, expire overdue
+for outcome in rt.expire_overdue(current_tick) {
+    match outcome {
+        ExpireOutcome::Reissued { id, warning } => { /* warning visible; request is back in outbox */ }
+        ExpireOutcome::GaveUp { id, message } => { /* terminal */ }
+    }
+}
+```
+
+### Bridge process boundary
+
+`simetro-bridge` (in `crates/agent-bridge/`) talks to one or more
+[`simetro_agent_bridge::Backend`] implementations. Today the live
+backend is a stub (`CopilotBackend` returns
+`LlmError::NotAuthenticated`); the real ACP subprocess wiring is
+gated on capturing a known-good happy-path frame trace from
+`copilot --acp` (see spec §2.5 and the "Gated on captured fixture"
+bullet in `docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`
+§14). The `MockBackend` produces scripted responses for unit tests
+and recorded-fixture replay.
+
+When the real subprocess wiring lands, the bridge will be its own
+binary spawned by either the Tauri shell or `simetro-headless`. The
+stdio wire protocol is the same `simetro-protocol` `Envelope<T>`
+types already used by the WebSocket transport, plus per-message
+`schema_version: u32` so a version mismatch fails fast (see
+`crates/protocol/src/lib.rs`).
+
+### Security controls (spec §5 + §7)
+
+Every `raw_response` is fed through
+[`simetro_engine::redactor::redact_secrets`] BEFORE being capped /
+written to disk. Ten authoritative patterns: Anthropic keys, OpenAI
+keys, GitHub fine-grained PAT, GitHub modern tokens, GitHub legacy
+OAuth, AWS access keys, Google API keys, Azure OpenAI, JWT shape,
+PEM private-key blocks. The pattern list is the single source of
+truth in `crates/engine/src/redactor.rs::PATTERN_DEFINITIONS`; the
+drift-detection test
+`redactor::tests::drift_check_against_security_threat_model_5_3`
+fails CI if the list moves out of sync with
+`docs/superpowers/analysis/p2a-security-threat-model.md` §5.3 or
+`docs/superpowers/analysis/p2a-error-map.md` §4. Adding/removing a
+pattern requires updating all three locations in one PR with a
+spec §2.7.4 security-review pass.
+
+XPIA framing: the bridge wraps every observation in
+`<OBS-${nonce}>...</OBS-${nonce}>` with a per-request nonce. The
+system prompt (`crates/agent-bridge/prompts/system.md`) declares
+this contract and instructs the model to ignore any text outside
+the OBS block. See spec §7.1.
+
+### Determinism invariants
+
+These hold even when the LLM bridge is stalled, crashed, or lagging
+arbitrarily far behind:
+
+- Non-LLM agents (e.g. `SpeedTuner`) produce a bit-for-bit identical
+  `hash_run` across runs (test:
+  `crates/engine/tests/determinism/llm_stalled.rs` — to be added with
+  task 11 fixture suite).
+- The LLM's reply is applied at a **known** tick boundary. If the
+  reply arrives later than the deadline, the engine emits
+  `Warning::Behind { agent_id, lag_frames }` and re-issues. No
+  "apply at unpredictable tick" race.
+- `RequestId` ordering is stable (`agent_id`, `timeline_id`,
+  `attempt`); never derived from wall-clock or arrival order.
+- The DecisionTimeline `next_id` is monotonic for the entire engine
+  run and survives sliding-window eviction — replay can address any
+  past decision unambiguously.
+
 ## Author actions
 
 Three `Action`s (`PlacePiece`, `ConnectPieces`, `RemovePiece`) are
