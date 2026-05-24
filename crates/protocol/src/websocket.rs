@@ -133,7 +133,10 @@ mod tests {
     fn sim_warning_text_roundtrips() {
         let envelope = Envelope::new(
             9,
-            SimMessage::Warning(WarningPayload::Behind { lag_frames: 2 }),
+            SimMessage::Warning(WarningPayload::Behind {
+                lag_frames: 2,
+                agent_id: None,
+            }),
         );
 
         let text = encode_text(&envelope).expect("encode websocket text");
@@ -142,7 +145,10 @@ mod tests {
         assert_eq!(decoded.seq, 9);
         assert!(matches!(
             decoded.payload,
-            SimMessage::Warning(WarningPayload::Behind { lag_frames: 2 })
+            SimMessage::Warning(WarningPayload::Behind {
+                lag_frames: 2,
+                agent_id: None
+            })
         ));
     }
 

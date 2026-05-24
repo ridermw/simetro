@@ -138,7 +138,11 @@ export type FaultPayload =
 
 export type WarningPayload =
   | { kind: "invalid_action"; agent_id: string; reason: string }
-  | { kind: "behind"; lag_frames: number }
+  // `agent_id` is set when the engine attributes lag to a specific
+  // agent (e.g. a live LLM bridge that missed its reply deadline).
+  // Omitted for engine-wide pacing issues. Optional + back-compat
+  // with v1 payloads that never carried this field.
+  | { kind: "behind"; lag_frames: number; agent_id?: string }
   | { kind: "tick_over_budget"; ms: number }
   | { kind: "agent_log_slow" };
 

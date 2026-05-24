@@ -86,10 +86,13 @@ as a malformed or unsafe author action (Place/Connect/Remove; see
 [`agents.md` § Author actions](agents.md#author-actions)).
 Expected during P1 while policies are still narrow.
 
-### `Warning::Behind { lag_frames }`
+### `Warning::Behind { lag_frames, agent_id }`
 
 **Meaning.** The frontend is rendering N frames behind the engine.
-Usually a tab-switch artifact; clears on its own.
+Usually a tab-switch artifact; clears on its own. When `agent_id` is
+present, the lag is attributable to a specific agent (typically a
+live LLM bridge that missed its reply deadline) rather than to
+engine-wide pacing; investigate the named agent first.
 
 ### `Warning::TickOverBudget { ms }`
 
