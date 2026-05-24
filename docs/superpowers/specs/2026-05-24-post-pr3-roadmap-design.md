@@ -1,7 +1,7 @@
 # simetro — Post-PR-#3 Roadmap (Phase 2 + Phase 3) — Design Spec
 
 **Date:** 2026-05-24
-**Status:** Active (approved via PR P2.A0.1)
+**Status:** Pending — to become Active upon merge of PR #4 (P2.A0.1)
 **Authors:** Copilot CLI (Claude Opus 4.7), on behalf of @ridermw
 **Supersedes:** session-state brainstorming draft (not checked in)
 
@@ -59,7 +59,7 @@ Confirmed user decisions for this design (in chronological order):
 | LLM-as-author | **In P2.A** (Issue 4A) — add `define_resource`, `add_producer`, `add_consumer`, `set_goal` tool specs alongside the existing five |
 | Merge policy this week | **Self-merge with guardrails** (see §2.6) — `ci-ok` green, no open conversations, in-scope, feature-flag default-off |
 | Active-week scope | **P2.A → P2.C only** — P2.D / P2.E / P3.A queue for after user return |
-| Branch strategy | **Single long-running working branch** with frequent commits; PRs cut against it; merge train into `main` |
+| Branch strategy | **Every PR targets `main` directly** (decided post-spec via rubber-duck pass) — feature branches cut from `origin/main`, PR'd to `main`, merged, branch removed. The long-running working-branch model is **superseded**. |
 | Stop conditions | **External dep unreachable** only — everything else gets retried with autonomy, captured in PR body, or queued as a follow-up |
 | PR review policy | **Always request Copilot Code Review** (`@copilot review`) on every PR opened during the week |
 
@@ -167,26 +167,37 @@ intervention** until the user returns. The constraints below override
 any conflicting workflow heuristic; they are the actual operating
 contract.
 
-### 2.6.1 Merge policy — "self-merge with guardrails"
+### 2.6.1 Merge policy — "self-merge with adversarial review"
 
-The agent **may** merge its own PRs into `main` (and into the
-single long-running working branch) **iff all** of the following hold
-simultaneously:
+The agent **may** merge its own PRs into `main` **iff all** of the
+following hold simultaneously:
 
-1. `ci-ok` is green on the PR head SHA (branch protection enforces this).
+1. `ci-ok` is green on the PR head SHA. **(Mechanically enforced by
+   branch protection.)**
 2. There are **zero unresolved review conversations** on the PR.
-3. The change is in scope per this spec (§3 / §4 / §5).
+   **(Mechanically enforced by branch protection, but see §2.7 below
+   — the author can technically resolve their own conversations, so
+   this gate is only as strong as the adversarial-review discipline
+   that precedes it.)**
+3. The change is in scope per this spec (§3-5, i.e. P2.A through
+   P2.C). **(Honor-system; author judgment.)**
 4. Every new capability is feature-flag-gated **default-off** so a
    regression does not corrupt the deterministic default world.
+   **(Honor-system; reviewable in diff.)**
 5. The PR body cites the spec section it implements and lists the
-   tests added.
+   tests added. **(Honor-system; reviewable in PR description.)**
+6. The adversarial-review workflow defined in §2.7 has run on the
+   final PR head SHA, with all CRITICAL and HIGH findings either
+   fixed in code or documented as deliberate deferrals in the PR
+   body. **(Honor-system; logged in the SQL ledger and PR body.)**
 
 Any PR that fails any one of these gates **must NOT be merged** —
 queue the failure into the PR description, post a comment, and move on
 to the next ready task. Branch protection on `main` (already
 configured: `ci-ok` required, conversations required,
 `enforce_admins=true`, no force pushes) is the safety net behind
-guardrails 1–2.
+guardrails 1–2 only; guardrails 3–6 rely on the agent's own
+discipline.
 
 ### 2.6.2 Active-week scope: P2.A → P2.C only
 
@@ -197,16 +208,26 @@ they wait for user return. The "do not idle" rule from §2.5 means:
 within scope, pick the next ready task from the same phase or the next
 phase; it does NOT mean drift into out-of-scope phases.
 
-### 2.6.3 Branch strategy: single long-running branch
+### 2.6.3 Branch strategy: every PR targets `main` directly
 
-All week-of-autonomy work happens on **one** long-running working
-branch (`ridermw/post-pr3-roadmap-spec` continues to serve, or a
-sibling branch like `ridermw/p2a-live-llm` if a cleaner cut is
-preferred). PRs are cut **from feature sub-branches into the working
-branch**, then the working branch is merged into `main` periodically
-(once `ci-ok` is green on the working branch tip). No stacked-PR
-ladder; one long branch keeps merge complexity contained and matches
-the user's stated preference.
+All week-of-autonomy work cuts **fresh feature branches from
+`origin/main`** for each PR. The previously-proposed long-running
+working branch (`ridermw/post-pr3-roadmap-spec`) is **retired** after
+PR #4 (the one carrying these amendments) merges, because that model
+silently bypassed branch protection on sub-PRs into the working
+branch (rubber-duck CRITICAL #2 identified the gap).
+
+Per-PR sequence:
+
+1. From the main checkout: `git fetch origin main`.
+2. `git worktree add ~/git/copilot-worktrees/simetro/<slug> -b feat/<slug> origin/main`.
+3. Implement → adversarial review (§2.7) → commit → push → open PR
+   against `main` → Copilot Code Review → CI → merge → remove
+   worktree.
+
+Strict serial merge: at most one code PR open at a time, with at most
+one doc-only PR open in parallel (per the workspace operating contract
+captured outside this spec).
 
 ### 2.6.4 Stop conditions — "external dep unreachable" only
 
@@ -248,12 +269,89 @@ Before opening a PR:
 - Spec section cited in the PR body.
 - Tests added: at minimum one unit + one path covered.
 
-After opening a PR:
+After opening a PR (in order):
 
-- Request Copilot Code Review.
-- Watch `ci-ok` to green.
-- Resolve all conversations Copilot Code Review opens.
-- Self-merge iff §2.6.1 guardrails pass.
+1. Request Copilot Code Review (`@copilot review`).
+2. **Run the adversarial-review workflow defined in §2.7 against the
+   PR diff** before responding to any Copilot Code Review comment.
+3. Fix all CRITICAL and HIGH findings from §2.7 + Copilot Code Review.
+4. Watch `ci-ok` to green on the post-fix HEAD SHA.
+5. Resolve all conversations Copilot Code Review opens (each must have
+   a code fix or a justified TODO comment — never silent resolve).
+6. Self-merge iff §2.6.1 guardrails pass.
+
+---
+
+## 2.7. Adversarial review workflow (mandatory per PR)
+
+Because §2.6.1 guardrail 2 ("zero unresolved conversations") is
+technically resolvable by the author themselves — i.e. Copilot Code
+Review is not an independent reviewer in the same sense a separate
+human is — the merge gate is only as strong as the adversarial-review
+discipline that precedes it. Every PR opened during the
+autonomous-execution week runs the following two-pass review locally
+before any conversation is marked resolved:
+
+### 2.7.1 Required passes
+
+**Pass A — `code-review` sub-agent** runs on every PR regardless of
+content. Inputs: the PR diff range, the PR body, the spec section
+cited. The pass surfaces findings categorized
+CRITICAL / HIGH / MEDIUM / LOW.
+
+**Pass B — `security-review` sub-agent** runs on every PR that
+touches any of:
+
+- `crates/engine/`
+- `crates/protocol/`
+- `crates/agent-bridge/`
+- `src-tauri/`
+- `crates/engine/src/agent_log.rs` specifically
+- any code path that spawns a subprocess, parses untrusted JSON,
+  reads/writes files, or speaks to the network
+- any change to `.github/copilot-instructions.md` or `AGENTS.md`
+  (because those steer every future Copilot Code Review pass and
+  drift in either weakens the entire week's review signal)
+
+Pure doc / fixture / test-only PRs may skip Pass B with a one-line
+justification in the PR body; standing-instructions changes never
+skip it.
+
+### 2.7.2 Disposition of findings
+
+For each finding from passes A and B:
+
+- **CRITICAL** — must be fixed in code on the same branch before
+  merge. No deferral.
+- **HIGH** — must be fixed in code OR explicitly logged as a
+  deliberate deferral in the PR body, with rationale and a tracking
+  entry in the SQL review-findings ledger.
+- **MEDIUM** — fix or defer; deferred mediums get a TODO comment
+  near the affected code citing the finding.
+- **LOW / nit** — fix at author discretion; record either way.
+
+A finding categorized "user-decision-needed" (e.g. token scope
+reduction, repo settings change) gets logged as such and surfaced in
+PR #4's review trail rather than treated as a blocker.
+
+### 2.7.3 Ordering rule
+
+The adversarial-review passes run on the **final HEAD SHA** that will
+be merged. If new commits land after the passes ran, the passes must
+re-run on the new HEAD. The merge button does not get pressed until
+the SHA the passes ran against matches the SHA being merged.
+
+### 2.7.4 Adversarial review of the standing instructions themselves
+
+Any PR that modifies `AGENTS.md`, `.github/copilot-instructions.md`,
+or `docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`
+**must** include a security-review pass specifically checking whether
+the change weakens any prior safety rule — for example, narrowing a
+"never X" to a conditional "never X unless Y," removing a sentence
+that previously guided Copilot Code Review against a specific bug
+class, or shrinking the scope of a textContent/escaping rule. This
+rule exists because standing-instructions drift compounds across the
+entire week's PRs.
 
 ---
 
@@ -508,10 +606,17 @@ gates so future regressions are caught at PR time.
 
 ---
 
-## 7. Phase P2.E — World quality + dev/ops polish (parallel)
+## 7. Phase P2.E — World quality + dev/ops polish (DEFERRED)
 
-Runs opportunistically alongside P2.A–D — each PR is small and
-independent. Pulled from the gallery work after PR #3.
+> **DEFERRED to user return.** §2.6.2 explicitly excludes P2.E from
+> the autonomous-execution week. The content below is the planned
+> shape; nothing in this section is in-scope for autonomous PRs this
+> week. Previously the section header described P2.E as running
+> "opportunistically alongside P2.A–D"; that wording is superseded by
+> §2.6.2.
+
+Pulled from the gallery work after PR #3. Each PR is small and
+independent and will run after the user returns to active oversight.
 
 ### Acceptance criteria
 
@@ -828,9 +933,9 @@ Decisions resolved (committed into the body above):
 | §1 | DecisionTimeline | First-class object (3) — §3 task 7 |
 | §1 | LLM-as-author | In P2.A (4A) — §3 task 9 |
 | §2.5 | Autonomy live-call policy | Confirmed: recorded fixtures + human smoke |
-| §2.6 | Merge policy | Self-merge with guardrails |
+| §2.6 | Merge policy | Self-merge with adversarial review (§2.6.1 + §2.7) |
 | §2.6 | Scope this week | P2.A → P2.C only |
-| §2.6 | Branch strategy | Single long-running working branch |
+| §2.6 | Branch strategy | Every PR targets `main` directly (superseded original "single long-running working branch" model — see §2.6.3) |
 | §2.6 | Stop conditions | External dependency unreachable only |
 | §2.6 | PR review policy | Copilot Code Review on every PR |
 

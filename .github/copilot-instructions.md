@@ -52,13 +52,18 @@ When reviewing PRs, focus on:
    `Fault` or `Warning` with the user-visible behavior documented. No
    `unwrap`, no silent swallow, no `rescue StandardError`-equivalents.
 3. **Scene safety.** Scene selection uses stable `scene_id` via the
-   registry. Failed loads preserve the previous scene. Live-LLM
-   scenes are feature-gated and excluded from CI.
+   registry. **Reject any frontend-supplied file path** — the backend
+   registry is the only allowed source of scene file locations. Failed
+   loads preserve the previous scene. Live-LLM scenes are
+   feature-gated and excluded from CI.
 4. **Process boundary.** The bridge is a separate process. The engine
    never imports an LLM crate or `tokio::net`. Wire protocol carries
    `schema_version: u32` on every envelope.
-5. **Safe text.** All JSON-derived UI strings render via `textContent`
-   or an equivalent safe API.
+5. **Safe text.** **All user-facing text** must render via
+   `textContent` (or an equivalent safe API). This explicitly includes
+   LLM-produced strings (rationale, raw_response, refusal messages),
+   which are the highest-risk XSS vector — never `innerHTML` for any
+   string that ultimately came from JSON, user input, or an LLM.
 6. **Catalog alignment.** Frontend catalog entries, Tauri scene
    registry entries, and `games/*.json` files must stay aligned.
 7. **File watcher determinism.** Debounce file edits and reuse the

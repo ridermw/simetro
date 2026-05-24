@@ -29,8 +29,9 @@ deferred" stance.
   spawned as a subprocess from the `simetro-bridge` binary. No HTTP
   client, no API keys — `gh auth status` is the only credential.
 - The bridge is a **separate process** from the engine (per
-  PLAN-v4 §3.4 and the post-PR-#3 spec §10). The engine speaks the
-  versioned wire protocol to it.
+  [`docs/historical/PLAN-v4-phase1.md`](docs/historical/PLAN-v4-phase1.md)
+  §3.4 and the post-PR-#3 spec §10). The engine speaks the versioned
+  wire protocol to it.
 - Every `LlmError` variant maps to a typed `Fault` or `Warning`. No
   silent failures.
 
@@ -47,10 +48,16 @@ into live wiring during the current working week.
 ## Safety rules
 
 - Scene selection must be registry-backed by `scene_id`; never pass
-  arbitrary paths from frontend to backend.
+  arbitrary paths from frontend to backend. **Reject any
+  frontend-supplied file path; the backend registry is the only
+  allowed source of scene file locations.**
 - Failed scene loading or switching must preserve the previous running
   scene unless a plan explicitly says otherwise.
-- Render user-facing strings with safe text APIs. Avoid `innerHTML`.
+- **All user-facing text must render via `textContent` (or an
+  equivalent safe API), never `innerHTML`.** This explicitly includes
+  LLM-produced strings (rationale, raw_response, refusal messages,
+  faulted-agent context) — those are the highest-risk XSS vectors
+  because they can be prompt-injected to emit `<script>` payloads.
 - Invalid user/agent actions should produce typed warnings or faults,
   not silent no-ops.
 - Live LLM scenes must be feature-gated; CI never invokes the real
