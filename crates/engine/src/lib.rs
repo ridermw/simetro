@@ -21,6 +21,7 @@ pub mod error;
 pub mod events;
 pub mod lifecycle;
 pub mod loader;
+pub mod redactor;
 pub mod rng;
 pub mod snapshot;
 pub mod state_hash;

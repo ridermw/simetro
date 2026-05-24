@@ -35,6 +35,7 @@ glam = { version = "0.27", features = ["serde"] }
 hecs = "0.10"
 dhat = "0.3"
 sha2 = "0.10"
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-perl"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

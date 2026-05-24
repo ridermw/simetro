@@ -197,6 +197,10 @@ impl AgentLogEntry {
         raw_response: Option<String>,
         provenance: LlmProvenance,
     ) -> Self {
+        // Spec §5.3 secret-pattern redaction MUST happen BEFORE
+        // truncation, so a secret straddling the cap boundary doesn't
+        // leave half its bytes intact on disk.
+        let raw_response = raw_response.map(|s| crate::redactor::redact_string(&s));
         let (raw_response, truncated_bytes) = cap_raw_response(raw_response);
         Self {
             schema_version: SCHEMA_VERSION,
