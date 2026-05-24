@@ -78,8 +78,45 @@ pub struct StaticPayload {
     pub name: String,
     pub palette: Vec<String>,
     pub background_index: u8,
-    /// Numeric handle → original JSON string ID. Used by Inspector for display.
-    pub id_map: std::collections::BTreeMap<u32, String>,
+    /// All nodes in the scene, pre-flattened for the renderer.
+    pub nodes: Vec<NodeView>,
+    /// All paths in the scene with endpoints baked to positions so the
+    /// renderer can group by `color` into one `Path2D` per color and
+    /// hit the PLAN §9 / §14 batching target (~6 draw calls per scene).
+    pub paths: Vec<PathView>,
+    /// JSON string id → numeric id, segregated by section so two kinds
+    /// can share an id space without collision (PLAN §5.2).
+    pub node_names: std::collections::BTreeMap<u32, String>,
+    pub path_names: std::collections::BTreeMap<u32, String>,
+    pub mover_names: std::collections::BTreeMap<u32, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeView {
+    pub id: u32,
+    pub pos: [f32; 2],
+    pub shape: NodeShapeTag,
+    /// Palette index.
+    pub color: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PathView {
+    pub id: u32,
+    pub from_pos: [f32; 2],
+    pub to_pos: [f32; 2],
+    /// Palette index. Renderer groups by this to one `Path2D` per color.
+    pub color: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeShapeTag {
+    Circle,
+    Square,
+    Triangle,
+    Diamond,
+    Hexagon,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -448,18 +485,37 @@ mod tests {
 
     #[test]
     fn static_payload_id_map_roundtrips() {
-        let mut id_map = std::collections::BTreeMap::new();
-        id_map.insert(1u32, "a".to_string());
-        id_map.insert(2u32, "b".to_string());
+        let mut node_names = std::collections::BTreeMap::new();
+        node_names.insert(0u32, "a".to_string());
+        node_names.insert(1u32, "b".to_string());
+        let mut path_names = std::collections::BTreeMap::new();
+        path_names.insert(0u32, "ab".to_string());
         let sp = StaticPayload {
             name: "demo".into(),
             palette: vec!["#000".into()],
             background_index: 0,
-            id_map,
+            nodes: vec![NodeView {
+                id: 0,
+                pos: [10.0, 20.0],
+                shape: NodeShapeTag::Circle,
+                color: 2,
+            }],
+            paths: vec![PathView {
+                id: 0,
+                from_pos: [10.0, 20.0],
+                to_pos: [30.0, 40.0],
+                color: 3,
+            }],
+            node_names,
+            path_names,
+            mover_names: std::collections::BTreeMap::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
-        assert_eq!(back.id_map.len(), 2);
-        assert_eq!(back.id_map[&1], "a");
+        assert_eq!(back.node_names.len(), 2);
+        assert_eq!(back.node_names[&0], "a");
+        assert_eq!(back.path_names[&0], "ab");
+        assert_eq!(back.nodes.len(), 1);
+        assert_eq!(back.paths[0].color, 3);
     }
 
     // ---- 7. AgentReport --------------------------------------------
