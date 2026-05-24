@@ -15,6 +15,7 @@
 pub mod actions;
 pub mod agent;
 pub mod agent_log;
+pub mod agent_runtime;
 pub mod components;
 pub mod error;
 pub mod events;
@@ -34,6 +35,7 @@ pub use agent_log::{
     LlmProvenance, SceneIdError, SchemaError, AGENT_ID_MAX_LEN, PROVENANCE_STR_MAX_LEN,
     RATIONALE_MAX_LEN, RAW_RESPONSE_MAX_BYTES, SCHEMA_VERSION,
 };
+pub use agent_runtime::{AgentRuntime, EnqueueDecisionOutcome, ExpireOutcome, ProcessReplyOutcome};
 pub use components::{
     Consumer, ConsumerId, Mover, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId,
     Producer, ProducerId, Resource, ResourceId,

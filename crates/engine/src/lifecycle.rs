@@ -287,15 +287,12 @@ impl RequestLifecycle {
     /// not the original `source_tick`.
     pub fn try_enqueue(&mut self, request: AgentRequest, current_tick: u64) -> EnqueueOutcome {
         if self.has_pending_for_agent(&request.id.agent_id) {
-            // Backpressure-dropped lag: how far behind real time the
-            // dropped request would have been. Clamped to ≥1 for the
-            // same reason `llm_error_to_message` clamps Behind variants.
-            let lag_frames = current_tick.saturating_sub(request.id.source_tick).max(1) as u32;
             return EnqueueOutcome::BackpressureDropped {
-                message: SimMessage::Warning(WarningPayload::Behind {
-                    lag_frames,
-                    agent_id: Some(request.id.agent_id.clone()),
-                }),
+                message: backpressure_warning_for(
+                    &request.id.agent_id,
+                    current_tick,
+                    request.id.source_tick,
+                ),
             };
         }
         let deadline_abs = current_tick.saturating_add(u64::from(request.deadline_ticks));
@@ -445,6 +442,22 @@ fn push_ring(ring: &mut VecDeque<RequestId>, id: RequestId, cap: usize) {
         ring.pop_front();
     }
     ring.push_back(id);
+}
+
+/// Build the deterministic `Warning::Behind` payload that the
+/// lifecycle emits when a backpressure-dropped request is rejected.
+/// Shared with [`crate::agent_runtime`] so it can short-circuit the
+/// allocation when it predicts a backpressure rejection.
+pub(crate) fn backpressure_warning_for(
+    agent_id: &str,
+    current_tick: u64,
+    source_tick: u64,
+) -> SimMessage {
+    let lag_frames = current_tick.saturating_sub(source_tick).max(1) as u32;
+    SimMessage::Warning(WarningPayload::Behind {
+        lag_frames,
+        agent_id: Some(agent_id.to_string()),
+    })
 }
 
 #[cfg(test)]
