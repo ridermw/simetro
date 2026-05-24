@@ -23,19 +23,25 @@
 // the slots already present in this wiring.
 
 import { MockTransport, type Transport } from "./transport/mock";
-import type { MoverSnapshot, SimMessage, ThemePayload } from "./protocol/messages";
+import type { MoverSnapshot, SimEvent, SimMessage, ThemePayload } from "./protocol/messages";
 import { Renderer } from "./renderer/canvas";
 import { DEFAULT_THEME } from "./renderer/theme";
+import { AnimationEngine } from "./renderer/animation_engine";
 import { SnapshotBuffer } from "./store/snapshots";
+import { EventQueue } from "./store/events";
 
 interface AppState {
   theme: ThemePayload;
   snapshots: SnapshotBuffer;
+  events: EventQueue;
+  animations: AnimationEngine;
   lastSnapshotAt: number;
   /** Estimated ms between snapshots; refined as we receive more. */
   snapshotPeriodMs: number;
   /** Scratch buffer reused every frame for interpolated movers. */
   moverScratch: MoverSnapshot[];
+  /** Scratch buffer reused every frame when draining events. */
+  eventScratch: SimEvent[];
   rafHandle: number | null;
 }
 
@@ -45,9 +51,12 @@ function createAppState(): AppState {
   return {
     theme: DEFAULT_THEME,
     snapshots: new SnapshotBuffer(),
+    events: new EventQueue(),
+    animations: new AnimationEngine(),
     lastSnapshotAt: 0,
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
     moverScratch: [],
+    eventScratch: [],
     rafHandle: null,
   };
 }
@@ -72,11 +81,18 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       state.snapshots.push(msg.payload);
       break;
     }
-    case "Events":
+    case "Events": {
+      const now = nowMs();
+      for (const ev of msg.payload) {
+        state.events.enqueue(ev);
+        state.animations.spawn(ev, now);
+      }
+      break;
+    }
     case "AgentReport":
     case "Fault":
     case "Warning":
-      // Wired in Steps 18-21.
+      // Wired in Steps 20-21.
       return;
   }
 }
@@ -84,12 +100,19 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
 function frame(state: AppState, renderer: Renderer): void {
   const cur = state.snapshots.current();
   if (cur !== null) {
-    const elapsed = nowMs() - state.lastSnapshotAt;
-    const alpha = state.snapshots.previous() === null
-      ? 1
-      : Math.max(0, Math.min(1, elapsed / state.snapshotPeriodMs));
+    const now = nowMs();
+    const elapsed = now - state.lastSnapshotAt;
+    const alpha =
+      state.snapshots.previous() === null
+        ? 1
+        : Math.max(0, Math.min(1, elapsed / state.snapshotPeriodMs));
     const movers = state.snapshots.interpolatedMovers(alpha, state.moverScratch);
-    renderer.draw({ theme: state.theme, snapshot: cur, movers });
+    renderer.draw({
+      theme: state.theme,
+      snapshot: cur,
+      movers,
+      overlay: (ctx) => state.animations.draw(ctx, now, state.theme, cur),
+    });
   }
   state.rafHandle = requestAnimationFrame(() => frame(state, renderer));
 }

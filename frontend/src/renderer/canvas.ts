@@ -45,6 +45,8 @@ export interface FrameInput {
   snapshot: SnapshotPayload;
   /** Mover positions to draw; usually interpolated. */
   movers: MoverSnapshot[];
+  /** Optional overlay hook called after movers, before restore. */
+  overlay?: ((ctx: CanvasRenderingContext2D) => void) | undefined;
 }
 
 export class Renderer {
@@ -91,6 +93,9 @@ export class Renderer {
     this.drawPathsBatched(input.theme, input.snapshot);
     this.drawNodes(input.theme, input.snapshot.nodes);
     this.drawMovers(input.theme, input.movers);
+    if (input.overlay !== undefined) {
+      input.overlay(ctx);
+    }
 
     ctx.restore();
   }
