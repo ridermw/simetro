@@ -2,7 +2,7 @@
 //!
 //! The mapping is **table-driven**: every `LlmError` variant maps to
 //! exactly one `Fault` or `Warning` SimMessage. The mapping is
-//! authoritative per [`docs/superpowers/analysis/p2a-error-map.md`]
+//! authoritative per `docs/superpowers/analysis/p2a-error-map.md`
 //! §1 (the rescue-action / user-visible-behavior matrix) and per
 //! spec §10.4 (the error-mapping table).
 //!
