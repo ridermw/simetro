@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "name": "demo-paths",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7", "#bb9af7", "#9ece6a"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "a", "pos": [120, 200], "shape": "circle",   "color": 2 },
+      { "id": "b", "pos": [420, 120], "shape": "square",   "color": 3 },
+      { "id": "c", "pos": [620, 320], "shape": "triangle", "color": 4 }
+    ],
+    "paths": [
+      { "id": "ab", "from": "a", "to": "b", "color": 3 },
+      { "id": "bc", "from": "b", "to": "c", "color": 4 },
+      { "id": "ca", "from": "c", "to": "a", "color": 2 }
+    ],
+    "movers": [
+      { "id": "m1", "on_path": "ab", "speed": 0.8 },
+      { "id": "m2", "on_path": "bc", "speed": 1.0 },
+      { "id": "m3", "on_path": "ca", "speed": 1.2 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 30 }]
+}
