@@ -7,8 +7,8 @@
 //   FaultOverlay     — full-bleed banner on Fault. Engine is dead/
 //                      paused; user sees what happened and is told
 //                      what to do (typically: fix the JSON, hit ↻).
-//   WarningStrip     — non-blocking pill stack for Warnings (e.g.
-//                      InvalidAction, Behind, TickOverBudget).
+//   WarningStrip     — non-blocking pill stack for warnings (e.g.
+//                      invalid_action, behind, tick_over_budget).
 //   HeartbeatBadge   — green dot when snapshots are arriving on
 //                      schedule, amber when stale > 1s, red after
 //                      3s (PLAN §13 #1 stale-channel detection).
@@ -18,7 +18,7 @@
 // All text goes through textContent (PLAN §5.1 / §12). Faults carry
 // loader-supplied strings; we treat them as untrusted on principle.
 
-import type { EngineFault, EngineWarning } from "../protocol/messages";
+import type { FaultPayload, WarningPayload } from "../protocol/messages";
 
 // ───────────────── FaultOverlay ──────────────────────────────
 
@@ -49,7 +49,7 @@ export class FaultOverlay {
     parent.appendChild(this.root);
   }
 
-  show(fault: EngineFault): void {
+  show(fault: FaultPayload): void {
     this.message.textContent = formatFault(fault);
     this.root.style.display = "flex";
   }
@@ -63,23 +63,39 @@ export class FaultOverlay {
   }
 }
 
-export function formatFault(fault: EngineFault): string {
+export function formatFault(fault: FaultPayload): string {
   switch (fault.kind) {
-    case "LoadError":
-      return `SCENE LOAD ERROR\n\nfield: ${fault.field}\n\n${fault.message}\n\n` +
-        "Fix the JSON and click ↻ Reload.";
-    case "AgentCrashed":
+    case "load_error": {
+      const where =
+        fault.line !== null && fault.col !== null
+          ? `  (line ${fault.line}, col ${fault.col})`
+          : "";
+      return (
+        `SCENE LOAD ERROR${where}\n\n${fault.message}\n\n` +
+        "Fix the JSON and click ↻ Reload."
+      );
+    }
+    case "agent_crashed":
       return `AGENT CRASHED  (agent ${fault.agent_id})\n\n${fault.message}`;
-    case "NumericDrift":
-      return `NUMERIC DRIFT at tick ${fault.tick}, mover ${fault.mover}\n\n` +
-        "Determinism gate failed. See the runbook (docs/runbook.md).";
-    case "ChannelSaturated":
-      return `BACKPRESSURE  channel saturated (${fault.lag_frames} frames behind)`;
-    case "SystemPanic":
-      return `SYSTEM PANIC  in ${fault.system}\n\n${fault.message}`;
-    case "SchemaMismatch":
-      return `PROTOCOL SCHEMA MISMATCH\n\nengine sent v${fault.found}; ` +
-        `this build expects v${fault.supported}.\nUpgrade the desktop shell.`;
+    case "numeric_drift":
+      return (
+        `NUMERIC DRIFT at tick ${fault.tick}\n\n` +
+        "Determinism gate failed. See the runbook (docs/runbook.md)."
+      );
+    case "engine_fault":
+      return `ENGINE FAULT\n\n${fault.message}`;
+    case "baseline_hash_mismatch":
+      return (
+        `BASELINE HASH MISMATCH\n\nexpected ${fault.expected}\n` +
+        `found    ${fault.found}\n\nSee docs/runbook.md.`
+      );
+    case "schema_mismatch":
+      return (
+        `PROTOCOL SCHEMA MISMATCH\n\nengine sent v${fault.found}; ` +
+        `this build expects v${fault.expected}.\nUpgrade the desktop shell.`
+      );
+    case "transport_lost":
+      return `TRANSPORT LOST\n\nReconnecting…`;
   }
 }
 
@@ -106,7 +122,7 @@ export class WarningStrip {
     parent.appendChild(this.root);
   }
 
-  push(warning: EngineWarning, durationMs = 4000): void {
+  push(warning: WarningPayload, durationMs = 4000): void {
     const pill = document.createElement("div");
     pill.style.cssText = [
       "padding: 4px 8px",
@@ -119,7 +135,8 @@ export class WarningStrip {
     ].join(";");
     pill.textContent = formatWarning(warning);
     this.root.appendChild(pill);
-    const expiresAt = (typeof performance !== "undefined" ? performance.now() : Date.now()) + durationMs;
+    const expiresAt =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) + durationMs;
     this.items.push({ el: pill, expiresAt });
   }
 
@@ -139,15 +156,15 @@ export class WarningStrip {
   }
 }
 
-export function formatWarning(w: EngineWarning): string {
+export function formatWarning(w: WarningPayload): string {
   switch (w.kind) {
-    case "InvalidAction":
+    case "invalid_action":
       return `agent ${w.agent_id} invalid action: ${w.reason}`;
-    case "Behind":
+    case "behind":
       return `engine behind by ${w.lag_frames} frames`;
-    case "TickOverBudget":
+    case "tick_over_budget":
       return `tick over budget (${w.ms.toFixed(1)} ms)`;
-    case "AgentLogSlow":
+    case "agent_log_slow":
       return "agent log writer slow";
   }
 }
@@ -198,10 +215,7 @@ export class HeartbeatBadge {
       state === "ok" ? "#9ece6a" : state === "stale" ? "#e0af68" : "#f7768e";
     this.root.style.background = color;
     this.root.style.boxShadow = `0 0 4px ${color}b0`;
-    this.root.setAttribute(
-      "aria-label",
-      `Engine heartbeat: ${state}`
-    );
+    this.root.setAttribute("aria-label", `Engine heartbeat: ${state}`);
   }
 
   __testRoot(): HTMLDivElement {

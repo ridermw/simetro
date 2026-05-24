@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { EventQueue } from "../../store/events";
 import type { SimEvent } from "../../protocol/messages";
 
-const tick = (n: number): SimEvent => ({ tag: "Tick", tick: n });
+const tick = (n: number): SimEvent => ({ kind: "tick", tick: n });
 
 describe("EventQueue", () => {
   it("enqueue + drain in FIFO order", () => {
@@ -13,7 +13,7 @@ describe("EventQueue", () => {
     q.enqueue(tick(3));
     const out: SimEvent[] = [];
     q.drainInto(out);
-    expect(out.map((e) => (e.tag === "Tick" ? e.tick : -1))).toEqual([1, 2, 3]);
+    expect(out.map((e) => (e.kind === "tick" ? e.tick : -1))).toEqual([1, 2, 3]);
     expect(q.length).toBe(0);
   });
 

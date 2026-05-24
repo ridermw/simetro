@@ -7,7 +7,7 @@
 // │ on this module so saving here patches running animations in  │
 // │ <300ms without losing sim state. (Measured in Step 22.)      │
 // │                                                              │
-// │   SimEvent (one of MoverDeparted / Arrived / …)              │
+// │   SimEvent (one of mover_departed / arrived / …)             │
 // │       │                                                      │
 // │       ▼                                                      │
 // │   table lookup ─▶ AnimationSpec { duration, ease, render }   │
@@ -20,17 +20,28 @@
 // └──────────────────────────────────────────────────────────────┘
 //
 // Render functions receive (ctx, easedT, payload, ctxResolver).
-// They MUST NOT allocate. ctx state save/restore happens around
-// the per-event invocation in the engine, so a render fn is free
-// to mutate strokeStyle/lineWidth/globalAlpha.
+// They MUST NOT allocate. Per PR #1 review (Copilot, P1) the
+// midpoint helper returns a module-level scratch point rather than
+// a fresh `{x, y}` object every call.
+//
+// ResolveCtx carries the static scene (nodes + paths) because node
+// and path lookups operate on `StaticPayload`, not snapshots, since
+// PLAN §6 moved geometry out of `SnapshotPayload`.
 
-import type { NodeSnapshot, SimEvent, SnapshotPayload, ThemePayload } from "../protocol/messages";
-import { easings, foregroundColor, paletteColor } from "./theme";
+import type {
+  MoverState,
+  NodeView,
+  SimEvent,
+  SnapshotPayload,
+  StaticPayload,
+} from "../protocol/messages";
+import { easings, foregroundColor, paletteColor, type Theme } from "./theme";
 
-export type SimEventTag = SimEvent["tag"];
+export type SimEventKind = SimEvent["kind"];
 
 export interface ResolveCtx {
-  theme: ThemePayload;
+  theme: Theme;
+  scene: StaticPayload;
   snapshot: SnapshotPayload;
 }
 
@@ -49,30 +60,48 @@ export interface AnimationSpec {
 
 // ──────── helpers (allocation-free; safe in hot path) ───────────
 
-function findNode(snap: SnapshotPayload, id: number): NodeSnapshot | undefined {
-  for (const n of snap.nodes) if (n.id === id) return n;
+function findNode(scene: StaticPayload, id: number): NodeView | undefined {
+  for (const n of scene.nodes) if (n.id === id) return n;
   return undefined;
 }
 
+function findMover(snap: SnapshotPayload, id: number): MoverState | undefined {
+  for (const m of snap.movers) if (m.id === id) return m;
+  return undefined;
+}
+
+/** Module-level scratch returned by `findPathMidpoint` so the render
+ *  helpers can read x/y without allocating a fresh object per call
+ *  (PR #1 Copilot review on PLAN §14 zero-alloc invariant). */
+const midpointScratch: { x: number; y: number; ok: boolean } = {
+  x: 0,
+  y: 0,
+  ok: false,
+};
+
+/** Resolve the midpoint of `pathId` into `midpointScratch`. Returns
+ *  the same scratch instance every call; the `ok` field signals
+ *  whether the path was found. NEVER allocates. */
 function findPathMidpoint(
-  snap: SnapshotPayload,
+  scene: StaticPayload,
   pathId: number
-): { x: number; y: number } | null {
-  for (const p of snap.paths) {
+): { x: number; y: number; ok: boolean } {
+  midpointScratch.ok = false;
+  for (const p of scene.paths) {
     if (p.id !== pathId) continue;
-    const from = findNode(snap, p.from);
-    const to = findNode(snap, p.to);
-    if (from === undefined || to === undefined) return null;
-    return { x: (from.pos[0] + to.pos[0]) / 2, y: (from.pos[1] + to.pos[1]) / 2 };
+    midpointScratch.x = (p.from_pos[0] + p.to_pos[0]) / 2;
+    midpointScratch.y = (p.from_pos[1] + p.to_pos[1]) / 2;
+    midpointScratch.ok = true;
+    return midpointScratch;
   }
-  return null;
+  return midpointScratch;
 }
 
 // ──────────────── render functions ──────────────────────────────
 
 const drawDepartFlare: RenderFn = (ctx, t, payload, resolve) => {
-  if (payload.tag !== "MoverDeparted") return;
-  const node = findNode(resolve.snapshot, payload.from_node);
+  if (payload.kind !== "mover_departed") return;
+  const node = findNode(resolve.scene, payload.from_node);
   if (node === undefined) return;
   const radius = 22 + 18 * t;
   const alpha = 1 - t;
@@ -87,8 +116,8 @@ const drawDepartFlare: RenderFn = (ctx, t, payload, resolve) => {
 };
 
 const drawArriveRing: RenderFn = (ctx, t, payload, resolve) => {
-  if (payload.tag !== "MoverArrived") return;
-  const node = findNode(resolve.snapshot, payload.at_node);
+  if (payload.kind !== "mover_arrived") return;
+  const node = findNode(resolve.scene, payload.at_node);
   if (node === undefined) return;
   const radius = 18 + 24 * t;
   const alpha = 1 - t;
@@ -103,20 +132,9 @@ const drawArriveRing: RenderFn = (ctx, t, payload, resolve) => {
 };
 
 const drawSpeedHint: RenderFn = (ctx, t, payload, resolve) => {
-  if (payload.tag !== "MoverSpeedChange") return;
-  // Find the mover position via the latest snapshot.
-  let mx = 0,
-    my = 0,
-    found = false;
-  for (const m of resolve.snapshot.movers) {
-    if (m.id === payload.mover) {
-      mx = m.pos[0];
-      my = m.pos[1];
-      found = true;
-      break;
-    }
-  }
-  if (!found) return;
+  if (payload.kind !== "mover_speed_change") return;
+  const m = findMover(resolve.snapshot, payload.mover);
+  if (m === undefined) return;
   const alpha = 1 - t;
   const r = 12 + 6 * t;
   ctx.save();
@@ -124,14 +142,14 @@ const drawSpeedHint: RenderFn = (ctx, t, payload, resolve) => {
   ctx.strokeStyle = payload.new > payload.old ? "#9ece6a" : "#e0af68";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(mx, my, r, 0, Math.PI * 2);
+  ctx.arc(m.pos[0], m.pos[1], r, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 };
 
 const drawNodePulse: RenderFn = (ctx, t, payload, resolve) => {
-  if (payload.tag !== "NodeHighlighted") return;
-  const node = findNode(resolve.snapshot, payload.node);
+  if (payload.kind !== "node_highlighted") return;
+  const node = findNode(resolve.scene, payload.node);
   if (node === undefined) return;
   const pulse = Math.sin(t * Math.PI);
   const r = 20 + 12 * pulse;
@@ -146,9 +164,9 @@ const drawNodePulse: RenderFn = (ctx, t, payload, resolve) => {
 };
 
 const drawPathPulse: RenderFn = (ctx, t, payload, resolve) => {
-  if (payload.tag !== "PathPulsed") return;
-  const mid = findPathMidpoint(resolve.snapshot, payload.path);
-  if (mid === null) return;
+  if (payload.kind !== "path_pulsed") return;
+  const mid = findPathMidpoint(resolve.scene, payload.path);
+  if (!mid.ok) return;
   const alpha = 1 - t;
   const r = 8 + 22 * t;
   ctx.save();
@@ -161,9 +179,9 @@ const drawPathPulse: RenderFn = (ctx, t, payload, resolve) => {
 };
 
 const drawDecisionPulse: RenderFn = (ctx, t, payload, resolve) => {
-  if (payload.tag !== "AgentDecided") return;
-  // Use a small pulse anchored top-left for now; Step 20 (Inspector)
-  // will replace this with a pulse on the affected piece.
+  if (payload.kind !== "agent_decided") return;
+  // Small pulse anchored top-left; Step 20 (Inspector) replaces this
+  // with a pulse on the affected piece once Action carries it.
   const alpha = 1 - t;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -178,12 +196,12 @@ const noopRender: RenderFn = () => {};
 
 // ──────────────── the binding table ─────────────────────────────
 
-export const animations: Record<SimEventTag, AnimationSpec> = {
-  MoverDeparted: { durationMs: 200, ease: easings.easeOutCubic, render: drawDepartFlare },
-  MoverArrived: { durationMs: 300, ease: easings.easeInOutQuad, render: drawArriveRing },
-  MoverSpeedChange: { durationMs: 150, ease: easings.easeOutCubic, render: drawSpeedHint },
-  NodeHighlighted: { durationMs: 600, ease: easings.easeOutCubic, render: drawNodePulse },
-  PathPulsed: { durationMs: 400, ease: easings.easeInOutCubic, render: drawPathPulse },
-  AgentDecided: { durationMs: 250, ease: easings.easeOutQuad, render: drawDecisionPulse },
-  Tick: { durationMs: 0, ease: easings.linear, render: noopRender },
+export const animations: Record<SimEventKind, AnimationSpec> = {
+  mover_departed: { durationMs: 200, ease: easings.easeOutCubic, render: drawDepartFlare },
+  mover_arrived: { durationMs: 300, ease: easings.easeInOutQuad, render: drawArriveRing },
+  mover_speed_change: { durationMs: 150, ease: easings.easeOutCubic, render: drawSpeedHint },
+  node_highlighted: { durationMs: 600, ease: easings.easeOutCubic, render: drawNodePulse },
+  path_pulsed: { durationMs: 400, ease: easings.easeInOutCubic, render: drawPathPulse },
+  agent_decided: { durationMs: 250, ease: easings.easeOutQuad, render: drawDecisionPulse },
+  tick: { durationMs: 0, ease: easings.linear, render: noopRender },
 };

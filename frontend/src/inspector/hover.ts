@@ -1,22 +1,22 @@
 // frontend/src/inspector/hover.ts
 //
 // PLAN §4 / §20 DoD #6 — hover-to-explain. Tracks the cursor over
-// the canvas, hit-tests against the current snapshot's nodes/movers,
+// the canvas, hit-tests against the current static scene + snapshot,
 // and surfaces a tooltip with the piece's human-readable JSON id
-// (from Static.id_map) plus a one-line summary.
+// (from Static.node_names / mover_names) plus a one-line summary.
 //
-//   mousemove ─▶ hitTest(snapshot, x, y) ─▶ tooltip.show(id, summary)
+//   mousemove ─▶ hitTest(scene, snapshot, x, y) ─▶ tooltip.show(label)
 //   mouseleave / no-hit ─▶ tooltip.hide()
 //
 // Pure function `hitTestPiece` is exported so unit tests can verify
 // it without a real DOM event loop.
 
-import type { NodeSnapshot, SnapshotPayload } from "../protocol/messages";
+import type { NodeView, SnapshotPayload, StaticPayload } from "../protocol/messages";
 
 export interface HitResult {
   kind: "node" | "mover";
   id: number;
-  /** Human-readable id from Static.id_map, if available. */
+  /** Human-readable id from Static.node_names / mover_names. */
   label: string;
   pos: [number, number];
 }
@@ -25,8 +25,8 @@ const NODE_HIT_RADIUS = 22;
 const MOVER_HIT_RADIUS = 12;
 
 export function hitTestPiece(
+  scene: StaticPayload,
   snap: SnapshotPayload,
-  idMap: Record<number, string>,
   x: number,
   y: number
 ): HitResult | null {
@@ -38,19 +38,19 @@ export function hitTestPiece(
       return {
         kind: "mover",
         id: m.id,
-        label: idMap[m.id] ?? `mover#${m.id}`,
+        label: scene.mover_names[m.id] ?? `mover#${m.id}`,
         pos: [m.pos[0], m.pos[1]],
       };
     }
   }
-  for (const n of snap.nodes) {
+  for (const n of scene.nodes) {
     const dx = n.pos[0] - x;
     const dy = n.pos[1] - y;
     if (dx * dx + dy * dy <= NODE_HIT_RADIUS * NODE_HIT_RADIUS) {
       return {
         kind: "node",
         id: n.id,
-        label: idMap[n.id] ?? `node#${n.id}`,
+        label: scene.node_names[n.id] ?? `node#${n.id}`,
         pos: [n.pos[0], n.pos[1]],
       };
     }
@@ -58,15 +58,15 @@ export function hitTestPiece(
   return null;
 }
 
-export function summarizeNode(n: NodeSnapshot, idMap: Record<number, string>): string {
-  const label = idMap[n.id] ?? `node#${n.id}`;
+export function summarizeNode(n: NodeView, scene: StaticPayload): string {
+  const label = scene.node_names[n.id] ?? `node#${n.id}`;
   return `${label}  shape=${n.shape}  color=${n.color}`;
 }
 
 export class HoverTooltip {
   private el: HTMLDivElement;
+  private scene: StaticPayload | null = null;
   private snap: SnapshotPayload | null = null;
-  private idMap: Record<number, string> = {};
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement("div");
@@ -87,9 +87,12 @@ export class HoverTooltip {
     parent.appendChild(this.el);
   }
 
-  setSnapshot(snap: SnapshotPayload | null, idMap: Record<number, string>): void {
+  setScene(scene: StaticPayload | null): void {
+    this.scene = scene;
+  }
+
+  setSnapshot(snap: SnapshotPayload | null): void {
     this.snap = snap;
-    this.idMap = idMap;
   }
 
   attach(canvas: HTMLCanvasElement): void {
@@ -98,14 +101,14 @@ export class HoverTooltip {
   }
 
   private onMove(ev: MouseEvent, canvas: HTMLCanvasElement): void {
-    if (this.snap === null) {
+    if (this.scene === null || this.snap === null) {
       this.hide();
       return;
     }
     const rect = canvas.getBoundingClientRect();
     const x = ev.clientX - rect.left;
     const y = ev.clientY - rect.top;
-    const hit = hitTestPiece(this.snap, this.idMap, x, y);
+    const hit = hitTestPiece(this.scene, this.snap, x, y);
     if (hit === null) {
       this.hide();
       return;

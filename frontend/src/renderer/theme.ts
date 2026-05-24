@@ -10,12 +10,25 @@
 // they reach the frontend. We still defensively fall back to the
 // default dark theme if a renderer ever sees an out-of-range index
 // at runtime — no crashes, no flicker.
+//
+// NOTE: `Theme` is a renderer-internal view; the wire protocol's
+// `StaticPayload` carries palette/background_index as flat fields
+// (see `crates/protocol/src/lib.rs::StaticPayload`). Use
+// `themeFromStatic()` to derive a Theme when a Static message
+// arrives.
 
-import type { ThemePayload } from "../protocol/messages";
+import type { StaticPayload } from "../protocol/messages";
+
+/** Renderer-internal theme view. Not a wire type. */
+export interface Theme {
+  palette: string[];
+  background_index: number;
+  font: string;
+}
 
 // Mini-Metro-ish dark theme. Used as the fallback whenever a scene
 // has not yet loaded or the palette is malformed.
-export const DEFAULT_THEME: ThemePayload = {
+export const DEFAULT_THEME: Theme = {
   palette: [
     "#0e1116", // 0 - background
     "#e8eaed", // 1 - foreground / outlines / movers
@@ -29,15 +42,23 @@ export const DEFAULT_THEME: ThemePayload = {
   font: "system-ui",
 };
 
-export function paletteColor(theme: ThemePayload, index: number): string {
+export function themeFromStatic(s: StaticPayload): Theme {
+  return {
+    palette: s.palette,
+    background_index: s.background_index,
+    font: DEFAULT_THEME.font,
+  };
+}
+
+export function paletteColor(theme: Theme, index: number): string {
   return theme.palette[index] ?? DEFAULT_THEME.palette[1]!;
 }
 
-export function backgroundColor(theme: ThemePayload): string {
+export function backgroundColor(theme: Theme): string {
   return theme.palette[theme.background_index] ?? DEFAULT_THEME.palette[0]!;
 }
 
-export function foregroundColor(theme: ThemePayload): string {
+export function foregroundColor(theme: Theme): string {
   // Index 1 is conventionally the foreground in our palette layout.
   return theme.palette[1] ?? DEFAULT_THEME.palette[1]!;
 }

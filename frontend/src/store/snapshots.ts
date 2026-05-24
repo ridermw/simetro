@@ -18,14 +18,22 @@
 // Tab-refocus edge case (PLAN §13 #5): when the page is hidden the
 // rAF loop pauses; on resume we jump-cut to the latest snapshot
 // instead of catching up animations — see `markStale()`.
+//
+// Per PR #1 review (Copilot, P1): `prevById` is a reusable Map
+// field that is cleared and refilled each interpolation pass,
+// rather than `new Map(...)`'d every frame. Snapshots are
+// movers-only now (geometry lives in `StaticPayload`).
 
-import type { MoverSnapshot, SnapshotPayload } from "../protocol/messages";
+import type { MoverState, SnapshotPayload } from "../protocol/messages";
 
 const RING_CAP = 4;
 
 export class SnapshotBuffer {
   private ring: SnapshotPayload[] = [];
   private stale = false;
+  /** Lookup of previous-tick movers keyed by id. Persistent across
+   *  frames; cleared and refilled inside `interpolatedMovers`. */
+  private readonly prevById: Map<number, MoverState> = new Map();
 
   push(snap: SnapshotPayload): void {
     if (this.stale) {
@@ -60,7 +68,7 @@ export class SnapshotBuffer {
    * unchanged. Mutates and returns the supplied `out` array — zero
    * per-frame allocation (PLAN §14).
    */
-  interpolatedMovers(alpha: number, out: MoverSnapshot[]): MoverSnapshot[] {
+  interpolatedMovers(alpha: number, out: MoverState[]): MoverState[] {
     const cur = this.current();
     if (cur === null) {
       out.length = 0;
@@ -68,7 +76,6 @@ export class SnapshotBuffer {
     }
     const prev = this.previous();
     if (prev === null) {
-      // Just copy current; only one snapshot so far.
       out.length = cur.movers.length;
       for (let i = 0; i < cur.movers.length; i++) {
         const c = cur.movers[i]!;
@@ -85,14 +92,15 @@ export class SnapshotBuffer {
       }
       return out;
     }
-    // Lerp by id.
-    const prevById = new Map<number, MoverSnapshot>();
-    for (const m of prev.movers) prevById.set(m.id, m);
+    // Lerp by id. Clear-and-refill the reusable map to avoid the
+    // per-frame `new Map(...)` allocation flagged in PR #1 review.
+    this.prevById.clear();
+    for (const m of prev.movers) this.prevById.set(m.id, m);
     const a = Math.max(0, Math.min(1, alpha));
     out.length = cur.movers.length;
     for (let i = 0; i < cur.movers.length; i++) {
       const c = cur.movers[i]!;
-      const p = prevById.get(c.id);
+      const p = this.prevById.get(c.id);
       const px = p?.pos[0] ?? c.pos[0];
       const py = p?.pos[1] ?? c.pos[1];
       const x = px + (c.pos[0] - px) * a;

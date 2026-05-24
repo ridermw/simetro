@@ -50,28 +50,44 @@ describe("FaultOverlay", () => {
   it("renders fault messages via textContent (no innerHTML)", () => {
     const parent = document.createElement("div");
     const f = new FaultOverlay(parent);
-    f.show({ kind: "LoadError", field: "<img src=x>", message: "<script>evil</script>" });
+    f.show({
+      kind: "load_error",
+      message: "<script>evil</script>",
+      line: 5,
+      col: 3,
+    });
     const root = f.__testRoot();
     expect(root.style.display).toBe("flex");
-    expect(root.textContent).toContain("<img src=x>");
     expect(root.textContent).toContain("<script>evil</script>");
     expect(root.querySelector("script")).toBeNull();
-    expect(root.querySelector("img")).toBeNull();
+    expect(root.textContent).toContain("line 5");
   });
 
   it("formatFault covers every fault kind", () => {
-    expect(formatFault({ kind: "LoadError", field: "x", message: "y" })).toContain("SCENE LOAD");
-    expect(formatFault({ kind: "AgentCrashed", agent_id: 1, message: "m" })).toContain("AGENT CRASHED");
-    expect(formatFault({ kind: "NumericDrift", tick: 5, mover: 7 })).toContain("NUMERIC DRIFT");
-    expect(formatFault({ kind: "ChannelSaturated", lag_frames: 9 })).toContain("BACKPRESSURE");
-    expect(formatFault({ kind: "SystemPanic", system: "movement", message: "boom" })).toContain("SYSTEM PANIC");
-    expect(formatFault({ kind: "SchemaMismatch", found: 99, supported: 1 })).toContain("SCHEMA MISMATCH");
+    expect(
+      formatFault({ kind: "load_error", message: "bad", line: 1, col: 2 })
+    ).toContain("SCENE LOAD");
+    expect(
+      formatFault({ kind: "load_error", message: "bad", line: null, col: null })
+    ).toContain("SCENE LOAD");
+    expect(
+      formatFault({ kind: "agent_crashed", agent_id: "a", message: "m" })
+    ).toContain("AGENT CRASHED");
+    expect(formatFault({ kind: "numeric_drift", tick: 5 })).toContain("NUMERIC DRIFT");
+    expect(formatFault({ kind: "engine_fault", message: "kaboom" })).toContain("ENGINE FAULT");
+    expect(
+      formatFault({ kind: "baseline_hash_mismatch", expected: "aaa", found: "bbb" })
+    ).toContain("BASELINE HASH MISMATCH");
+    expect(
+      formatFault({ kind: "schema_mismatch", expected: 1, found: 99 })
+    ).toContain("SCHEMA MISMATCH");
+    expect(formatFault({ kind: "transport_lost" })).toContain("TRANSPORT LOST");
   });
 
   it("hide() restores display: none", () => {
     const parent = document.createElement("div");
     const f = new FaultOverlay(parent);
-    f.show({ kind: "ChannelSaturated", lag_frames: 1 });
+    f.show({ kind: "transport_lost" });
     f.hide();
     expect(f.__testRoot().style.display).toBe("none");
   });
@@ -81,17 +97,19 @@ describe("WarningStrip", () => {
   it("push adds a pill; tick() sweeps expired ones", () => {
     const parent = document.createElement("div");
     const s = new WarningStrip(parent);
-    s.push({ kind: "Behind", lag_frames: 3 }, 100);
+    s.push({ kind: "behind", lag_frames: 3 }, 100);
     expect(s.__testCount()).toBe(1);
     s.tick(performance.now() + 1000);
     expect(s.__testCount()).toBe(0);
   });
 
   it("formatWarning covers every kind", () => {
-    expect(formatWarning({ kind: "InvalidAction", agent_id: 1, reason: "x" })).toContain("invalid action");
-    expect(formatWarning({ kind: "Behind", lag_frames: 4 })).toContain("behind");
-    expect(formatWarning({ kind: "TickOverBudget", ms: 12.3 })).toContain("over budget");
-    expect(formatWarning({ kind: "AgentLogSlow" })).toContain("slow");
+    expect(
+      formatWarning({ kind: "invalid_action", agent_id: "a", reason: "x" })
+    ).toContain("invalid action");
+    expect(formatWarning({ kind: "behind", lag_frames: 4 })).toContain("behind");
+    expect(formatWarning({ kind: "tick_over_budget", ms: 12.3 })).toContain("over budget");
+    expect(formatWarning({ kind: "agent_log_slow" })).toContain("slow");
   });
 });
 
@@ -122,7 +140,6 @@ describe("PerfOverlay", () => {
     const p = new PerfOverlay(parent);
     p.setEnabled(true);
     const t0 = 1000;
-    // Simulate 30 frames over 500ms ≈ 60 fps.
     for (let i = 0; i < 30; i++) p.tick(t0 + (i * 500) / 29);
     p.tick(t0 + 500);
     expect(p.__testFps()).toBeGreaterThan(50);

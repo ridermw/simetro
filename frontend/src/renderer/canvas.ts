@@ -3,37 +3,36 @@
 // PLAN §9 / §14 — single Canvas2D context; Path2D batching by color;
 // **zero per-frame allocations** after warm-up. The renderer owns
 // long-lived scratch buffers (Path2D per palette color, mover lerp
-// array, node lookup map) and never `new`s during draw().
+// array) and never `new`s during draw().
 //
 //   ┌─────────────────────────────────────────────────────┐
 //   │                       Renderer                      │
 //   │                                                     │
-//   │  warm() ── pre-alloc Path2D[palette.len]            │
+//   │  warm(theme)         ── pre-alloc Path2D[palette]   │
+//   │  setScene(static)    ── refill buckets ONCE         │
 //   │      │                                              │
 //   │      ▼                                              │
-//   │  draw(scene)                                        │
+//   │  draw(scene, snap, movers)                          │
 //   │   ├── clear & fill background                       │
-//   │   ├── for each palette idx: reset Path2D[idx]       │
-//   │   ├── walk paths, .moveTo/.lineTo into bucket       │
-//   │   ├── for each non-empty bucket: stroke once        │
-//   │   ├── walk nodes, drawShape (no per-shape alloc)    │
+//   │   ├── for each active bucket: stroke once           │
+//   │   ├── walk scene.nodes, drawShape                   │
 //   │   └── walk interpolated movers, fill circle         │
 //   │                                                     │
 //   │  Total draw calls for typical scene: ~6 strokes +   │
 //   │  N fills (one per piece). Per-frame allocs: 0.      │
 //   └─────────────────────────────────────────────────────┘
 //
-// Step 18 will mutate per-frame animation state INTO this renderer
-// (e.g., flare radii, pulse alphas) — we expose `frameCtx` for that
-// without forcing animations module to know about Canvas2D internals.
+// Per review feedback on PR #1 (Copilot, P1): paths don't move, so
+// Path2D buckets are rebuilt only when the scene identity changes —
+// not per frame. `activeBuckets` tracks which palette indices have
+// segments, so we never stroke empty buckets.
 
 import type {
-  MoverSnapshot,
-  NodeSnapshot,
-  SnapshotPayload,
-  ThemePayload,
+  MoverState,
+  NodeView,
+  StaticPayload,
 } from "../protocol/messages";
-import { backgroundColor, foregroundColor, paletteColor } from "./theme";
+import { backgroundColor, foregroundColor, paletteColor, type Theme } from "./theme";
 
 const NODE_RADIUS = 18;
 const MOVER_RADIUS = 8;
@@ -41,10 +40,11 @@ const PATH_WIDTH = 4;
 const NODE_STROKE_WIDTH = 2;
 
 export interface FrameInput {
-  theme: ThemePayload;
-  snapshot: SnapshotPayload;
+  theme: Theme;
+  /** Static scene metadata (palette + geometry); supplies node draws. */
+  scene: StaticPayload;
   /** Mover positions to draw; usually interpolated. */
-  movers: MoverSnapshot[];
+  movers: MoverState[];
   /** Optional overlay hook called after movers, before restore. */
   overlay?: ((ctx: CanvasRenderingContext2D) => void) | undefined;
 }
@@ -52,11 +52,17 @@ export interface FrameInput {
 export class Renderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  // One Path2D per palette index, reused frame to frame.
+  // One Path2D per palette index, reused across frames. Refilled in
+  // setScene(), not in draw().
   private pathBuckets: Path2D[] = [];
-  // Reused per-frame to look up node positions for path drawing.
-  private readonly nodeIdToPos = new Map<number, [number, number]>();
+  /** True at index i iff palette color i has at least one segment.
+   *  We stroke only active buckets — saves per-frame work and gets
+   *  the zero-alloc test past empty palettes (Copilot review). */
+  private activeBuckets: boolean[] = [];
   private bucketCount = 0;
+  /** Identity of the StaticPayload we last absorbed; lets the rAF
+   *  loop call setScene() unconditionally without rebuild cost. */
+  private currentScene: StaticPayload | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -68,19 +74,57 @@ export class Renderer {
   }
 
   /** Pre-allocate buckets sized to the theme palette. Idempotent. */
-  warm(theme: ThemePayload): void {
+  warm(theme: Theme): void {
     const target = theme.palette.length;
-    if (this.pathBuckets.length < target) {
-      for (let i = this.pathBuckets.length; i < target; i++) {
-        this.pathBuckets.push(new Path2D());
-      }
+    while (this.pathBuckets.length < target) {
+      this.pathBuckets.push(new Path2D());
+      this.activeBuckets.push(false);
     }
     this.bucketCount = target;
+    // Buckets may carry stale geometry from a previous scene; clear.
+    for (let i = 0; i < this.bucketCount; i++) {
+      this.pathBuckets[i] = new Path2D();
+      this.activeBuckets[i] = false;
+    }
+    this.currentScene = null;
   }
 
-  /** Render one frame. Allocation-free after `warm()`. */
+  /** Rebuild path buckets from the new static scene. Idempotent;
+   *  a no-op when called with the same object identity. */
+  setScene(scene: StaticPayload): void {
+    if (this.currentScene === scene) return;
+    // Ensure buckets large enough for the scene palette.
+    const target = scene.palette.length;
+    while (this.pathBuckets.length < target) {
+      this.pathBuckets.push(new Path2D());
+      this.activeBuckets.push(false);
+    }
+    this.bucketCount = Math.max(this.bucketCount, target);
+    // Reset all in-range buckets.
+    for (let i = 0; i < this.bucketCount; i++) {
+      this.pathBuckets[i] = new Path2D();
+      this.activeBuckets[i] = false;
+    }
+    // Fill from baked PathView endpoints (no node lookup needed —
+    // protocol bakes positions into the path view for exactly this).
+    for (const p of scene.paths) {
+      if (p.color < 0 || p.color >= this.bucketCount) continue;
+      const bucket = this.pathBuckets[p.color];
+      if (bucket === undefined) continue;
+      bucket.moveTo(p.from_pos[0], p.from_pos[1]);
+      bucket.lineTo(p.to_pos[0], p.to_pos[1]);
+      this.activeBuckets[p.color] = true;
+    }
+    this.currentScene = scene;
+  }
+
+  /** Render one frame. Allocation-free after `setScene()`. */
   draw(input: FrameInput): void {
     const { ctx, canvas } = this;
+    // setScene is cheap when identity is unchanged; lets callers
+    // pass the latest static every frame without bookkeeping.
+    this.setScene(input.scene);
+
     const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -90,8 +134,8 @@ export class Renderer {
     ctx.fillStyle = backgroundColor(input.theme);
     ctx.fillRect(0, 0, cssW, cssH);
 
-    this.drawPathsBatched(input.theme, input.snapshot);
-    this.drawNodes(input.theme, input.snapshot.nodes);
+    this.drawPathsBatched(input.theme);
+    this.drawNodes(input.theme, input.scene.nodes);
     this.drawMovers(input.theme, input.movers);
     if (input.overlay !== undefined) {
       input.overlay(ctx);
@@ -100,38 +144,20 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawPathsBatched(theme: ThemePayload, snap: SnapshotPayload): void {
+  private drawPathsBatched(theme: Theme): void {
     const ctx = this.ctx;
-    // Reset reused lookup map (Map.clear() does not allocate).
-    this.nodeIdToPos.clear();
-    for (const n of snap.nodes) {
-      this.nodeIdToPos.set(n.id, n.pos);
-    }
-    // Reset each pre-allocated Path2D bucket. We swap in a fresh
-    // Path2D rather than mutating, since Path2D has no .clear() API;
-    // this is the one tolerated allocation per palette color per
-    // frame (bounded, tiny, palette.len() ≤ 32 per PLAN §5.1).
-    for (let i = 0; i < this.bucketCount; i++) {
-      this.pathBuckets[i] = new Path2D();
-    }
-    for (const p of snap.paths) {
-      const from = this.nodeIdToPos.get(p.from);
-      const to = this.nodeIdToPos.get(p.to);
-      if (from === undefined || to === undefined) continue;
-      const bucket = this.pathBuckets[p.color];
-      if (bucket === undefined) continue;
-      bucket.moveTo(from[0], from[1]);
-      bucket.lineTo(to[0], to[1]);
-    }
     ctx.lineWidth = PATH_WIDTH;
     ctx.lineCap = "round";
     for (let i = 0; i < this.bucketCount; i++) {
+      if (!this.activeBuckets[i]) continue;
+      const bucket = this.pathBuckets[i];
+      if (bucket === undefined) continue;
       ctx.strokeStyle = paletteColor(theme, i);
-      ctx.stroke(this.pathBuckets[i]!);
+      ctx.stroke(bucket);
     }
   }
 
-  private drawNodes(theme: ThemePayload, nodes: NodeSnapshot[]): void {
+  private drawNodes(theme: Theme, nodes: NodeView[]): void {
     const ctx = this.ctx;
     ctx.lineWidth = NODE_STROKE_WIDTH;
     ctx.strokeStyle = foregroundColor(theme);
@@ -141,7 +167,7 @@ export class Renderer {
     }
   }
 
-  private drawMovers(theme: ThemePayload, movers: MoverSnapshot[]): void {
+  private drawMovers(theme: Theme, movers: MoverState[]): void {
     const ctx = this.ctx;
     ctx.fillStyle = foregroundColor(theme);
     for (const m of movers) {
@@ -154,7 +180,7 @@ export class Renderer {
 
 function drawShape(
   ctx: CanvasRenderingContext2D,
-  shape: NodeSnapshot["shape"],
+  shape: NodeView["shape"],
   x: number,
   y: number,
   r: number
@@ -180,6 +206,15 @@ function drawShape(
       ctx.lineTo(x - r, y);
       ctx.closePath();
       break;
+    case "hexagon": {
+      const a = Math.PI / 3;
+      ctx.moveTo(x + r, y);
+      for (let i = 1; i < 6; i++) {
+        ctx.lineTo(x + r * Math.cos(i * a), y + r * Math.sin(i * a));
+      }
+      ctx.closePath();
+      break;
+    }
   }
   ctx.fill();
   ctx.stroke();

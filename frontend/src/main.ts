@@ -3,7 +3,7 @@
 //   ┌────────────────────────────────────────────────────────────┐
 //   │                       FRONTEND BOOT                        │
 //   │                                                            │
-//   │   transport ──▶ store (snapshots, events) ──▶ renderer     │
+//   │   transport ──▶ store (snapshots) ──▶ renderer             │
 //   │       │                                          ▲         │
 //   │       ▼                                          │ rAF     │
 //   │     audio                                        │         │
@@ -24,18 +24,15 @@
 
 import { MockTransport, type Transport } from "./transport/mock";
 import type {
-  MoverSnapshot,
-  NodeSnapshot,
-  SimEvent,
+  MoverState,
+  NodeView,
   SimMessage,
-  SnapshotPayload,
-  ThemePayload,
+  StaticPayload,
 } from "./protocol/messages";
 import { Renderer } from "./renderer/canvas";
-import { DEFAULT_THEME } from "./renderer/theme";
+import { DEFAULT_THEME, themeFromStatic, type Theme } from "./renderer/theme";
 import { AnimationEngine } from "./renderer/animation_engine";
 import { SnapshotBuffer } from "./store/snapshots";
-import { EventQueue } from "./store/events";
 import { AudioEngine } from "./audio/engine";
 import { fallbackArrivalTone, toneForShape } from "./audio/mappings";
 import { InspectorPanel } from "./inspector/panel";
@@ -44,9 +41,10 @@ import { ControlsBar, type ControlIntent } from "./ui/controls";
 import { FaultOverlay, HeartbeatBadge, PerfOverlay, WarningStrip } from "./ui/overlays";
 
 interface AppState {
-  theme: ThemePayload;
+  theme: Theme;
+  /** Cached most-recent Static message; nodes/paths/names live here. */
+  scene: StaticPayload | null;
   snapshots: SnapshotBuffer;
-  events: EventQueue;
   animations: AnimationEngine;
   audio: AudioEngine;
   inspector: InspectorPanel | null;
@@ -57,15 +55,11 @@ interface AppState {
   heartbeat: HeartbeatBadge | null;
   perf: PerfOverlay | null;
   paused: boolean;
-  /** id_map from the last Static message, for hover labels. */
-  idMap: Record<number, string>;
   lastSnapshotAt: number;
   /** Estimated ms between snapshots; refined as we receive more. */
   snapshotPeriodMs: number;
   /** Scratch buffer reused every frame for interpolated movers. */
-  moverScratch: MoverSnapshot[];
-  /** Scratch buffer reused every frame when draining events. */
-  eventScratch: SimEvent[];
+  moverScratch: MoverState[];
   rafHandle: number | null;
 }
 
@@ -74,8 +68,8 @@ const TARGET_SNAPSHOT_HZ = 20; // PLAN §6 — snapshots at 20Hz
 function createAppState(): AppState {
   return {
     theme: DEFAULT_THEME,
+    scene: null,
     snapshots: new SnapshotBuffer(),
-    events: new EventQueue(),
     animations: new AnimationEngine(),
     audio: new AudioEngine(),
     inspector: null,
@@ -86,18 +80,26 @@ function createAppState(): AppState {
     heartbeat: null,
     perf: null,
     paused: false,
-    idMap: {},
     lastSnapshotAt: 0,
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
     moverScratch: [],
-    eventScratch: [],
     rafHandle: null,
   };
 }
 
-function findArrivalNode(snap: SnapshotPayload, nodeId: number): NodeSnapshot | undefined {
-  for (const n of snap.nodes) if (n.id === nodeId) return n;
+function findArrivalNode(scene: StaticPayload, nodeId: number): NodeView | undefined {
+  for (const n of scene.nodes) if (n.id === nodeId) return n;
   return undefined;
+}
+
+function resetSnapshotState(state: AppState): void {
+  // Per PR #1 review (Copilot, P1): a Reload that leaves stale
+  // snapshot data + lastSnapshotAt around makes the heartbeat lie
+  // and the interpolator extrapolate against pre-reload movers.
+  state.snapshots = new SnapshotBuffer();
+  state.lastSnapshotAt = 0;
+  state.scene = null;
+  state.moverScratch.length = 0;
 }
 
 function handleControl(intent: ControlIntent, state: AppState): void {
@@ -111,8 +113,10 @@ function handleControl(intent: ControlIntent, state: AppState): void {
       break;
     case "Reload":
       // Step 22 will route this through Tauri to re-read the JSON.
-      // For now, force a fault-overlay dismissal and clear snapshots.
+      // For now, dismiss the fault overlay AND clear cached scene
+      // and snapshots so we don't draw against pre-reload state.
       if (state.fault !== null) state.fault.hide();
+      resetSnapshotState(state);
       console.info("simetro: reload requested (P1 stub)");
       break;
     case "SetSpeed":
@@ -122,16 +126,18 @@ function handleControl(intent: ControlIntent, state: AppState): void {
 }
 
 function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): void {
-  switch (msg.type) {
-    case "Static":
-      state.theme = msg.payload.theme;
-      state.idMap = msg.payload.id_map;
+  switch (msg.kind) {
+    case "static": {
+      state.scene = msg.payload;
+      state.theme = themeFromStatic(msg.payload);
       renderer.warm(state.theme);
+      renderer.setScene(msg.payload);
       if (state.hover !== null) {
-        state.hover.setSnapshot(state.snapshots.current(), state.idMap);
+        state.hover.setScene(msg.payload);
       }
       break;
-    case "Snapshot": {
+    }
+    case "snapshot": {
       const now = nowMs();
       if (state.lastSnapshotAt !== 0) {
         const dt = now - state.lastSnapshotAt;
@@ -143,33 +149,32 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       state.lastSnapshotAt = now;
       state.snapshots.push(msg.payload);
       if (state.hover !== null) {
-        state.hover.setSnapshot(msg.payload, state.idMap);
+        state.hover.setSnapshot(msg.payload);
       }
       break;
     }
-    case "Events": {
+    case "events": {
       const now = nowMs();
-      const snap = state.snapshots.current();
+      const scene = state.scene;
       for (const ev of msg.payload) {
-        state.events.enqueue(ev);
         state.animations.spawn(ev, now);
-        if (ev.tag === "MoverArrived" && snap !== null) {
-          const node = findArrivalNode(snap, ev.at_node);
+        if (ev.kind === "mover_arrived" && scene !== null) {
+          const node = findArrivalNode(scene, ev.at_node);
           const tone = node !== undefined ? toneForShape(node.shape) : fallbackArrivalTone();
           state.audio.play(tone);
         }
       }
       break;
     }
-    case "AgentReport":
+    case "agent_report":
       if (state.inspector !== null) {
         state.inspector.show(msg.payload);
       }
       return;
-    case "Fault":
+    case "fault":
       if (state.fault !== null) state.fault.show(msg.payload);
       return;
-    case "Warning":
+    case "warning":
       if (state.warnings !== null) state.warnings.push(msg.payload);
       return;
   }
@@ -177,8 +182,9 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
 
 function frame(state: AppState, renderer: Renderer): void {
   const cur = state.snapshots.current();
+  const scene = state.scene;
   const now = nowMs();
-  if (cur !== null) {
+  if (cur !== null && scene !== null) {
     const elapsed = now - state.lastSnapshotAt;
     const alpha =
       state.snapshots.previous() === null
@@ -187,9 +193,9 @@ function frame(state: AppState, renderer: Renderer): void {
     const movers = state.snapshots.interpolatedMovers(alpha, state.moverScratch);
     renderer.draw({
       theme: state.theme,
-      snapshot: cur,
+      scene,
       movers,
-      overlay: (ctx) => state.animations.draw(ctx, now, state.theme, cur),
+      overlay: (ctx) => state.animations.draw(ctx, now, state.theme, scene, cur),
     });
   }
   if (state.warnings !== null) state.warnings.tick(now);

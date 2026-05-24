@@ -1,7 +1,7 @@
 // frontend/src/inspector/panel.ts
 //
 // PLAN §4 / §20 DoD #6 — Inspector panel. Shows the most recent
-// AgentReport: observation hash (links to AgentLog), considered
+// AgentReport: agent id (string in the protocol mirror), considered
 // actions with confidence, chosen action, free-text rationale, plus
 // a tiny scrolling timeline of recent decisions.
 //
@@ -9,19 +9,23 @@
 // per PLAN §5.1 / §12 (eslint-plugin-no-unsanitized enforces this).
 //
 //   ┌──────────────────────────────────────────────────┐
-//   │  AGENT 7   tick 142    confidence 0.83           │
+//   │  AGENT speed_tuner_0   tick 142   conf 0.83      │
 //   │  ─────────────────────────────────────────────── │
-//   │  CHOSEN   SetSpeed(mover=12, value=1.6)          │
+//   │  CHOSEN   SetSpeed(mover=12, speed=1.60)         │
 //   │  CONSIDERED                                      │
-//   │   • SetSpeed(1.6)              0.83  ●           │
-//   │   • SetSpeed(1.4)              0.71              │
-//   │   • NoOp                       0.42              │
+//   │   • SetSpeed(mover=12, speed=1.60)  0.83  ●      │
+//   │   • SetSpeed(mover=12, speed=1.40)  0.71         │
+//   │   • NoOp                            0.42         │
 //   │  RATIONALE                                       │
-//   │  \"crowded pickup, accelerate to clear backlog\"   │
+//   │  "crowded pickup, accelerate to clear backlog"   │
 //   │  TIMELINE  ▎▎▌▌▎▌▎▎▎▎  (latest 16 ticks)         │
 //   └──────────────────────────────────────────────────┘
 
-import type { AgentReport } from "../protocol/messages";
+import {
+  formatAction,
+  type Action,
+  type AgentReport,
+} from "../protocol/messages";
 
 const TIMELINE_CAP = 16;
 
@@ -32,6 +36,11 @@ interface PanelHandles {
   considered: HTMLElement;
   rationale: HTMLElement;
   timeline: HTMLElement;
+}
+
+function actionsEqual(a: Action | null, b: Action): boolean {
+  if (a === null) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 export class InspectorPanel {
@@ -65,9 +74,7 @@ export class InspectorPanel {
       `AGENT ${latest.agent_id}   tick ${latest.tick}   ` +
       `confidence ${latest.confidence.toFixed(2)}`;
 
-    const chosenItem = latest.considered.find((c) => c.chosen);
-    this.handles.chosen.textContent =
-      chosenItem !== undefined ? `CHOSEN  ${chosenItem.action}` : "CHOSEN  (none)";
+    this.handles.chosen.textContent = `CHOSEN  ${formatAction(latest.chosen)}`;
 
     // Clear children safely (no innerHTML).
     while (this.handles.considered.firstChild !== null) {
@@ -80,8 +87,9 @@ export class InspectorPanel {
     for (const c of latest.considered) {
       const row = document.createElement("div");
       row.className = "simetro-inspector-row";
-      const dot = c.chosen ? " ●" : "";
-      row.textContent = `  • ${c.action}    ${c.confidence.toFixed(2)}${dot}`;
+      const dot = actionsEqual(latest.chosen, c.action) ? " ●" : "";
+      row.textContent =
+        `  • ${formatAction(c.action)}    ${c.confidence.toFixed(2)}${dot}`;
       this.handles.considered.appendChild(row);
     }
 

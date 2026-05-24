@@ -4,7 +4,7 @@ import { MockTransport } from "../../transport/mock";
 import type { SimMessage } from "../../protocol/messages";
 
 describe("MockTransport", () => {
-  it("emits Static then Snapshot to the handler", async () => {
+  it("emits static then snapshot to the handler", async () => {
     const t = new MockTransport();
     const received: SimMessage[] = [];
     t.connect((m) => received.push(m));
@@ -12,8 +12,8 @@ describe("MockTransport", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(received.length).toBe(2);
-    expect(received[0]?.type).toBe("Static");
-    expect(received[1]?.type).toBe("Snapshot");
+    expect(received[0]?.kind).toBe("static");
+    expect(received[1]?.kind).toBe("snapshot");
     t.disconnect();
   });
 
