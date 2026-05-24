@@ -913,15 +913,28 @@ live calls:
   DecisionTimeline first-class, LLM-as-author in P2.A) are
   authoritative for week-of-autonomy work.
 - ▶️ **Next concrete action (after PR #4 merges):** retire the
-  `ridermw/post-pr3-roadmap-spec` branch, sync the main checkout to
-  the post-merge `origin/main`, then cut a **fresh feature branch
-  from `origin/main`** for the amendments PR (rubber-duck criticals:
-  `hash_run` includes messages + agent host stable sort +
-  `Warning::Behind { agent_id }` + the spec amendments codifying
-  §2.6 / §2.7 / §10.2 request lifecycle that the rubber-duck and
-  adversarial-review passes surfaced). Open the amendments PR against
-  `main`; run the §2.7 adversarial-review workflow on it; merge per
-  §2.6.1.
+  `ridermw/post-pr3-roadmap-spec` branch (delete on remote + local),
+  sync the main checkout to the post-merge `origin/main`, then cut a
+  **fresh feature branch from `origin/main`** for the next PR. The
+  next PR carries the rubber-duck and adversarial-review derived
+  prerequisites the spec does not yet enumerate in §3.0:
+  - the `hash_run` widening to cover `runner.messages()` (so stalled
+    bridges cannot leak nondeterminism past the determinism gate),
+  - sorting `TickRunner` agent hosts by stable `agent_id` (so multi-
+    agent same-tick ordering is reproducible across registration
+    order changes),
+  - extending `WarningPayload::Behind` with an optional `agent_id`
+    field (additive, no schema bump),
+  - the spec amendments that formalize the §10.2 request lifecycle
+    `{timeline_id, agent_id, source_tick, attempt}` and add §3.0
+    entries for itself plus two pre-P2.A analysis PRs
+    (Error/Rescue Map and Security/Threat Model) per §2.7.
+
+  That PR runs the full §2.7 adversarial-review workflow and merges
+  per §2.6.1. After it lands, §3.0 will list **five** prep PRs
+  (P2.A0.1 ← this PR, the amendments PR, the two pre-P2.A analysis
+  PRs, and P2.A0.2 AgentLog v2 schema), all of which must merge
+  before any P2.A implementation PR opens.
 
 ---
 
