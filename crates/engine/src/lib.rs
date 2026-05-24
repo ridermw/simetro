@@ -28,7 +28,11 @@ pub mod world;
 
 pub use actions::{apply_action, Outcome};
 pub use agent::{Agent, AgentHost, MoverObservation, Observation, SpeedTuner};
-pub use agent_log::{observation_hash, AgentLog, AgentLogEntry};
+pub use agent_log::{
+    agent_log_dir, observation_hash, validate_entry, validate_scene_id, AgentLog, AgentLogEntry,
+    LlmProvenance, SceneIdError, SchemaError, AGENT_ID_MAX_LEN, PROVENANCE_STR_MAX_LEN,
+    RATIONALE_MAX_LEN, RAW_RESPONSE_MAX_BYTES, SCHEMA_VERSION,
+};
 pub use components::{
     Consumer, ConsumerId, Mover, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId,
     Producer, ProducerId, Resource, ResourceId,

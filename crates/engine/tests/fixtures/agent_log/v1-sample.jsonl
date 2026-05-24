@@ -1,0 +1,3 @@
+{"tick":600,"agent_id":"speed_tuner_0","observation_hash":17277158419002680658,"raw_response":null,"parsed_action":{"kind":"set_speed","mover":1,"speed":1.5},"considered_count":3,"rationale":"nudge"}
+{"tick":1200,"agent_id":"speed_tuner_0","observation_hash":12345678901234567890,"raw_response":null,"parsed_action":{"kind":"no_op"},"considered_count":1,"rationale":"steady"}
+{"tick":1800,"agent_id":"speed_tuner_0","observation_hash":9876543210987654321,"parsed_action":null,"considered_count":0,"rationale":""}

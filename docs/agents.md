@@ -131,24 +131,68 @@ removal deletes a safe node plus any unused incident paths. Invalid
 requests are rejected with `Warning::InvalidAction`, which shows up in
 the `WarningStrip` for transparency.
 
-## AgentLog (PLAN §10.4 / Step 12)
+## AgentLog (PLAN §10.4 / Step 12; v2 per spec §3.0 P2.A0.5)
 
 Every agent decision writes an append-only JSONL line to the
-AgentLog:
+AgentLog. As of P2.A0.5 the schema is **v2** (additive on v1; v1
+rows are still loaded by the v2 deserializer for replay).
 
 ```jsonc
 {
+  "schema_version": 2,
   "tick": 142,
   "agent_id": "trafficker",
-  "observation_hash": "a1b2c3d4",   // FNV-1a over the observation bytes
-  "considered": [
-    { "action": "SetSpeed(1.6)", "confidence": 0.83, "chosen": true },
-    { "action": "NoOp",           "confidence": 0.42, "chosen": false }
-  ],
+  "observation_hash": 1234567890,        // FNV-1a u64 over observation
+  "parsed_action": { "kind": "set_speed", "mover": 1, "speed": 1.5 },
+  "considered_count": 2,
   "rationale": "crowded pickup, accelerate to clear backlog",
-  "confidence": 0.83
+
+  // ---- v2 additions (all optional) ----------------------------
+  "raw_response": "{...}",               // capped at 64 KiB
+  "truncated_bytes": null,               // original size if capped
+  "backend": "copilot",                  // e.g. "copilot", "mock"
+  "model": "gpt-5-mini",                 // backend-specific
+  "latency_ms": 742,                     // outbox → inbox round trip
+  "prompt_tokens": 1024,                 // backend-reported
+  "completion_tokens": 64                // backend-reported
 }
 ```
+
+### v1 → v2 migration
+
+The v2 deserializer treats absent `schema_version` as `1` (so v1
+jsonl rows load cleanly). v2 rows always carry `"schema_version": 2`
+explicitly on the wire so replay tooling can distinguish them. The
+migration is **lossless and additive**: v1 rows simply leave all v2
+fields as `None`.
+
+Fixtures in `crates/engine/tests/fixtures/agent_log/{v1-sample,v2-sample}.jsonl`
+are golden-file inputs for the `agent_log_migration` test suite,
+which asserts:
+- v1 fixture rows decode as `schema_version: 1` with v2 fields `None`.
+- v2 fixture rows decode as `schema_version: 2` with provenance populated.
+- v1 rows round-trip through serialize/deserialize stably.
+
+### Security controls (PR #4 sec Finding 4 + P2.A0.4 §5)
+
+The v2 writer enforces:
+
+| Control | Implementation |
+| --- | --- |
+| `raw_response` size cap | 64 KiB (`RAW_RESPONSE_MAX_BYTES`); excess bytes are dropped at a UTF-8 boundary and `truncated_bytes` records the original length. |
+| Schema validation before persist | `validate_entry` runs before `serde_json::to_string`; invalid rows are dropped + emit `WarningPayload::AgentLogSlow` once per run. |
+| File mode 0o600 on Unix | `AgentLog::open_for_scene` uses `OpenOptions::mode(0o600)`. Windows ACL hardening deferred to spec §13. |
+| Path traversal prevention | `AgentLog::open_for_scene(scene_id)` validates `scene_id` against `^[A-Za-z0-9_-]{1,64}$` (`validate_scene_id`). Path is `data_dir()/simetro/<scene_id>/decisions-<ts>.jsonl`. Scene JSON name is NEVER used in the path. |
+| Secret-pattern redaction | Deferred to a tight follow-up PR; the cap above ensures unbounded secret leak via raw_response is not possible today (and bridge code that emits raw_response does not exist yet). See `docs/superpowers/analysis/p2a-security-threat-model.md` §5.3 for the required minimum 10-pattern set. |
+
+### Path / data dir
+
+Default platform-appropriate data dirs:
+- Linux: `$XDG_DATA_HOME/simetro` or `~/.local/share/simetro`.
+- macOS: `~/Library/Application Support/simetro`.
+- Windows: `%APPDATA%/simetro`.
+
+Override with `SIMETRO_DATA_DIR=/custom/path` (used by tests).
 
 The log is captured via `TickRunner::attach_agent_log` /
 `take_agent_log`. If the sink errors, the log falls back to a
