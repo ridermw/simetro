@@ -975,10 +975,16 @@ live calls:
 | `gh auth status` token has no Copilot entitlement | `NotAuthenticated` | `Fault::AgentCrashed` |
 | Subprocess exits before responding | `SubprocessDied { code }` | `Fault::AgentCrashed` |
 | Refusal in tool response | `Refused { agent_id, message }` | `Warning::InvalidAction` |
-| > 60s no response | `Timeout { agent_id, elapsed_ms }` | `Warning::InvalidAction` |
-| 429 / quota | `RateLimited { retry_after_ms }` | `Warning::Behind` |
+| > 60s no response | `Timeout { agent_id, elapsed_ms }` | `Warning::Behind { agent_id: Some(_), lag_frames }` |
+| 429 / quota | `RateLimited { retry_after_ms }` | `Warning::Behind { agent_id: Some(_), lag_frames }` |
 | Non-JSON response | `MalformedResponse { agent_id, raw }` | `Warning::InvalidAction` |
 | stdio EOF mid-session | `Disconnected` | `Fault::AgentCrashed` |
+
+> The `agent_id` field on `Warning::Behind` was added by PR #5
+> (P2.A0.2); it lets LLM-bridge lag attribution distinguish a stalled
+> agent from an engine-wide pacing issue. See
+> [`docs/superpowers/analysis/p2a-error-map.md`](../analysis/p2a-error-map.md)
+> §1 for the full rescue + UX + test rows per variant.
 
 ### 10.5 Testing strategy
 
