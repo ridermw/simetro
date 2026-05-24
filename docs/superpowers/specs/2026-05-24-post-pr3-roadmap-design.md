@@ -927,8 +927,11 @@ live calls:
     field (additive, no schema bump),
   - the spec amendments that formalize the §10.2 request lifecycle
     `{timeline_id, agent_id, source_tick, attempt}` and add §3.0
-    entries for itself plus two pre-P2.A analysis PRs
-    (Error/Rescue Map and Security/Threat Model) per §2.7.
+    entries for itself plus two pre-P2.A analysis PRs derived from
+    the user's plan-mode decisions during the rubber-duck pass:
+    mega-review §2 (Error & Rescue Map) and mega-review §3 (Security
+    & Threat Model) promoted from "deferred" to "pre-P2.A blocking"
+    (see §14 "Post-rubber-duck plan-mode decisions" below).
 
   That PR runs the full §2.7 adversarial-review workflow and merges
   per §2.6.1. After it lands, §3.0 will list **five** prep PRs
@@ -959,17 +962,39 @@ Decisions resolved (committed into the body above):
 | §2.6 | Stop conditions | External dependency unreachable only |
 | §2.6 | PR review policy | Copilot Code Review on every PR |
 
-Sections deferred to user return (not blocking execution):
+### Post-rubber-duck plan-mode decisions (record only — body amendments tracked in the next PR)
 
-- §2 Error & Rescue Map (full registry per mega-review skill)
-- §3 Security & Threat Model
-- §4 Data Flow & Interaction Edge Cases
-- §5 Code Quality Review
+The following decisions came from the user's plan-mode answers
+during/after the rubber-duck pass and are documented here so this
+PR's §13 / §3.0 references stay coherent. They are NOT yet
+structurally encoded in §3.0; the next PR (amendments PR — see §13)
+will add §3.0 entries for them.
+
+| § | Decision | User pick | Effect |
+| --- | --- | --- | --- |
+| §2.6.1 | Merge gate stance | `self_merge_with_adversarial_review` | Codified in §2.6.1 + §2.7 in this PR. |
+| Mega-review §2 + §3 | Pre-P2.A security/error gate | `run_min_security_and_error_map_before_p2a` | **PROMOTED** out of "deferred to user return"; now pre-P2.A blocking. Two analysis PRs queued (one per mega-review section). |
+| §3 / §4 / §5 | PR granularity | `phase_sized_prs` | ~25 PRs across P2.A → P2.C; per §3 task list. |
+| §2.6.3 | Branch model | `every_pr_targets_main` | Codified in §2.6.3 in this PR. |
+| §2.7 | Independent-PR exception | `doc_only_pr_can_overlap` | Process detail tracked outside spec (workspace contract). |
+| §2.7 | Wait-idle policy | `prep_next_pr_readonly` | Process detail tracked outside spec. |
+| §2.7 | Hard-stuck protocol | 5 strikes (a strike = issue count unchanged round-over-round; decreasing is acceptable) | Process detail tracked outside spec. |
+| §2.5 | ACP ground truth | User capturing one real `copilot --acp` happy-path exchange | Required at `crates/agent-bridge/tests/fixtures/copilot-acp/captured-happy-path.jsonl` before P2.A task 2 (real ACP wiring) starts. |
+
+Sections still deferred to user return (not blocking execution):
+
+- §4 Data Flow & Interaction Edge Cases (mega-review)
+- §5 Code Quality Review (mega-review)
 - §6 Test Review (test pyramid + chaos scenarios)
-- §7 Performance Review
+- §7 Performance Review (mega-review)
 - §8 Observability & Debuggability Review ("joy to operate" pass)
-- §9 Deployment & Rollout Review
-- §10 Long-Term Trajectory Review
+- §9 Deployment & Rollout Review (mega-review)
+- §10 Long-Term Trajectory Review (mega-review)
+
+Mega-review §2 and §3 were originally on this deferred list but
+were **promoted to pre-P2.A blocking** by the user's plan-mode
+decision above; they now have analysis PRs queued before any P2.A
+implementation work begins.
 
 Each PR opened during the autonomous week will include its own
 section-by-section mini-review in the PR body so the user can pick up
