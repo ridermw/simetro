@@ -305,36 +305,74 @@ fn remove_piece_schema_rejects_missing_id() {
 //  Helpers
 // ============================================================
 
-/// Enumerate every `ActionTag` variant. Coupled to the
-/// `expected_tool_name_for` exhaustive match so adding a new variant
-/// requires updating both.
+/// MUST equal the number of variants in `ActionTag` (see
+/// `crates/protocol/src/lib.rs`). Adding a new variant requires:
+///
+///   1. Adding an arm to `expected_tool_name_for` (compile-time gate)
+///   2. Adding the variant to `all_action_tags()` (runtime catalogue)
+///   3. Bumping THIS constant (so `all_action_tags_has_every_variant`
+///      asserts the catalogue grew in step)
+///
+/// All three are non-trivial and visible in PR diff; missing any one
+/// breaks the build or the test suite.
+const ACTION_TAG_VARIANT_COUNT: usize = 5;
+
+/// Catalogue of every `ActionTag` variant. Iterated by every test in
+/// this file. Hand-maintained because we don't want a derive macro
+/// dep on the protocol crate — the
+/// `all_action_tags_has_every_variant` test (below) catches mismatches
+/// by comparing this list's length against `ACTION_TAG_VARIANT_COUNT`,
+/// which must also be hand-updated.
 fn all_action_tags() -> Vec<ActionTag> {
-    // EXHAUSTIVE LIST — must match the variants of ActionTag in
-    // crates/protocol/src/lib.rs. The `expected_tool_name_for` match
-    // above is the compile-time gate that catches a new variant
-    // landing without a tool; this list is the runtime catalogue.
-    let tags = vec![
+    vec![
         ActionTag::NoOp,
         ActionTag::SetSpeed,
         ActionTag::PlacePiece,
         ActionTag::ConnectPieces,
         ActionTag::RemovePiece,
-    ];
-    // Sanity-check: the list has every variant `expected_tool_name_for`
-    // returns a name for. If a new variant is added to ActionTag but
-    // not to this list, the every_action_variant_has_a_tool_spec test
-    // will silently skip it. This assertion makes the gap visible.
-    let count_from_match: usize = tags
-        .iter()
-        .filter(|&&t| {
-            let _name = expected_tool_name_for(t);
-            true
-        })
-        .count();
+    ]
+}
+
+/// Catches the failure mode where `ACTION_TAG_VARIANT_COUNT` is
+/// bumped (because a new variant was added) but `all_action_tags()`
+/// was not updated — OR the inverse. This assertion is
+/// non-tautological: it compares the list's length against a
+/// hand-maintained constant that must also be updated. If either is
+/// out of step, the test fails with an explicit message naming both
+/// values.
+///
+/// This closes the runtime gap that the compile-time exhaustive
+/// match in `expected_tool_name_for` can't see: a future PR that
+/// adds a variant + updates `expected_tool_name_for` + updates
+/// `action_tool_specs()` but forgets to update `all_action_tags()`
+/// would have its new variant silently skipped by every iteration
+/// test in this file. With this assertion, that gap turns into a
+/// loud test failure.
+#[test]
+fn all_action_tags_has_every_variant() {
+    let tags = all_action_tags();
     assert_eq!(
-        count_from_match,
         tags.len(),
-        "all_action_tags is out of sync with expected_tool_name_for"
+        ACTION_TAG_VARIANT_COUNT,
+        "all_action_tags() returned {n} variants but ACTION_TAG_VARIANT_COUNT \
+         = {expected}. \n\n\
+         If you added an ActionTag variant, update BOTH ACTION_TAG_VARIANT_COUNT \
+         AND all_action_tags() to include the new variant. \n\
+         If you removed a variant, decrement both. \n\n\
+         Why both: the compile-time exhaustive match in expected_tool_name_for \
+         catches missing tool-name mappings, but cannot catch missing entries in \
+         this runtime catalogue (which is iterated by every test in this file).",
+        n = tags.len(),
+        expected = ACTION_TAG_VARIANT_COUNT,
     );
-    tags
+    // Also: no duplicate variants in the catalogue. (Use position-
+    // based dedup since ActionTag does not implement Hash.)
+    let mut seen: Vec<ActionTag> = Vec::new();
+    for &t in &tags {
+        assert!(
+            !seen.contains(&t),
+            "all_action_tags() contains duplicate variant {t:?}"
+        );
+        seen.push(t);
+    }
 }
