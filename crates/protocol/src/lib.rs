@@ -256,7 +256,7 @@ pub enum FaultPayload {
     TransportLost,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WarningPayload {
     InvalidAction { agent_id: String, reason: String },
