@@ -256,6 +256,22 @@ pub enum SchemaError {
     RationaleTooLong(usize),
     #[error("raw_response exceeded {RAW_RESPONSE_MAX_BYTES} bytes without truncated_bytes marker")]
     UncappedRawResponse,
+    /// truncated_bytes set but raw_response is None — the marker
+    /// claims a truncation happened, but there is no data to mark.
+    #[error("truncated_bytes set without raw_response")]
+    TruncatedBytesWithoutResponse,
+    /// truncated_bytes set but the (capped) raw_response is ≤ MAX
+    /// bytes — the marker claims a truncation that didn't actually
+    /// fire. Catches struct-literal construction that forgot to call
+    /// `cap_raw_response`.
+    #[error("truncated_bytes={0} set but raw_response is only {1} bytes (≤ cap)")]
+    TruncatedBytesOnSmallResponse(usize, usize),
+    /// truncated_bytes ≤ raw_response.len() — logically impossible
+    /// because the truncated form must be SHORTER than the original.
+    /// Catches a struct-literal construction that swapped the
+    /// original / capped lengths.
+    #[error("truncated_bytes={0} not greater than current raw_response length {1}")]
+    TruncatedBytesNotGreaterThanCurrent(usize, usize),
     #[error("backend string is {0} bytes (max {PROVENANCE_STR_MAX_LEN})")]
     BackendTooLong(usize),
     #[error("model string is {0} bytes (max {PROVENANCE_STR_MAX_LEN})")]
@@ -275,9 +291,35 @@ pub fn validate_entry(entry: &AgentLogEntry) -> Result<(), SchemaError> {
     if entry.rationale.len() > RATIONALE_MAX_LEN {
         return Err(SchemaError::RationaleTooLong(entry.rationale.len()));
     }
-    if let Some(raw) = &entry.raw_response {
-        if raw.len() > RAW_RESPONSE_MAX_BYTES && entry.truncated_bytes.is_none() {
-            return Err(SchemaError::UncappedRawResponse);
+    // raw_response + truncated_bytes consistency.
+    match (&entry.raw_response, entry.truncated_bytes) {
+        // Most common: no raw_response, no marker.
+        (None, None) => {}
+        // Marker without data is impossible.
+        (None, Some(_)) => return Err(SchemaError::TruncatedBytesWithoutResponse),
+        // Data without marker: must be at-or-under the cap.
+        (Some(raw), None) => {
+            if raw.len() > RAW_RESPONSE_MAX_BYTES {
+                return Err(SchemaError::UncappedRawResponse);
+            }
+        }
+        // Data with marker: the marker (= original byte length before
+        // truncation) must be GREATER than the kept raw.len() (so
+        // truncation actually dropped bytes) AND must be > MAX (so
+        // the cap was the reason truncation happened — the only
+        // truncation reason today). Note raw.len() ≤ MAX is the
+        // post-cap invariant but can legitimately be < MAX due to
+        // UTF-8 boundary backoff.
+        (Some(raw), Some(orig)) => {
+            if orig <= RAW_RESPONSE_MAX_BYTES {
+                return Err(SchemaError::TruncatedBytesOnSmallResponse(orig, raw.len()));
+            }
+            if orig <= raw.len() {
+                return Err(SchemaError::TruncatedBytesNotGreaterThanCurrent(
+                    orig,
+                    raw.len(),
+                ));
+            }
         }
     }
     if let Some(b) = &entry.backend {
@@ -982,6 +1024,55 @@ mod tests {
         let entry = AgentLogEntry::new(&obs(), "a", None, 0, "".into(), Some(huge));
         // new() capped + marker was set.
         assert_eq!(validate_entry(&entry), Ok(()));
+    }
+
+    #[test]
+    fn validate_entry_rejects_truncated_bytes_without_raw_response() {
+        let mut entry = AgentLogEntry::new(&obs(), "a", None, 0, "".into(), None);
+        entry.raw_response = None;
+        entry.truncated_bytes = Some(100);
+        assert_eq!(
+            validate_entry(&entry),
+            Err(SchemaError::TruncatedBytesWithoutResponse)
+        );
+    }
+
+    #[test]
+    fn validate_entry_rejects_truncated_bytes_on_small_response() {
+        // raw_response is small (under cap) AND truncated_bytes is
+        // set to a value that ALSO claims original ≤ MAX —
+        // inconsistent because truncation should only fire when
+        // original > MAX.
+        let mut entry = AgentLogEntry::new(&obs(), "a", None, 0, "".into(), Some("short".into()));
+        entry.truncated_bytes = Some(100); // claim "original was 100"; both are ≤ MAX
+        assert_eq!(
+            validate_entry(&entry),
+            Err(SchemaError::TruncatedBytesOnSmallResponse(100, 5))
+        );
+    }
+
+    #[test]
+    fn validate_entry_rejects_truncated_bytes_not_greater_than_current() {
+        // raw_response is OVER cap (which is itself a separate
+        // invariant fault, but bear with us). truncated_bytes claims
+        // original = MAX, but current length > MAX → the marker
+        // claims the truncation produced MORE bytes than the
+        // original, which is logically impossible.
+        let mut entry = AgentLogEntry::new(&obs(), "a", None, 0, "".into(), Some("tiny".into()));
+        // Bypass cap_raw_response by setting raw_response directly to
+        // an over-cap value.
+        entry.raw_response = Some("x".repeat(RAW_RESPONSE_MAX_BYTES + 100));
+        // Marker claims original was just MAX + 1, but current is
+        // MAX + 100 — impossible.
+        entry.truncated_bytes = Some(RAW_RESPONSE_MAX_BYTES + 1);
+        let actual_len = entry.raw_response.as_ref().unwrap().len();
+        assert_eq!(
+            validate_entry(&entry),
+            Err(SchemaError::TruncatedBytesNotGreaterThanCurrent(
+                RAW_RESPONSE_MAX_BYTES + 1,
+                actual_len
+            ))
+        );
     }
 
     // ---- AgentLog.append() drops invalid rows (P2.A0.4 §5.4) ---
