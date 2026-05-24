@@ -974,7 +974,7 @@ will add §3.0 entries for them.
 | --- | --- | --- | --- |
 | §2.6.1 | Merge gate stance | `self_merge_with_adversarial_review` | Codified in §2.6.1 + §2.7 in this PR. |
 | Mega-review §2 + §3 | Pre-P2.A security/error gate | `run_min_security_and_error_map_before_p2a` | **PROMOTED** out of "deferred to user return"; now pre-P2.A blocking. Two analysis PRs queued (one per mega-review section). |
-| §3 / §4 / §5 | PR granularity | `phase_sized_prs` | ~25 PRs across P2.A → P2.C; per §3 task list. |
+| §3 / §4 / §5 | PR granularity | `phase_sized_prs` | ~25 PRs across P2.A → P2.C; per the §3, §4, and §5 task lists. |
 | §2.6.3 | Branch model | `every_pr_targets_main` | Codified in §2.6.3 in this PR. |
 | §2.7 | Independent-PR exception | `doc_only_pr_can_overlap` | Process detail tracked outside spec (workspace contract). |
 | §2.7 | Wait-idle policy | `prep_next_pr_readonly` | Process detail tracked outside spec. |
