@@ -152,11 +152,16 @@ Environment audit at design-time:
    return.
 5. **Continue past blockers.** If a task cannot progress without the
    user (e.g., Copilot entitlement issue), record it in `TODOS.md` with
-   the exact repro, and switch to the next-ready task from P2.B–E. Do
-   not idle.
+   the exact repro, and switch to the next-ready task from
+   **P2.B–C** (the active-week scope per §2.6.2). Do not idle. Do
+   NOT drift into P2.D / P2.E / P3.A — those are deferred to user
+   return.
 
-Phases P2.B (replay UI), P2.C (juice), P2.D (perf/WebGL), P2.E (world
-quality + ops), and P3.A (editor) have **zero** human-only steps.
+Phases P2.B (replay UI) and P2.C (juice) have **zero** human-only
+steps and are the only out-of-P2.A fallback targets during the
+autonomous week. P2.D (perf/WebGL), P2.E (world quality + ops), and
+P3.A (editor) are documented later in the spec but are explicitly
+out-of-scope this week per §2.6.2.
 
 ---
 
