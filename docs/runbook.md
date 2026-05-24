@@ -164,8 +164,9 @@ the runtime gives up on that decision and emits
 ### `LlmError::Refused { agent_id, message }` → `Warning::InvalidAction { agent_id, reason }`
 
 **Meaning.** The model declined the request (safety classifier,
-policy filter, etc.). The bridge surfaces `message` truncated to
-512 chars per spec §11.1.
+policy filter, etc.). The bridge forwards the model's full `message`
+into the warning's `reason` field. There is no explicit length cap
+today — keep this in mind if you alert on warning payload size.
 
 **Action.** Usually scene-level: the prompt or observation may be
 triggering a content filter. Check the recent observation in the
@@ -220,12 +221,16 @@ guarantees deduplication.
 frequent, the bridge is over-eager about replay; check
 `crates/agent-bridge/src/main.rs` retry logic.
 
-### `Warning::Behind { lag_frames, agent_id, source: "backpressure" }` (in inspector tooltip)
+### `Warning::Behind { lag_frames, agent_id }` (backpressure path)
 
 **Meaning.** A second request for the same agent was emitted while
 the first was still pending. Per spec §10.2.1 "one-outstanding-per-
 agent backpressure" rule, the second was dropped and this warning
-was emitted.
+was emitted (`lag_frames = current_tick - source_tick`, clamped to
+≥1; `agent_id` populated). The payload shape is identical to the
+deadline-lag `Behind` variant — distinguish by context (a fresh
+backpressure warning will fire on the same tick the second request
+was attempted, before any deadline could elapse).
 
 **Action.** Increase `interval_ticks` for the agent (it's firing
 faster than the bridge can keep up), or `deadline_ticks` (the bridge
