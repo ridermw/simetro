@@ -7,9 +7,10 @@
 
 use crate::components::{MoverId, MoverState, PathId};
 use crate::world::World;
+use serde::{Deserialize, Serialize};
 
 /// Per-mover slice of state exposed to agents.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MoverObservation {
     pub id: MoverId,
     pub state: MoverState,
@@ -18,7 +19,7 @@ pub struct MoverObservation {
 }
 
 /// Read-only view of the world an agent decides against.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Observation {
     pub tick: u64,
     pub movers: Vec<MoverObservation>,

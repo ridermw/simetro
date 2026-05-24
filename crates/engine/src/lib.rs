@@ -20,6 +20,7 @@ pub mod components;
 pub mod error;
 pub mod events;
 pub mod lifecycle;
+pub mod llm_agent;
 pub mod loader;
 pub mod redactor;
 pub mod rng;
