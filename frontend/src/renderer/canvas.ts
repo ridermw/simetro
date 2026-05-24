@@ -27,11 +27,7 @@
 // not per frame. `activeBuckets` tracks which palette indices have
 // segments, so we never stroke empty buckets.
 
-import type {
-  MoverState,
-  NodeView,
-  StaticPayload,
-} from "../protocol/messages";
+import type { MoverState, NodeView, StaticPayload } from "../protocol/messages";
 import { backgroundColor, foregroundColor, paletteColor, type Theme } from "./theme";
 
 const NODE_RADIUS = 18;

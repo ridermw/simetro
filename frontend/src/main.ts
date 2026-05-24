@@ -26,7 +26,7 @@ import { MockTransport, type Transport } from "./transport/mock";
 import { TauriTransport } from "./transport/tauri";
 import type { MoverState, NodeView, SimMessage, StaticPayload } from "./protocol/messages";
 import { Renderer } from "./renderer/canvas";
-import { DEFAULT_THEME, themeFromStatic, type Theme } from "./renderer/theme";
+import { DEFAULT_THEME, type Theme } from "./renderer/theme";
 import { AnimationEngine } from "./renderer/animation_engine";
 import { SnapshotBuffer } from "./store/snapshots";
 import { AudioEngine } from "./audio/engine";
@@ -34,7 +34,16 @@ import { fallbackArrivalTone, toneForShape } from "./audio/mappings";
 import { InspectorPanel } from "./inspector/panel";
 import { HoverTooltip } from "./inspector/hover";
 import { ControlsBar, type ControlIntent } from "./ui/controls";
+import { SceneBrowser, type SceneSelectIntent } from "./ui/scene_browser";
 import { FaultOverlay, HeartbeatBadge, PerfOverlay, WarningStrip } from "./ui/overlays";
+import { SCENE_CATALOG, findSceneById } from "./catalog/scenes";
+import { invokeSetScene } from "./app/scene_commands";
+import {
+  applySceneStatic,
+  preserveSceneAfterSwitchFailure,
+  resetLocalSceneState,
+  shouldResetSceneImmediatelyForControl,
+} from "./app/scene_switch";
 
 interface AppState {
   theme: Theme;
@@ -46,6 +55,8 @@ interface AppState {
   inspector: InspectorPanel | null;
   hover: HoverTooltip | null;
   controls: ControlsBar | null;
+  sceneBrowser: SceneBrowser | null;
+  selectedSceneId: string | null;
   fault: FaultOverlay | null;
   warnings: WarningStrip | null;
   heartbeat: HeartbeatBadge | null;
@@ -72,6 +83,8 @@ function createAppState(): AppState {
     inspector: null,
     hover: null,
     controls: null,
+    sceneBrowser: null,
+    selectedSceneId: SCENE_CATALOG[0]?.id ?? null,
     fault: null,
     warnings: null,
     heartbeat: null,
@@ -94,10 +107,7 @@ function resetSnapshotState(state: AppState): void {
   // Per PR #1 review (Copilot, P1): a Reload that leaves stale
   // snapshot data + lastSnapshotAt around makes the heartbeat lie
   // and the interpolator extrapolate against pre-reload movers.
-  state.snapshots = new SnapshotBuffer();
-  state.lastSnapshotAt = 0;
-  state.scene = null;
-  state.moverScratch.length = 0;
+  resetLocalSceneState(state);
 }
 
 function handleControl(intent: ControlIntent, state: AppState): void {
@@ -116,14 +126,58 @@ function handleControl(intent: ControlIntent, state: AppState): void {
       console.info("simetro: step requested (mock — no backend)");
       break;
     case "Reload":
-      if (state.fault !== null) state.fault.hide();
-      resetSnapshotState(state);
+      if (shouldResetSceneImmediatelyForControl(intent, false)) resetSnapshotState(state);
       console.info("simetro: reload requested (mock — no backend)");
       break;
     case "SetSpeed":
       state.speedFactor = intent.factor;
       console.info(`simetro: speed ${intent.factor}× requested (mock — no backend)`);
       break;
+  }
+}
+
+function handleSceneSelect(intent: SceneSelectIntent, state: AppState): void {
+  const scene = findSceneById(intent.scene_id);
+  if (scene === undefined) {
+    state.fault?.show({
+      kind: "load_error",
+      message: `Unknown scene_id: ${intent.scene_id}`,
+      line: null,
+      col: null,
+    });
+    return;
+  }
+
+  const previousSceneId = state.selectedSceneId;
+  state.sceneBrowser?.setSelected(intent.scene_id);
+  state.selectedSceneId = intent.scene_id;
+
+  if (previousSceneId === intent.scene_id) return;
+
+  if (isTauri()) {
+    void routeSceneToTauri(intent.scene_id, previousSceneId, state);
+  } else {
+    console.info(`simetro: scene ${scene.id} selected (mock — no backend switch)`);
+  }
+}
+
+async function routeSceneToTauri(
+  scene_id: string,
+  previousSceneId: string | null,
+  state: AppState
+): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invokeSetScene(invoke, scene_id);
+  } catch (error) {
+    state.selectedSceneId = previousSceneId;
+    state.sceneBrowser?.setSelected(previousSceneId);
+    state.fault?.show({
+      kind: "load_error",
+      message: `Failed to switch scene: ${errorMessage(error)}`,
+      line: null,
+      col: null,
+    });
   }
 }
 
@@ -141,8 +195,6 @@ async function routeControlToTauri(intent: ControlIntent, state: AppState): Prom
         break;
       case "Reload":
         await invoke("cmd_reload");
-        if (state.fault !== null) state.fault.hide();
-        resetSnapshotState(state);
         break;
       case "SetSpeed":
         await invoke("cmd_set_speed", { factor: intent.factor });
@@ -165,16 +217,14 @@ function setPaused(state: AppState, paused: boolean): void {
   if (!paused) state.lastSnapshotAt = 0;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): void {
   switch (msg.kind) {
     case "static": {
-      state.scene = msg.payload;
-      state.theme = themeFromStatic(msg.payload);
-      renderer.warm(state.theme);
-      renderer.setScene(msg.payload);
-      if (state.hover !== null) {
-        state.hover.setScene(msg.payload);
-      }
+      applySceneStatic(state, renderer, msg.payload);
       break;
     }
     case "snapshot": {
@@ -218,7 +268,7 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       }
       return;
     case "fault":
-      if (state.fault !== null) state.fault.show(msg.payload);
+      preserveSceneAfterSwitchFailure(state, msg.payload);
       return;
     case "warning":
       if (state.warnings !== null) state.warnings.push(msg.payload);
@@ -300,6 +350,12 @@ function boot(): void {
     state.controls = new ControlsBar(appRoot, (intent: ControlIntent) => {
       handleControl(intent, state);
     });
+    state.sceneBrowser = new SceneBrowser(
+      appRoot,
+      SCENE_CATALOG,
+      (intent: SceneSelectIntent) => handleSceneSelect(intent, state),
+      state.selectedSceneId
+    );
 
     // ?perf=1 turns on the perf overlay; 'P' key toggles.
     if (typeof window !== "undefined") {

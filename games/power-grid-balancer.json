@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "name": "power-grid-balancer",
+  "catalog": {
+    "slug": "power-grid-balancer",
+    "title": "Power Grid Balancer",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "An electric-grid fantasy where operators balance hydro, solar, wind, storage, substations, and overloaded city loads through snapping voltage arcs.",
+    "tags": ["power", "grid", "electric", "balancer", "overload", "v1"],
+    "palette_note": "A near-black control-room background and warm readout foreground carry electric yellow busbars, cyan high-voltage arcs, magenta overload flashes, orange thermal warnings, green storage relief, blue generation, and violet peak-load routes.",
+    "layout_note": "Thirteen nodes form a jagged lightning-bolt grid: generation rises on the left, a central breaker/transformer spine pinches into an overloaded core, and city-load substations fan to the right before the low storage return.",
+    "node_language_note": "Triangles are generation towers, hexagons are dispatch/balancer control points, diamonds are transformers and relay switches, squares are substations or storage yards, and circles are city load sinks; hot magenta/orange nodes mark overload risk while cyan/yellow/green/blue show voltage roles.",
+    "mover_path_note": "Seven movers start on long visible hydro, wind, solar, transformer, overload, battery, and downtown feeder segments so the first frame reads as active power flows being rebalanced under stress.",
+    "review_note": "Visual review target: default 960x540 #scene first-frame screenshot; checked for v1 JSON validity, v2-capable loader compatibility, electric-grid palette separation, lightning-bolt overload silhouette, distinct node language, local catalog/registry paths, and visible voltage-flow starts."
+  },
+  "theme": {
+    "palette": ["#061018", "#f8f7d0", "#ffd400", "#00e5ff", "#ff3df2", "#ff6b2a", "#30e070", "#3b82ff", "#9b5cff", "#ff3040"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "hydro_dam", "pos": [80, 355], "shape": "triangle", "color": 7 },
+      { "id": "wind_ridge", "pos": [150, 150], "shape": "triangle", "color": 3 },
+      { "id": "solar_field", "pos": [255, 245], "shape": "square", "color": 2 },
+      { "id": "frequency_balancer", "pos": [360, 105], "shape": "hexagon", "color": 6 },
+      { "id": "west_transformer", "pos": [385, 310], "shape": "diamond", "color": 3 },
+      { "id": "surge_relay", "pos": [500, 220], "shape": "diamond", "color": 4 },
+      { "id": "overload_core", "pos": [565, 80], "shape": "hexagon", "color": 9 },
+      { "id": "thermal_substation", "pos": [650, 290], "shape": "square", "color": 5 },
+      { "id": "arc_tower", "pos": [735, 145], "shape": "triangle", "color": 2 },
+      { "id": "downtown_load", "pos": [860, 250], "shape": "circle", "color": 8 },
+      { "id": "hospital_microgrid", "pos": [765, 420], "shape": "circle", "color": 6 },
+      { "id": "battery_yard", "pos": [520, 455], "shape": "square", "color": 6 },
+      { "id": "rail_load", "pos": [245, 430], "shape": "circle", "color": 5 }
+    ],
+    "paths": [
+      { "id": "hydro_to_rail", "from": "hydro_dam", "to": "rail_load", "color": 7 },
+      { "id": "rail_to_battery", "from": "rail_load", "to": "battery_yard", "color": 5 },
+      { "id": "battery_to_hospital", "from": "battery_yard", "to": "hospital_microgrid", "color": 6 },
+      { "id": "hospital_to_downtown", "from": "hospital_microgrid", "to": "downtown_load", "color": 8 },
+      { "id": "downtown_to_arc", "from": "downtown_load", "to": "arc_tower", "color": 2 },
+      { "id": "arc_to_core", "from": "arc_tower", "to": "overload_core", "color": 9 },
+      { "id": "core_to_balancer", "from": "overload_core", "to": "frequency_balancer", "color": 4 },
+      { "id": "balancer_to_wind", "from": "frequency_balancer", "to": "wind_ridge", "color": 3 },
+      { "id": "wind_to_hydro", "from": "wind_ridge", "to": "hydro_dam", "color": 7 },
+      { "id": "wind_to_solar", "from": "wind_ridge", "to": "solar_field", "color": 2 },
+      { "id": "solar_to_transformer", "from": "solar_field", "to": "west_transformer", "color": 2 },
+      { "id": "transformer_to_surge", "from": "west_transformer", "to": "surge_relay", "color": 3 },
+      { "id": "surge_to_core", "from": "surge_relay", "to": "overload_core", "color": 4 },
+      { "id": "surge_to_thermal", "from": "surge_relay", "to": "thermal_substation", "color": 5 },
+      { "id": "thermal_to_downtown", "from": "thermal_substation", "to": "downtown_load", "color": 8 },
+      { "id": "thermal_to_hospital", "from": "thermal_substation", "to": "hospital_microgrid", "color": 6 },
+      { "id": "transformer_to_battery", "from": "west_transformer", "to": "battery_yard", "color": 6 },
+      { "id": "solar_to_balancer", "from": "solar_field", "to": "frequency_balancer", "color": 6 },
+      { "id": "core_to_arc", "from": "overload_core", "to": "arc_tower", "color": 2 },
+      { "id": "battery_to_transformer", "from": "battery_yard", "to": "west_transformer", "color": 3 }
+    ],
+    "movers": [
+      { "id": "hydro_blue_flow", "on_path": "hydro_to_rail", "speed": 0.74 },
+      { "id": "wind_cyan_flow", "on_path": "balancer_to_wind", "speed": 0.86 },
+      { "id": "solar_busbar", "on_path": "solar_to_transformer", "speed": 0.78 },
+      { "id": "transformer_arc", "on_path": "transformer_to_surge", "speed": 0.96 },
+      { "id": "overload_flash", "on_path": "surge_to_core", "speed": 1.08 },
+      { "id": "battery_relief", "on_path": "battery_to_hospital", "speed": 0.82 },
+      { "id": "downtown_peak", "on_path": "thermal_to_downtown", "speed": 0.9 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

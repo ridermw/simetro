@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "name": "emergency-dispatch",
+  "catalog": {
+    "slug": "emergency-dispatch",
+    "title": "Emergency Dispatch",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A high-contrast civic command map where dispatchers route ambulances, fire engines, river rescue, and public works through a citywide emergency net.",
+    "tags": ["emergency", "dispatch", "civic", "river", "high-contrast", "v1"],
+    "palette_note": "Deep midnight navy and white civic labels support dispatch cyan, emergency red, alert amber, triage green, command violet, fire orange, and river blue route accents.",
+    "layout_note": "Twelve nodes form a shield-and-siren silhouette: river rescue and fire response on the left, a high north siren, central dispatch command, hospital and substation on the right, and a lower flood/triage return.",
+    "node_language_note": "Hexagons are command desks, squares are civic stations and evacuation posts, triangles are alarm towers, diamonds are bridges/intersections, and circles are hospital or triage destinations.",
+    "mover_path_note": "Six movers start on long visible ambulance, bridge, river, fire, command, and triage segments so the first frame reads as simultaneous emergency dispatch across the city.",
+    "review_note": "Visual review target: default 960x540 #scene first-frame screenshot; checked for v1 JSON validity, v2-capable loader compatibility, high-contrast civic palette, shield/siren silhouette, distinct node language, local catalog/registry paths, and visible emergency starts."
+  },
+  "theme": {
+    "palette": ["#07111f", "#f4fbff", "#00e5ff", "#ff334e", "#ffd166", "#2ee66b", "#7c5cff", "#ff8c42", "#4ea1ff"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "river_lock", "pos": [95, 360], "shape": "diamond", "color": 8 },
+      { "id": "west_firehouse", "pos": [160, 210], "shape": "square", "color": 7 },
+      { "id": "call_intake", "pos": [300, 115], "shape": "hexagon", "color": 2 },
+      { "id": "north_siren", "pos": [480, 65], "shape": "triangle", "color": 3 },
+      { "id": "civic_hospital", "pos": [660, 125], "shape": "circle", "color": 5 },
+      { "id": "east_substation", "pos": [820, 215], "shape": "square", "color": 4 },
+      { "id": "bridge_checkpoint", "pos": [765, 365], "shape": "diamond", "color": 8 },
+      { "id": "triage_green", "pos": [560, 430], "shape": "circle", "color": 5 },
+      { "id": "flood_command", "pos": [365, 430], "shape": "hexagon", "color": 2 },
+      { "id": "dispatch_hq", "pos": [480, 255], "shape": "hexagon", "color": 6 },
+      { "id": "traffic_grid", "pos": [310, 285], "shape": "diamond", "color": 4 },
+      { "id": "evacuation_square", "pos": [650, 285], "shape": "square", "color": 3 }
+    ],
+    "paths": [
+      { "id": "ring_01_intake_siren", "from": "call_intake", "to": "north_siren", "color": 3 },
+      { "id": "ring_02_siren_hospital", "from": "north_siren", "to": "civic_hospital", "color": 5 },
+      { "id": "ring_03_hospital_substation", "from": "civic_hospital", "to": "east_substation", "color": 4 },
+      { "id": "ring_04_substation_bridge", "from": "east_substation", "to": "bridge_checkpoint", "color": 8 },
+      { "id": "ring_05_bridge_triage", "from": "bridge_checkpoint", "to": "triage_green", "color": 5 },
+      { "id": "ring_06_triage_flood", "from": "triage_green", "to": "flood_command", "color": 2 },
+      { "id": "ring_07_flood_river", "from": "flood_command", "to": "river_lock", "color": 8 },
+      { "id": "ring_08_river_firehouse", "from": "river_lock", "to": "west_firehouse", "color": 7 },
+      { "id": "ring_09_firehouse_intake", "from": "west_firehouse", "to": "call_intake", "color": 2 },
+      { "id": "spur_intake_hq", "from": "call_intake", "to": "dispatch_hq", "color": 2 },
+      { "id": "spur_hq_siren", "from": "dispatch_hq", "to": "north_siren", "color": 3 },
+      { "id": "spur_hq_hospital", "from": "dispatch_hq", "to": "civic_hospital", "color": 5 },
+      { "id": "spur_hq_substation", "from": "dispatch_hq", "to": "east_substation", "color": 4 },
+      { "id": "spur_hq_evacuation", "from": "dispatch_hq", "to": "evacuation_square", "color": 3 },
+      { "id": "spur_evacuation_bridge", "from": "evacuation_square", "to": "bridge_checkpoint", "color": 8 },
+      { "id": "spur_hq_triage", "from": "dispatch_hq", "to": "triage_green", "color": 6 },
+      { "id": "spur_hq_traffic", "from": "dispatch_hq", "to": "traffic_grid", "color": 4 },
+      { "id": "spur_traffic_firehouse", "from": "traffic_grid", "to": "west_firehouse", "color": 7 },
+      { "id": "spur_traffic_flood", "from": "traffic_grid", "to": "flood_command", "color": 2 }
+    ],
+    "movers": [
+      { "id": "ambulance_alpha", "on_path": "ring_02_siren_hospital", "speed": 0.96 },
+      { "id": "public_works_bridge", "on_path": "ring_04_substation_bridge", "speed": 0.74 },
+      { "id": "rescue_boat", "on_path": "ring_07_flood_river", "speed": 0.82 },
+      { "id": "ladder_engine", "on_path": "ring_08_river_firehouse", "speed": 0.7 },
+      { "id": "police_dispatch", "on_path": "spur_hq_evacuation", "speed": 1.02 },
+      { "id": "triage_shuttle", "on_path": "ring_05_bridge_triage", "speed": 0.88 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

@@ -51,7 +51,7 @@ const SET_SPEED_SCHEMA: &str = r#"{
 const PLACE_PIECE_SCHEMA: &str = r#"{
   "type": "object",
   "title": "place_piece",
-  "description": "(P2) Place a new piece in the world.",
+  "description": "Place a new node in the world. piece_kind may be node or a node shape.",
   "properties": {
     "piece_kind": { "type": "string", "maxLength": 64 },
     "pos": {
@@ -68,7 +68,7 @@ const PLACE_PIECE_SCHEMA: &str = r#"{
 const CONNECT_PIECES_SCHEMA: &str = r#"{
   "type": "object",
   "title": "connect_pieces",
-  "description": "(P2) Connect two pieces with a new path.",
+  "description": "Connect two nodes with a new directed path.",
   "properties": {
     "from": { "type": "integer", "minimum": 0 },
     "to":   { "type": "integer", "minimum": 0 }
@@ -80,7 +80,7 @@ const CONNECT_PIECES_SCHEMA: &str = r#"{
 const REMOVE_PIECE_SCHEMA: &str = r#"{
   "type": "object",
   "title": "remove_piece",
-  "description": "(P2) Remove a piece by id.",
+  "description": "Remove a safe node by id.",
   "properties": {
     "id": { "type": "integer", "minimum": 0 }
   },
@@ -89,9 +89,9 @@ const REMOVE_PIECE_SCHEMA: &str = r#"{
 }"#;
 
 /// The full set of tool specs the bridge sends to the model. Author
-/// tools (PlacePiece / ConnectPieces / RemovePiece) are exposed in P1
-/// so the model learns the shape; the engine rejects them with a
-/// typed `Warning::InvalidAction` until P2 enables them.
+/// tools (PlacePiece / ConnectPieces / RemovePiece) are engine-validated:
+/// valid requests mutate the world, invalid ones surface as typed
+/// `Warning::InvalidAction` messages.
 #[must_use]
 pub fn action_tool_specs() -> Vec<ToolSpec> {
     vec![

@@ -15,28 +15,37 @@
 
 use std::any::Any;
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use simetro_engine::{
-    encode_snapshot, encode_static, load_error_to_fault, load_scene_str, AgentHost, LoadedScene,
-    RunState, SpeedTuner, TickRunner, World,
+    encode_snapshot, encode_static, encode_static_parts, load_error_to_fault, load_scene_str,
+    AgentHost, LoadError, LoadedScene, RunState, SpeedTuner, TickRunner, World,
 };
 use simetro_protocol::{Envelope, SimEvent, SimMessage, SnapshotPayload};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time;
+
+use crate::scene_registry::SceneRef;
 
 // -------------------------------------------------------------------------
 //  Public types
 // -------------------------------------------------------------------------
 
 /// Commands sent from Tauri command handlers to the driver task.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum DriverCommand {
     TogglePause,
     Step,
     SetSpeed(f32),
+    SetScene {
+        scene: SceneRef,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Re-read the scene from disk. Used by both the UI reload button and
+    /// the live scene file watcher.
     Reload,
     /// Frontend has connected and is ready to receive messages.
     Subscribe,
@@ -56,18 +65,79 @@ const SNAPSHOT_HZ: u64 = 20;
 const TICKS_PER_SNAPSHOT: u64 = INTERNAL_HZ / SNAPSHOT_HZ; // 3
 const MIN_SPEED_FACTOR: f32 = 0.1;
 const MAX_SPEED_FACTOR: f32 = 10.0;
+const SCENE_WATCH_POLL_PERIOD: Duration = Duration::from_millis(250);
+const SCENE_WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// Spawn the engine driver as a background task. Returns the command
 /// sender for Tauri commands to use.
-pub fn spawn_driver(app: AppHandle, scene_path: PathBuf, seed: u64) -> DriverState {
+pub fn spawn_driver(app: AppHandle, initial_scene: SceneRef, seed: u64) -> DriverState {
     let (tx, rx) = mpsc::unbounded_channel();
-    tauri::async_runtime::spawn(driver_loop(app, scene_path, seed, rx));
+    let active_scene = Arc::new(RwLock::new(initial_scene.clone()));
+    tauri::async_runtime::spawn(driver_loop(
+        app,
+        initial_scene,
+        active_scene.clone(),
+        seed,
+        rx,
+    ));
+    spawn_scene_file_watcher(active_scene, tx.clone());
     DriverState { tx }
+}
+
+fn spawn_scene_file_watcher(
+    active_scene: Arc<RwLock<SceneRef>>,
+    tx: mpsc::UnboundedSender<DriverCommand>,
+) {
+    tauri::async_runtime::spawn(scene_file_watcher_loop(active_scene, tx));
+}
+
+async fn scene_file_watcher_loop(
+    active_scene: Arc<RwLock<SceneRef>>,
+    tx: mpsc::UnboundedSender<DriverCommand>,
+) {
+    let mut watched_scene = read_active_scene(&active_scene);
+    let mut watcher = DebouncedFileWatch::new(
+        observe_scene_file(&watched_scene.path),
+        SCENE_WATCH_DEBOUNCE,
+    );
+    let mut interval = time::interval(SCENE_WATCH_POLL_PERIOD);
+    interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+        let current_scene = read_active_scene(&active_scene);
+        if current_scene != watched_scene {
+            tracing::info!(
+                "scene watcher retargeted to {} ({})",
+                current_scene.path.display(),
+                current_scene.scene_id
+            );
+            watcher = DebouncedFileWatch::new(
+                observe_scene_file(&current_scene.path),
+                SCENE_WATCH_DEBOUNCE,
+            );
+            watched_scene = current_scene;
+            continue;
+        }
+
+        let now = Instant::now();
+        if watcher.observe(observe_scene_file(&watched_scene.path), now) {
+            tracing::info!(
+                "scene file changed; reloading {} ({})",
+                watched_scene.path.display(),
+                watched_scene.scene_id
+            );
+            if tx.send(DriverCommand::Reload).is_err() {
+                break;
+            }
+        }
+    }
 }
 
 async fn driver_loop(
     app: AppHandle,
-    scene_path: PathBuf,
+    initial_scene: SceneRef,
+    active_scene: Arc<RwLock<SceneRef>>,
     seed: u64,
     mut rx: mpsc::UnboundedReceiver<DriverCommand>,
 ) {
@@ -81,7 +151,7 @@ async fn driver_loop(
         }
     }
 
-    let mut state = match load_and_init(&app, &scene_path, seed) {
+    let mut state = match load_and_init(&app, &initial_scene, seed) {
         Some(s) => s,
         None => return,
     };
@@ -92,7 +162,7 @@ async fn driver_loop(
             &app,
             &mut state,
             cmd,
-            &scene_path,
+            &active_scene,
             seed,
             &mut ticks_since_snapshot,
         );
@@ -111,8 +181,8 @@ async fn driver_loop(
             cmd = rx.recv() => {
                 match cmd {
                     Some(c) => {
-                        let is_set_speed = matches!(c, DriverCommand::SetSpeed(_));
-                        handle_command(&app, &mut state, c, &scene_path, seed, &mut ticks_since_snapshot);
+                        let is_set_speed = matches!(&c, DriverCommand::SetSpeed(_));
+                        handle_command(&app, &mut state, c, &active_scene, seed, &mut ticks_since_snapshot);
                         if is_set_speed {
                             interval = tick_interval(state.speed_factor);
                         }
@@ -153,26 +223,148 @@ struct SimState {
     speed_factor: f32,
 }
 
-fn load_and_init(app: &AppHandle, scene_path: &PathBuf, seed: u64) -> Option<SimState> {
-    let json = match std::fs::read_to_string(scene_path) {
-        Ok(s) => s,
+struct SceneLoad {
+    world: World,
+    runner: TickRunner,
+    meta: SceneMeta,
+    static_payload: simetro_protocol::StaticPayload,
+}
+
+#[derive(Debug)]
+enum SceneLoadFailure {
+    Read(std::io::Error),
+    Load(LoadError),
+}
+
+impl std::fmt::Display for SceneLoadFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Read(e) => write!(f, "cannot read scene: {e}"),
+            Self::Load(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SceneFileObservation {
+    Present(SceneFileStamp),
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SceneFileStamp {
+    len: u64,
+    content_hash: u64,
+}
+
+#[derive(Debug)]
+struct PendingFileChange {
+    observation: SceneFileObservation,
+    deadline: Instant,
+}
+
+#[derive(Debug)]
+struct DebouncedFileWatch {
+    stable_observation: SceneFileObservation,
+    pending: Option<PendingFileChange>,
+    debounce: Duration,
+}
+
+impl DebouncedFileWatch {
+    fn new(initial: SceneFileObservation, debounce: Duration) -> Self {
+        Self {
+            stable_observation: initial,
+            pending: None,
+            debounce,
+        }
+    }
+
+    fn observe(&mut self, current: SceneFileObservation, now: Instant) -> bool {
+        if current == self.stable_observation {
+            self.pending = None;
+            return false;
+        }
+
+        match &self.pending {
+            Some(pending) if pending.observation == current && now >= pending.deadline => {
+                self.stable_observation = current;
+                self.pending = None;
+                true
+            }
+            Some(pending) if pending.observation == current => false,
+            _ => {
+                self.pending = Some(PendingFileChange {
+                    observation: current,
+                    deadline: now + self.debounce,
+                });
+                false
+            }
+        }
+    }
+}
+
+fn observe_scene_file(path: &Path) -> SceneFileObservation {
+    match std::fs::read(path) {
+        Ok(bytes) => SceneFileObservation::Present(SceneFileStamp {
+            len: bytes.len() as u64,
+            content_hash: fnv1a64(&bytes),
+        }),
+        Err(_) => SceneFileObservation::Unavailable,
+    }
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for b in bytes {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x100000001b3_u64);
+    }
+    hash
+}
+
+fn load_and_init(app: &AppHandle, scene: &SceneRef, seed: u64) -> Option<SimState> {
+    let loaded = match load_scene_from_path(&scene.path, seed) {
+        Ok(loaded) => loaded,
         Err(e) => {
-            tracing::error!("failed to read scene {}: {e}", scene_path.display());
-            emit_fault(app, 0, &format!("cannot read scene file: {e}"));
+            tracing::error!(
+                "failed to load scene {} ({}): {e}",
+                scene.path.display(),
+                scene.scene_id
+            );
+            emit_scene_load_failure(app, 0, &e);
             return None;
         }
     };
 
-    let loaded = match load_scene_str(&json, seed) {
-        Ok(l) => l,
-        Err(e) => {
-            tracing::error!("load error: {e}");
-            let msg = SimMessage::Fault(load_error_to_fault(&e));
-            emit_sim(app, 0, msg);
-            return None;
-        }
-    };
+    let mut snapshot_buf = SnapshotPayload::default();
+    encode_snapshot(&loaded.world, &mut snapshot_buf);
 
+    // Emit initial static + snapshot.
+    let mut seq: u64 = 0;
+    emit_sim(app, seq, SimMessage::Static(loaded.static_payload.clone()));
+    seq += 1;
+    emit_sim(app, seq, SimMessage::Snapshot(snapshot_buf.clone()));
+    seq += 1;
+
+    Some(SimState {
+        world: loaded.world,
+        runner: loaded.runner,
+        meta: loaded.meta,
+        snapshot_buf,
+        last_static: loaded.static_payload,
+        seq,
+        paused: false,
+        speed_factor: 1.0,
+    })
+}
+
+fn load_scene_from_path(path: &Path, seed: u64) -> Result<SceneLoad, SceneLoadFailure> {
+    let json = std::fs::read_to_string(path).map_err(SceneLoadFailure::Read)?;
+    build_scene_load(&json, seed).map_err(SceneLoadFailure::Load)
+}
+
+fn build_scene_load(json: &str, seed: u64) -> Result<SceneLoad, LoadError> {
+    let loaded = load_scene_str(json, seed)?;
     let mut runner = TickRunner::new();
     runner.reserve_for(loaded.world.movers.len());
 
@@ -204,26 +396,33 @@ fn load_and_init(app: &AppHandle, scene_path: &PathBuf, seed: u64) -> Option<Sim
         agents,
     };
 
-    let mut snapshot_buf = SnapshotPayload::default();
-    encode_snapshot(&world, &mut snapshot_buf);
-
-    // Emit initial static + snapshot.
-    let mut seq: u64 = 0;
-    emit_sim(app, seq, SimMessage::Static(static_payload.clone()));
-    seq += 1;
-    emit_sim(app, seq, SimMessage::Snapshot(snapshot_buf.clone()));
-    seq += 1;
-
-    Some(SimState {
+    Ok(SceneLoad {
         world,
         runner,
         meta,
-        snapshot_buf,
-        last_static: static_payload,
-        seq,
-        paused: false,
-        speed_factor: 1.0,
+        static_payload,
     })
+}
+
+#[cfg(test)]
+fn replace_scene_from_json(
+    state: &mut SimState,
+    json: &str,
+    seed: u64,
+    ticks_since_snapshot: &mut u64,
+) -> Result<(), LoadError> {
+    let loaded = build_scene_load(json, seed)?;
+    apply_scene_load(state, loaded, ticks_since_snapshot);
+    Ok(())
+}
+
+fn apply_scene_load(state: &mut SimState, loaded: SceneLoad, ticks_since_snapshot: &mut u64) {
+    state.world = loaded.world;
+    state.runner = loaded.runner;
+    state.meta = loaded.meta;
+    state.last_static = loaded.static_payload;
+    state.paused = false;
+    *ticks_since_snapshot = 0;
 }
 
 fn tick_and_emit(app: &AppHandle, state: &mut SimState, ticks_since_snapshot: &mut u64) {
@@ -244,6 +443,25 @@ fn tick_and_emit(app: &AppHandle, state: &mut SimState, ticks_since_snapshot: &m
         );
         state.seq += 1;
         return;
+    }
+
+    if state.runner.topology_dirty() {
+        state.last_static = encode_static_parts(
+            &state.meta.name,
+            &state.meta.theme,
+            &state.meta.id_map,
+            &state.world,
+        );
+        emit_sim(app, state.seq, SimMessage::Static(state.last_static.clone()));
+        state.seq += 1;
+        encode_snapshot(&state.world, &mut state.snapshot_buf);
+        emit_sim(
+            app,
+            state.seq,
+            SimMessage::Snapshot(state.snapshot_buf.clone()),
+        );
+        state.seq += 1;
+        *ticks_since_snapshot = 0;
     }
 
     // Emit semantic events (skip tick-only batches).
@@ -278,7 +496,7 @@ fn handle_command(
     app: &AppHandle,
     state: &mut SimState,
     cmd: DriverCommand,
-    scene_path: &PathBuf,
+    active_scene: &Arc<RwLock<SceneRef>>,
     seed: u64,
     ticks_since_snapshot: &mut u64,
 ) {
@@ -310,54 +528,34 @@ fn handle_command(
             tracing::info!("speed factor set to {}", state.speed_factor);
         }
         DriverCommand::Reload => {
-            tracing::info!("reloading scene from {}", scene_path.display());
-            // Attempt to reload the scene from disk.
-            let json = match std::fs::read_to_string(scene_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    emit_fault(app, state.seq, &format!("cannot read scene: {e}"));
-                    state.seq += 1;
-                    return;
-                }
-            };
-            let loaded = match load_scene_str(&json, seed) {
-                Ok(l) => l,
-                Err(e) => {
-                    let msg = SimMessage::Fault(load_error_to_fault(&e));
-                    emit_sim(app, state.seq, msg);
-                    state.seq += 1;
-                    return;
-                }
-            };
-
-            // Replace engine state.
-            let mut runner = TickRunner::new();
-            runner.reserve_for(loaded.world.movers.len());
-            for spec in &loaded.agents {
-                if spec.kind == "speed_tuner" {
-                    runner.register_agent(AgentHost::new(Box::new(SpeedTuner::new(
-                        spec.interval_ticks,
-                    ))));
-                }
-            }
-
-            let static_payload = encode_static(&loaded);
-            state.world = loaded.world;
-            state.runner = runner;
-            state.last_static = static_payload.clone();
-            state.paused = false;
-            *ticks_since_snapshot = 0;
-
-            // Emit fresh static + snapshot.
-            emit_sim(app, state.seq, SimMessage::Static(static_payload));
-            state.seq += 1;
-            encode_snapshot(&state.world, &mut state.snapshot_buf);
-            emit_sim(
-                app,
-                state.seq,
-                SimMessage::Snapshot(state.snapshot_buf.clone()),
+            let scene = read_active_scene(active_scene);
+            tracing::info!(
+                "reloading scene from {} ({})",
+                scene.path.display(),
+                scene.scene_id
             );
-            state.seq += 1;
+            if let Err(e) = replace_scene(app, state, &scene, seed, ticks_since_snapshot) {
+                tracing::warn!("scene reload failed; preserving current scene: {e}");
+            }
+        }
+        DriverCommand::SetScene { scene, reply } => {
+            tracing::info!(
+                "switching scene to {} ({})",
+                scene.path.display(),
+                scene.scene_id
+            );
+            let result = replace_scene(app, state, &scene, seed, ticks_since_snapshot);
+            let reply_result = match result {
+                Ok(()) => {
+                    write_active_scene(active_scene, scene);
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::warn!("scene switch failed; preserving current scene: {e}");
+                    Err(e.to_string())
+                }
+            };
+            let _ = reply.send(reply_result);
         }
         DriverCommand::Subscribe => {
             // Late subscribe — re-emit current state.
@@ -376,6 +574,38 @@ fn handle_command(
             state.seq += 1;
         }
     }
+}
+
+fn replace_scene(
+    app: &AppHandle,
+    state: &mut SimState,
+    scene: &SceneRef,
+    seed: u64,
+    ticks_since_snapshot: &mut u64,
+) -> Result<(), SceneLoadFailure> {
+    let loaded = match load_scene_from_path(&scene.path, seed) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            emit_scene_load_failure(app, state.seq, &e);
+            state.seq += 1;
+            return Err(e);
+        }
+    };
+
+    let static_payload = loaded.static_payload.clone();
+    apply_scene_load(state, loaded, ticks_since_snapshot);
+
+    // Emit fresh static + snapshot.
+    emit_sim(app, state.seq, SimMessage::Static(static_payload));
+    state.seq += 1;
+    encode_snapshot(&state.world, &mut state.snapshot_buf);
+    emit_sim(
+        app,
+        state.seq,
+        SimMessage::Snapshot(state.snapshot_buf.clone()),
+    );
+    state.seq += 1;
+    Ok(())
 }
 
 // -------------------------------------------------------------------------
@@ -427,6 +657,27 @@ fn emit_fault(app: &AppHandle, seq: u64, message: &str) {
     );
 }
 
+fn emit_scene_load_failure(app: &AppHandle, seq: u64, error: &SceneLoadFailure) {
+    match error {
+        SceneLoadFailure::Read(e) => emit_fault(app, seq, &format!("cannot read scene: {e}")),
+        SceneLoadFailure::Load(e) => emit_sim(app, seq, SimMessage::Fault(load_error_to_fault(e))),
+    }
+}
+
+fn read_active_scene(active_scene: &Arc<RwLock<SceneRef>>) -> SceneRef {
+    match active_scene.read() {
+        Ok(scene) => scene.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+fn write_active_scene(active_scene: &Arc<RwLock<SceneRef>>, scene: SceneRef) {
+    match active_scene.write() {
+        Ok(mut active) => *active = scene,
+        Err(poisoned) => *poisoned.into_inner() = scene,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,5 +704,122 @@ mod tests {
 
         assert_eq!(panic_payload_message(&borrowed), "borrowed panic");
         assert_eq!(panic_payload_message(&owned), "owned panic");
+    }
+
+    #[test]
+    fn file_watch_debounces_stable_change() {
+        let debounce = Duration::from_millis(100);
+        let initial = observed_file(10, 1);
+        let changed = observed_file(11, 2);
+        let now = Instant::now();
+        let mut watcher = DebouncedFileWatch::new(initial, debounce);
+
+        assert!(!watcher.observe(changed.clone(), now));
+        assert!(!watcher.observe(changed.clone(), now + Duration::from_millis(99)));
+        assert!(watcher.observe(changed.clone(), now + debounce));
+        assert!(!watcher.observe(changed, now + Duration::from_millis(200)));
+    }
+
+    #[test]
+    fn file_watch_resets_debounce_when_observation_changes_again() {
+        let debounce = Duration::from_millis(100);
+        let initial = observed_file(10, 1);
+        let first_change = observed_file(11, 2);
+        let second_change = observed_file(12, 3);
+        let now = Instant::now();
+        let mut watcher = DebouncedFileWatch::new(initial, debounce);
+
+        assert!(!watcher.observe(first_change, now));
+        assert!(!watcher.observe(second_change.clone(), now + Duration::from_millis(50)));
+        assert!(!watcher.observe(second_change.clone(), now + Duration::from_millis(100)));
+        assert!(watcher.observe(second_change, now + Duration::from_millis(150)));
+    }
+
+    #[test]
+    fn file_watch_cancels_pending_change_when_observation_returns_to_stable() {
+        let debounce = Duration::from_millis(100);
+        let initial = observed_file(10, 1);
+        let changed = observed_file(11, 2);
+        let now = Instant::now();
+        let mut watcher = DebouncedFileWatch::new(initial.clone(), debounce);
+
+        assert!(!watcher.observe(changed.clone(), now));
+        assert!(!watcher.observe(initial, now + Duration::from_millis(50)));
+        assert!(!watcher.observe(changed.clone(), now + Duration::from_millis(120)));
+        assert!(watcher.observe(changed, now + Duration::from_millis(220)));
+    }
+
+    #[test]
+    fn file_watch_detects_same_length_content_changes() {
+        assert_ne!(fnv1a64(b"abc"), fnv1a64(b"abd"));
+        assert_eq!(b"abc".len(), b"abd".len());
+    }
+
+    #[test]
+    fn scene_replacement_preserves_current_state_on_load_failure() {
+        let mut state = state_from_json(include_str!("../../games/demo-paths.json"));
+        state.seq = 42;
+        state.paused = true;
+        state.speed_factor = 2.5;
+        let before_scene_name = state.last_static.name.clone();
+        let before_nodes = state.last_static.nodes.clone();
+        let before_seq = state.seq;
+        let before_paused = state.paused;
+        let before_speed = state.speed_factor;
+        let mut ticks_since_snapshot = 2;
+
+        let result = replace_scene_from_json(
+            &mut state,
+            r#"{"schema_version":1,"name":"broken","pieces":{"nodes":["#,
+            0,
+            &mut ticks_since_snapshot,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(state.last_static.name, before_scene_name);
+        assert_eq!(state.last_static.nodes, before_nodes);
+        assert_eq!(state.seq, before_seq);
+        assert_eq!(state.paused, before_paused);
+        assert_eq!(state.speed_factor, before_speed);
+        assert_eq!(ticks_since_snapshot, 2);
+    }
+
+    #[test]
+    fn scene_replacement_commits_loaded_scene_atomically() {
+        let mut state = state_from_json(include_str!("../../games/demo-paths.json"));
+        state.paused = true;
+        let mut ticks_since_snapshot = 2;
+
+        replace_scene_from_json(
+            &mut state,
+            include_str!("../../games/demo-paths.json"),
+            0,
+            &mut ticks_since_snapshot,
+        )
+        .expect("valid scene reload");
+
+        assert_eq!(state.last_static.name, "demo-paths");
+        assert!(!state.paused);
+        assert_eq!(ticks_since_snapshot, 0);
+    }
+
+    fn observed_file(len: u64, content_hash: u64) -> SceneFileObservation {
+        SceneFileObservation::Present(SceneFileStamp { len, content_hash })
+    }
+
+    fn state_from_json(json: &str) -> SimState {
+        let loaded = build_scene_load(json, 0).expect("valid scene fixture");
+        let mut snapshot_buf = SnapshotPayload::default();
+        encode_snapshot(&loaded.world, &mut snapshot_buf);
+        SimState {
+            world: loaded.world,
+            runner: loaded.runner,
+            meta: loaded.meta,
+            snapshot_buf,
+            last_static: loaded.static_payload,
+            seq: 0,
+            paused: false,
+            speed_factor: 1.0,
+        }
     }
 }

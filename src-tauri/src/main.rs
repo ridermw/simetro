@@ -12,10 +12,12 @@
 // `tauri.conf.json`.
 
 mod driver;
+mod scene_registry;
 
 use std::path::PathBuf;
 
 use driver::{spawn_driver, DriverCommand, DriverState};
+use scene_registry::SceneRegistry;
 use tauri::Manager;
 
 fn main() {
@@ -30,18 +32,23 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            // Resolve the scene path relative to the project root.
-            // In dev, CWD is src-tauri; in production this would use a
-            // bundled resource. For now, resolve relative to src-tauri's parent.
-            let scene_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new("."))
-                .join("games/demo-paths.json");
+                .to_path_buf();
+            let registry =
+                SceneRegistry::with_resource_root(project_root, app.path().resource_dir().ok());
+            let initial_scene = registry.default_scene()?;
 
-            tracing::info!("scene path: {}", scene_path.display());
+            tracing::info!(
+                "scene path: {} ({})",
+                initial_scene.path.display(),
+                initial_scene.scene_id
+            );
 
-            let driver_state = spawn_driver(app.handle().clone(), scene_path, 0);
+            let driver_state = spawn_driver(app.handle().clone(), initial_scene, 0);
             app.manage(driver_state);
+            app.manage(registry);
 
             tracing::info!("tauri setup complete — engine driver spawned");
             Ok(())
@@ -52,6 +59,8 @@ fn main() {
             cmd_step,
             cmd_reload,
             cmd_set_speed,
+            cmd_set_scene,
+            set_scene,
         ])
         .run(tauri::generate_context!())
         .expect("error while running simetro-desktop");
@@ -84,4 +93,41 @@ fn cmd_reload(state: tauri::State<'_, DriverState>) {
 #[tauri::command]
 fn cmd_set_speed(state: tauri::State<'_, DriverState>, factor: f32) {
     let _ = state.tx.send(DriverCommand::SetSpeed(factor));
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn cmd_set_scene(
+    state: tauri::State<'_, DriverState>,
+    registry: tauri::State<'_, SceneRegistry>,
+    scene_id: String,
+) -> Result<(), String> {
+    enqueue_set_scene(state.inner(), registry.inner(), scene_id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn set_scene(
+    state: tauri::State<'_, DriverState>,
+    registry: tauri::State<'_, SceneRegistry>,
+    scene_id: String,
+) -> Result<(), String> {
+    enqueue_set_scene(state.inner(), registry.inner(), scene_id).await
+}
+
+async fn enqueue_set_scene(
+    state: &DriverState,
+    registry: &SceneRegistry,
+    scene_id: String,
+) -> Result<(), String> {
+    let scene = registry.resolve(&scene_id).map_err(|e| e.to_string())?;
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    state
+        .tx
+        .send(DriverCommand::SetScene {
+            scene,
+            reply: reply_tx,
+        })
+        .map_err(|_| "engine driver is not running".to_string())?;
+    reply_rx
+        .await
+        .map_err(|_| "engine driver dropped scene switch result".to_string())?
 }

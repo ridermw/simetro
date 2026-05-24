@@ -1,6 +1,19 @@
 {
   "schema_version": 1,
   "name": "demo-paths",
+  "catalog": {
+    "slug": "demo-paths",
+    "title": "Demo Paths",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A compact triangular loop that demonstrates the v1 node, path, mover, goal, and agent primitives.",
+    "tags": ["demo", "loop", "triangle"],
+    "palette_note": "Dark background with a light foreground and three saturated route accents.",
+    "layout_note": "Three nodes form a wide triangular silhouette so the loop reads at a glance.",
+    "node_language_note": "Circle, square, and triangle nodes each use the accent color of their outgoing or incoming route.",
+    "mover_path_note": "Each mover starts on a different colored edge of the primary loop.",
+    "review_note": "JSON reviewed for v1 validity, palette separation, triangular silhouette, three intentional node shapes/colors, and visible mover start paths."
+  },
   "theme": {
     "palette": ["#0e1116", "#e8eaed", "#7aa2f7", "#bb9af7", "#9ece6a"],
     "background_index": 0,

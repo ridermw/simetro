@@ -27,14 +27,27 @@ use crate::world::World;
 /// Build the connect-time [`StaticPayload`] from a loaded scene.
 #[must_use]
 pub fn encode_static(scene: &LoadedScene) -> StaticPayload {
+    encode_static_parts(&scene.name, &scene.theme, &scene.id_map, &scene.world)
+}
+
+/// Build a [`StaticPayload`] from the current mutable world plus the
+/// immutable scene metadata kept by drivers. This is used after author
+/// actions mutate topology so renderers can refresh nodes/paths without a
+/// full scene reload.
+#[must_use]
+pub fn encode_static_parts(
+    name: &str,
+    theme: &Theme,
+    id_map: &IdMap,
+    world: &World,
+) -> StaticPayload {
     let Theme {
         palette,
         background_index,
         font: _,
-    } = scene.theme.clone();
+    } = theme.clone();
 
-    let mut nodes: Vec<NodeView> = scene
-        .world
+    let mut nodes: Vec<NodeView> = world
         .nodes
         .values()
         .map(|n| NodeView {
@@ -46,13 +59,12 @@ pub fn encode_static(scene: &LoadedScene) -> StaticPayload {
         .collect();
     nodes.sort_by_key(|n| n.id);
 
-    let mut paths: Vec<PathView> = scene
-        .world
+    let mut paths: Vec<PathView> = world
         .paths
         .values()
         .filter_map(|p| {
-            let from = scene.world.nodes.get(&p.from)?;
-            let to = scene.world.nodes.get(&p.to)?;
+            let from = world.nodes.get(&p.from)?;
+            let to = world.nodes.get(&p.to)?;
             Some(PathView {
                 id: p.id.0,
                 from_pos: from.pos,
@@ -64,14 +76,14 @@ pub fn encode_static(scene: &LoadedScene) -> StaticPayload {
     paths.sort_by_key(|p| p.id);
 
     StaticPayload {
-        name: scene.name.clone(),
+        name: name.to_string(),
         palette,
         background_index,
         nodes,
         paths,
-        node_names: numeric_id_map(&scene.id_map.node_names),
-        path_names: numeric_id_map(&scene.id_map.path_names),
-        mover_names: numeric_id_map(&scene.id_map.mover_names),
+        node_names: node_name_map(world, id_map),
+        path_names: path_name_map(world, id_map),
+        mover_names: numeric_id_map(&id_map.mover_names),
     }
 }
 
@@ -146,6 +158,26 @@ fn numeric_id_map<K: Copy + Into<u32>>(
     src: &std::collections::BTreeMap<K, String>,
 ) -> std::collections::BTreeMap<u32, String> {
     src.iter().map(|(k, v)| ((*k).into(), v.clone())).collect()
+}
+
+fn node_name_map(world: &World, id_map: &IdMap) -> std::collections::BTreeMap<u32, String> {
+    let mut names = numeric_id_map(&id_map.node_names);
+    for id in world.nodes.keys() {
+        names
+            .entry(id.0)
+            .or_insert_with(|| format!("node_{}", id.0));
+    }
+    names
+}
+
+fn path_name_map(world: &World, id_map: &IdMap) -> std::collections::BTreeMap<u32, String> {
+    let mut names = numeric_id_map(&id_map.path_names);
+    for id in world.paths.keys() {
+        names
+            .entry(id.0)
+            .or_insert_with(|| format!("path_{}", id.0));
+    }
+    names
 }
 
 // IdMap's numeric maps already key on NodeId/PathId/MoverId. We need

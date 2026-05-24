@@ -17,11 +17,15 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::components::{Mover, MoverId, Node, NodeId, NodeShape, Path, PathId};
+use crate::components::{
+    Consumer, ConsumerId, Mover, MoverId, Node, NodeId, NodeShape, Path, PathId, Producer,
+    ProducerId, Resource, ResourceId,
+};
 use crate::error::LoadError;
 use crate::world::World;
 
-const SUPPORTED_SCHEMA_VERSION: u32 = 1;
+const MIN_SCHEMA_VERSION: u32 = 1;
+const SUPPORTED_SCHEMA_VERSION: u32 = 2;
 const MAX_NAME_LEN: usize = 200;
 const MAX_PALETTE_ENTRIES: usize = 32;
 const MAX_PIECES_PER_SECTION: usize = 100_000;
@@ -31,6 +35,8 @@ const SPEED_MIN: f32 = 0.0;
 const SPEED_MAX: f32 = 100.0;
 const INTERVAL_MIN: u32 = 1;
 const INTERVAL_MAX: u32 = 10_000;
+const AMOUNT_MIN: u64 = 1;
+const AMOUNT_MAX: u64 = 1_000_000;
 
 /// Specification for an agent the engine should instantiate at startup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,9 +67,15 @@ pub struct IdMap {
     pub nodes_by_name: BTreeMap<String, NodeId>,
     pub paths_by_name: BTreeMap<String, PathId>,
     pub movers_by_name: BTreeMap<String, MoverId>,
+    pub resources_by_name: BTreeMap<String, ResourceId>,
+    pub producers_by_name: BTreeMap<String, ProducerId>,
+    pub consumers_by_name: BTreeMap<String, ConsumerId>,
     pub node_names: BTreeMap<NodeId, String>,
     pub path_names: BTreeMap<PathId, String>,
     pub mover_names: BTreeMap<MoverId, String>,
+    pub resource_names: BTreeMap<ResourceId, String>,
+    pub producer_names: BTreeMap<ProducerId, String>,
+    pub consumer_names: BTreeMap<ConsumerId, String>,
 }
 
 /// Successful result of loading a scene.
@@ -92,6 +104,14 @@ struct RawScene {
     goals: Vec<RawGoal>,
     #[serde(default)]
     agents: Vec<RawAgent>,
+    #[serde(default)]
+    resources: Vec<RawResource>,
+    #[serde(default)]
+    inventory: Vec<RawInventory>,
+    #[serde(default)]
+    producers: Vec<RawProducer>,
+    #[serde(default)]
+    consumers: Vec<RawConsumer>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +173,35 @@ struct RawAgent {
     interval_ticks: u32,
 }
 
+#[derive(Debug, Deserialize)]
+struct RawResource {
+    id: String,
+    #[serde(default)]
+    color: u8,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawInventory {
+    resource: String,
+    amount: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawProducer {
+    id: String,
+    resource: String,
+    amount: u64,
+    interval_ticks: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawConsumer {
+    id: String,
+    resource: String,
+    amount: u64,
+    interval_ticks: u32,
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point.
 // ---------------------------------------------------------------------------
@@ -179,7 +228,7 @@ pub fn load_scene_str(json: &str, seed: u64) -> Result<LoadedScene, LoadError> {
 // ---------------------------------------------------------------------------
 
 fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
-    if raw.schema_version != SUPPORTED_SCHEMA_VERSION {
+    if raw.schema_version < MIN_SCHEMA_VERSION || raw.schema_version > SUPPORTED_SCHEMA_VERSION {
         return Err(LoadError::UnsupportedVersion {
             found: raw.schema_version,
             supported: SUPPORTED_SCHEMA_VERSION,
@@ -194,12 +243,20 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
     check_section_cap("nodes", raw.pieces.nodes.len())?;
     check_section_cap("paths", raw.pieces.paths.len())?;
     check_section_cap("movers", raw.pieces.movers.len())?;
+    check_section_cap("resources", raw.resources.len())?;
+    check_section_cap("inventory", raw.inventory.len())?;
+    check_section_cap("producers", raw.producers.len())?;
+    check_section_cap("consumers", raw.consumers.len())?;
 
     // Build the id map by interning string ids to dense numeric ids.
     let mut id_map = IdMap::default();
     let mut nodes = BTreeMap::new();
     let mut paths = BTreeMap::new();
     let mut movers = BTreeMap::new();
+    let mut resources = BTreeMap::new();
+    let mut inventory = BTreeMap::new();
+    let mut producers = BTreeMap::new();
+    let mut consumers = BTreeMap::new();
 
     // Nodes first.
     for (i, n) in raw.pieces.nodes.into_iter().enumerate() {
@@ -303,15 +360,124 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         movers.insert(mid, Mover::new(mid, on_path, m.speed));
     }
 
+    // Resources and global inventory are schema v2 additions. Schema v1
+    // scenes auto-upgrade by leaving these arrays empty.
+    for (i, r) in raw.resources.into_iter().enumerate() {
+        validate_id("resources", &r.id)?;
+        if id_map.resources_by_name.contains_key(&r.id) {
+            return Err(LoadError::DuplicateId {
+                section: "resources",
+                id: r.id,
+            });
+        }
+        if (r.color as usize) >= theme.palette.len() {
+            return Err(LoadError::PaletteIndexOOB {
+                field: format!("resources[{i}].color"),
+                index: r.color as usize,
+                max: theme.palette.len(),
+            });
+        }
+        let rid = ResourceId(u32::try_from(i).unwrap_or(u32::MAX));
+        id_map.resources_by_name.insert(r.id.clone(), rid);
+        id_map.resource_names.insert(rid, r.id);
+        resources.insert(
+            rid,
+            Resource {
+                id: rid,
+                color: r.color,
+            },
+        );
+        inventory.insert(rid, 0);
+    }
+
+    let mut inventory_seen = BTreeMap::<ResourceId, ()>::new();
+    for inv in raw.inventory {
+        validate_inventory_amount("inventory.amount", inv.amount)?;
+        let resource = id_map
+            .resources_by_name
+            .get(&inv.resource)
+            .copied()
+            .ok_or_else(|| LoadError::UnknownReference {
+                from: "inventory[].resource".to_string(),
+                to: inv.resource.clone(),
+            })?;
+        if inventory_seen.insert(resource, ()).is_some() {
+            return Err(LoadError::DuplicateId {
+                section: "inventory",
+                id: inv.resource,
+            });
+        }
+        inventory.insert(resource, inv.amount);
+    }
+
+    for (i, p) in raw.producers.into_iter().enumerate() {
+        validate_id("producers", &p.id)?;
+        if id_map.producers_by_name.contains_key(&p.id) {
+            return Err(LoadError::DuplicateId {
+                section: "producers",
+                id: p.id,
+            });
+        }
+        validate_amount("producers[].amount", p.amount)?;
+        validate_interval("producers", i, p.interval_ticks)?;
+        let resource = id_map
+            .resources_by_name
+            .get(&p.resource)
+            .copied()
+            .ok_or_else(|| LoadError::UnknownReference {
+                from: format!("producers[{i}].resource"),
+                to: p.resource.clone(),
+            })?;
+        let pid = ProducerId(u32::try_from(i).unwrap_or(u32::MAX));
+        id_map.producers_by_name.insert(p.id.clone(), pid);
+        id_map.producer_names.insert(pid, p.id);
+        producers.insert(
+            pid,
+            Producer {
+                id: pid,
+                resource,
+                amount: p.amount,
+                interval_ticks: p.interval_ticks,
+            },
+        );
+    }
+
+    for (i, c) in raw.consumers.into_iter().enumerate() {
+        validate_id("consumers", &c.id)?;
+        if id_map.consumers_by_name.contains_key(&c.id) {
+            return Err(LoadError::DuplicateId {
+                section: "consumers",
+                id: c.id,
+            });
+        }
+        validate_amount("consumers[].amount", c.amount)?;
+        validate_interval("consumers", i, c.interval_ticks)?;
+        let resource = id_map
+            .resources_by_name
+            .get(&c.resource)
+            .copied()
+            .ok_or_else(|| LoadError::UnknownReference {
+                from: format!("consumers[{i}].resource"),
+                to: c.resource.clone(),
+            })?;
+        let cid = ConsumerId(u32::try_from(i).unwrap_or(u32::MAX));
+        id_map.consumers_by_name.insert(c.id.clone(), cid);
+        id_map.consumer_names.insert(cid, c.id);
+        consumers.insert(
+            cid,
+            Consumer {
+                id: cid,
+                resource,
+                amount: c.amount,
+                interval_ticks: c.interval_ticks,
+            },
+        );
+    }
+
     // Agents.
     let mut agents = Vec::with_capacity(raw.agents.len());
     for (i, a) in raw.agents.into_iter().enumerate() {
-        if a.interval_ticks < INTERVAL_MIN || a.interval_ticks > INTERVAL_MAX {
-            return Err(LoadError::IntervalOOB {
-                agent_index: i,
-                value: a.interval_ticks,
-            });
-        }
+        validate_interval("agents", i, a.interval_ticks)?;
         agents.push(AgentSpec {
             kind: a.kind,
             interval_ticks: a.interval_ticks,
@@ -330,6 +496,10 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
     world.nodes = nodes;
     world.paths = paths;
     world.movers = movers;
+    world.resources = resources;
+    world.inventory = inventory;
+    world.producers = producers;
+    world.consumers = consumers;
     world.state = crate::world::RunState::Loaded;
 
     Ok(LoadedScene {
@@ -443,6 +613,41 @@ fn validate_coord(id: &str, pos: [f32; 2]) -> Result<(), LoadError> {
     Ok(())
 }
 
+fn validate_interval(
+    section: &'static str,
+    index: usize,
+    interval_ticks: u32,
+) -> Result<(), LoadError> {
+    if !(INTERVAL_MIN..=INTERVAL_MAX).contains(&interval_ticks) {
+        return Err(LoadError::IntervalOOB {
+            section,
+            index,
+            value: interval_ticks,
+        });
+    }
+    Ok(())
+}
+
+fn validate_amount(field: &'static str, amount: u64) -> Result<(), LoadError> {
+    if !(AMOUNT_MIN..=AMOUNT_MAX).contains(&amount) {
+        return Err(LoadError::AmountOOB {
+            field,
+            value: amount,
+        });
+    }
+    Ok(())
+}
+
+fn validate_inventory_amount(field: &'static str, amount: u64) -> Result<(), LoadError> {
+    if amount > AMOUNT_MAX {
+        return Err(LoadError::AmountOOB {
+            field,
+            value: amount,
+        });
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -495,9 +700,46 @@ mod tests {
         assert_eq!(loaded.world.nodes.len(), 2);
         assert_eq!(loaded.world.paths.len(), 1);
         assert_eq!(loaded.world.movers.len(), 1);
+        assert!(loaded.world.resources.is_empty());
+        assert!(loaded.world.inventory.is_empty());
+        assert!(loaded.world.producers.is_empty());
+        assert!(loaded.world.consumers.is_empty());
         assert_eq!(loaded.agents.len(), 1);
         assert_eq!(loaded.goals, vec![Goal::LoopForever]);
         assert_eq!(loaded.world.state, crate::world::RunState::Loaded);
+    }
+
+    #[test]
+    fn schema_v2_resources_inventory_and_chains_load() {
+        let mut v: serde_json::Value = serde_json::from_str(VALID_SCENE).unwrap();
+        v["schema_version"] = serde_json::json!(2);
+        v["resources"] = serde_json::json!([
+            { "id": "ore", "color": 4 },
+            { "id": "plate", "color": 2 }
+        ]);
+        v["inventory"] = serde_json::json!([
+            { "resource": "ore", "amount": 5 },
+            { "resource": "plate", "amount": 0 }
+        ]);
+        v["producers"] = serde_json::json!([
+            { "id": "mine", "resource": "ore", "amount": 3, "interval_ticks": 2 }
+        ]);
+        v["consumers"] = serde_json::json!([
+            { "id": "sink", "resource": "ore", "amount": 4, "interval_ticks": 3 }
+        ]);
+        let s = serde_json::to_string(&v).unwrap();
+
+        let loaded = load_scene_str(&s, 42).expect("v2 scene should load");
+
+        assert_eq!(loaded.world.resources.len(), 2);
+        assert_eq!(loaded.world.inventory.get(&ResourceId(0)), Some(&5));
+        assert_eq!(loaded.world.inventory.get(&ResourceId(1)), Some(&0));
+        assert_eq!(loaded.world.producers.len(), 1);
+        assert_eq!(loaded.world.consumers.len(), 1);
+        assert_eq!(
+            loaded.id_map.resources_by_name.get("ore"),
+            Some(&ResourceId(0))
+        );
     }
 
     #[test]
@@ -514,11 +756,11 @@ mod tests {
 
     #[test]
     fn unsupported_version_rejected() {
-        let s = modify_scene("schema_version", serde_json::json!(2));
+        let s = modify_scene("schema_version", serde_json::json!(3));
         match load_scene_str(&s, 0).unwrap_err() {
             LoadError::UnsupportedVersion { found, supported } => {
-                assert_eq!(found, 2);
-                assert_eq!(supported, 1);
+                assert_eq!(found, 3);
+                assert_eq!(supported, 2);
             }
             other => panic!("got {other:?}"),
         }
@@ -654,9 +896,33 @@ mod tests {
             serde_json::json!([{ "kind": "speed_tuner", "interval_ticks": 0 }]),
         );
         match load_scene_str(&s, 0).unwrap_err() {
-            LoadError::IntervalOOB { agent_index, value } => {
-                assert_eq!(agent_index, 0);
+            LoadError::IntervalOOB {
+                section,
+                index,
+                value,
+            } => {
+                assert_eq!(section, "agents");
+                assert_eq!(index, 0);
                 assert_eq!(value, 0);
+            }
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn v2_unknown_resource_reference_rejected() {
+        let mut v: serde_json::Value = serde_json::from_str(VALID_SCENE).unwrap();
+        v["schema_version"] = serde_json::json!(2);
+        v["resources"] = serde_json::json!([{ "id": "ore", "color": 2 }]);
+        v["producers"] = serde_json::json!([
+            { "id": "mine", "resource": "ghost", "amount": 1, "interval_ticks": 1 }
+        ]);
+        let s = serde_json::to_string(&v).unwrap();
+
+        match load_scene_str(&s, 0).unwrap_err() {
+            LoadError::UnknownReference { from, to } => {
+                assert_eq!(from, "producers[0].resource");
+                assert_eq!(to, "ghost");
             }
             other => panic!("got {other:?}"),
         }

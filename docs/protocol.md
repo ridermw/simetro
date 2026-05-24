@@ -126,6 +126,38 @@ actions ship via `AgentReport.chosen`).
 `chosen` is nullable (an agent may decline to act). `considered` is
 capped at 1000 entries per report (PLAN §7).
 
+### `Observation`
+
+The engine's agent boundary exposes the read-only state a local,
+WebSocket, or future WASM agent decides against. It is intentionally
+smaller than `SnapshotPayload`: the agent needs deterministic mover
+state, not renderer geometry.
+
+```jsonc
+{
+  "tick": 142,
+  "movers": [
+    {
+      "id": 7,
+      "state": { "kind": "traveling", "path": 4, "progress": 0.42 },
+      "speed": 1.6,
+      "home_path": 4
+    },
+    {
+      "id": 8,
+      "state": { "kind": "waiting", "at": 2 },
+      "speed": 0.8,
+      "home_path": 5
+    }
+  ]
+}
+```
+
+`state.kind` is one of `empty | waiting | traveling`. Observations are
+built at a tick boundary, sorted by stable mover id, and hashed into
+AgentLog entries so replay tooling can detect drift without replaying a
+live model.
+
 ### `Action`
 
 Tagged union shared with `AgentMessage`:
@@ -138,9 +170,10 @@ Tagged union shared with `AgentMessage`:
 | `connect_pieces`  | `from: u32`, `to: u32`              |
 | `remove_piece`    | `id: u32`                           |
 
-`place_piece` / `connect_pieces` / `remove_piece` are stubbed in P1 —
-the engine accepts them but the validator rejects with
-`Warning::InvalidAction` until P2.
+`place_piece` creates a node using `piece_kind` (`node` or a node shape),
+`connect_pieces` creates a directed path between existing nodes, and
+`remove_piece` removes a safe node plus unused incident paths. Invalid
+requests are rejected with `Warning::InvalidAction`.
 
 ### `FaultPayload`
 
@@ -203,8 +236,48 @@ The same versioned protocol flows over multiple transports
   is emitted on a named event channel.
 * **stdio** — used by `simetro-headless replay` and by the
   agent-bridge subprocess.
-* **WebSocket** — reserved for P2 (external-language agents and
-  remote inspector clients).
+* **WebSocket** — foundation in place for P2/P3 external-language
+  agents and remote inspector clients.
 
 All three transports speak the identical envelope shape; no
 transport-specific encoding lives above the framing layer.
+
+### WebSocket foundation
+
+`crates/protocol/src/websocket.rs` defines the runtime-neutral contract
+for WebSocket integrations without starting a server or choosing a Rust
+WebSocket crate:
+
+* advertise subprotocol `simetro.v1`;
+* send one JSON `Envelope<SimMessage | AgentMessage>` per text message;
+* reject any envelope whose `schema_version` is not `1`;
+* keep binary frames, compression, auth, and provider-specific LLM
+  wiring outside the protocol layer.
+
+External-language agents connect with an `AgentMessage::Connect` and
+capability strings such as `external-agent` and `actions-v1`, then send
+`AgentMessage::Action` envelopes when they decide. The future engine or
+bridge WebSocket host should translate transport loss into
+`FaultPayload::TransportLost` / `AgentCrashed`; it should not add
+WebSocket-only message variants unless `SCHEMA_VERSION` is bumped.
+
+### WASM plugin agent ABI foundation
+
+WASM plugin agents reuse the same observation/action/report contracts as
+the WebSocket foundation but are not live Copilot/provider backends. Keep
+them behind a separate plugin host and advertise transport-neutral
+capability strings from `simetro-protocol::capabilities`:
+
+* `wasm-plugin-agent` — sandboxed WASM guest.
+* `observations-v1` — accepts the v1 observation JSON contract.
+* `actions-v1` — emits the v1 `Action` JSON contract.
+* `author-actions-v1` — requests authoring actions; host policy may deny.
+* `agent-log-v1` — can provide deterministic AgentLog metadata.
+
+The initial ABI should pass UTF-8 JSON through guest memory instead of
+sharing Rust layouts. Sandbox failures map to existing protocol surfaces:
+traps, missing exports, instantiation errors, and fuel/memory/deadline
+exhaustion become `FaultPayload::AgentCrashed`; denied capabilities and
+unsafe or malformed actions become `WarningPayload::InvalidAction`; host
+lag maps to `TickOverBudget` / `Behind`. Add WASM-specific fault variants
+only with a schema bump.
