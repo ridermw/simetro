@@ -3,17 +3,18 @@
 //! ```text
 //!     accumulator += real_dt
 //!     while accumulator >= world.dt:
-//!         tick(world) ──▶ TickOutput { events, snapshot_dirty }
+//!         tick_once(world) ──▶ TickOutput { events, snapshot_dirty }
 //!         accumulator -= world.dt
 //! ```
 //!
-//! The engine itself does not own the wall clock — callers feed it
-//! `real_dt` (or simply call `tick_once` from headless mode where time
-//! is logical, not wall-clock). PLAN §16 requires fixed-timestep ticks
-//! for deterministic baselines.
+//! Each `tick_once` runs the system pipeline in fixed order:
+//!     lifecycle → movement → interaction
+//! and finally emits a `SimEvent::Tick` so subscribers can synchronize
+//! frame markers (PLAN §16 — deterministic, ordered system execution).
 
 use simetro_protocol::SimEvent;
 
+use crate::systems::{interaction, lifecycle, movement};
 use crate::world::{RunState, World};
 
 #[derive(Debug, Default)]
@@ -25,19 +26,22 @@ pub struct TickOutput {
 }
 
 /// Advance the world by exactly one fixed timestep.
-///
-/// In Step 5 this just bumps the tick counter and emits a single
-/// `SimEvent::Tick`. Movement and interaction systems land in Step 7.
 pub fn tick_once(world: &mut World) -> TickOutput {
-    if world.state == RunState::Idle {
-        // A world with no scene loaded simply increments tick — useful
-        // for smoke-testing that the tick loop is wired up.
+    if matches!(world.state, RunState::Idle | RunState::Loaded) {
         world.state = RunState::Running;
     }
     world.tick = world.tick.saturating_add(1);
+
+    let mut events: Vec<SimEvent> = Vec::with_capacity(8);
+    lifecycle::run(world, &mut events);
+    let arrivals = movement::run(world, &mut events);
+    interaction::run(world, &mut events);
+
+    events.push(SimEvent::Tick { tick: world.tick });
+
     TickOutput {
-        events: vec![SimEvent::Tick { tick: world.tick }],
-        snapshot_dirty: false,
+        events,
+        snapshot_dirty: arrivals > 0 || !world.movers.is_empty(),
     }
 }
 
@@ -63,10 +67,9 @@ pub fn tick_accumulator(
         fired += 1;
     }
     if *accumulator >= world.dt {
-        // We hit the cap. Drop remaining surplus so we don't keep falling
-        // behind on the next frame. The frontend should surface a
-        // `Warning::Behind` when it observes this; engine emits the
-        // warning in Step 11 when the typed-warning surface lands.
+        // Hit the cap; drop remaining surplus so we don't keep falling
+        // behind on the next frame. The engine emits a typed Warning::Behind
+        // for this in Step 11.
         *accumulator = 0.0;
     }
     outputs
@@ -83,11 +86,11 @@ mod tests {
         assert_eq!(w.tick, 0);
         let out = tick_once(&mut w);
         assert_eq!(w.tick, 1);
-        assert_eq!(out.events.len(), 1);
-        match out.events[0] {
-            SimEvent::Tick { tick } => assert_eq!(tick, 1),
-            ref other => panic!("expected Tick, got {other:?}"),
-        }
+        // Empty world still emits the Tick marker.
+        assert!(out
+            .events
+            .iter()
+            .any(|e| matches!(e, SimEvent::Tick { .. })));
     }
 
     #[test]

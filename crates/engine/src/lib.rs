@@ -16,6 +16,7 @@ pub mod components;
 pub mod error;
 pub mod loader;
 pub mod rng;
+pub mod systems;
 pub mod tick;
 pub mod world;
 
