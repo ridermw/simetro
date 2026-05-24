@@ -1,7 +1,7 @@
 # simetro — Post-PR-#3 Roadmap (Phase 2 + Phase 3) — Design Spec
 
 **Date:** 2026-05-24
-**Status:** Pending — to become Active upon merge of PR #4 (P2.A0.1)
+**Status:** Active (PR #4 P2.A0.1 merged; this PR P2.A0.2 lands the rubber-duck criticals)
 **Authors:** Copilot CLI (Claude Opus 4.7), on behalf of @ridermw
 **Supersedes:** session-state brainstorming draft (not checked in)
 
@@ -81,25 +81,24 @@ Confirmed user decisions for this design (in chronological order):
 
 ## 2. Approach
 
-Treat the post-merge work as four sequential phases plus one parallel
-opportunistic phase, then P3. The marquee phase (P2.A — live LLM) ships
-first because every other phase either benefits from or is independent
-of it.
+Treat the post-merge work as four sequential phases. P2.E is
+DEFERRED (per §2.6.2 and §7) so it does not appear in the active
+sequencing diagram. P3 is queued for after the autonomous week. The
+marquee phase (P2.A — live LLM) ships first because every other
+phase either benefits from or is independent of it.
 
 ```
   P2.A  Live LLM agent ──▶  P2.B  Replay UI + decision movies
-                                          │
-                                          ▼
+                                         │
+                                         ▼
                                 P2.C  Juice / theme / audio v2
-                                          │
-                                          ▼
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DEFERRED to user return (do NOT start during autonomous week):
                                 P2.D  Perf hardening + WebGL eval
-                                          │
-                                          ▼
+                                P2.E  World quality + dev/ops
    P3.A  Visual editor  ◀──  P3.B  Platform trajectory (deferred shelf)
                                   (extra backends, WS, WASM, multi-sim)
-
-   P2.E  World quality + dev/ops ─── runs opportunistically in parallel
 ```
 
 Each phase has acceptance criteria and a short list of PR-sized tasks.
@@ -364,33 +363,98 @@ entire week's PRs.
 
 ### 3.0 Prep phase — P2.A0 (must merge before P2.A starts)
 
-Two pieces have to land **before** any P2.A live-LLM PR opens. They
-are small, low-risk, and unblock the marquee. Each is a separate PR.
+**Five prep PRs** must land before any P2.A live-LLM implementation
+PR opens. The first PR (P2.A0.1) has already merged; the remaining
+four are queued. Each is a separate PR per §2.6.3 / per-PR worktree
+contract.
 
-**P2.A0.1 — Lift the live-LLM moratorium in standing instructions.**
+**P2.A0.1 — Lift the live-LLM moratorium in standing instructions.** ✅ MERGED (PR #4)
 
 - `.github/copilot-instructions.md` and `AGENTS.md` previously said
   "live Copilot/provider integration is intentionally deferred." That
-  language conflicts with this spec's marquee. Until it is lifted,
-  Copilot Code Review will block every subsequent P2.A PR.
-- This PR replaces those instructions with the current direction (see
-  the new `AGENTS.md` / `.github/copilot-instructions.md` that point
-  to this spec), archives `PLAN.md` (Phase 1) into
-  `docs/historical/`, and archives the post-Phase-1 `TODOS.md` to
-  `docs/historical/`. Top-level `PLAN.md` and `TODOS.md` become
-  pointers to this spec.
-- **Acceptance:** `docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`
-  is referenced from `AGENTS.md`, `.github/copilot-instructions.md`,
-  `PLAN.md`, and `TODOS.md`. Phase 1 plan still readable under
-  `docs/historical/PLAN-v4-phase1.md`.
+  language conflicted with this spec's marquee. The PR replaced those
+  instructions with the current direction, archived Phase 1 `PLAN.md`
+  and post-Phase-1 `TODOS.md` to `docs/historical/`, and made top-level
+  `PLAN.md` / `TODOS.md` pointers to this spec.
+- Added new §2.6 (week-of-autonomous-execution policy) and §2.7
+  (adversarial-review workflow).
+- **Acceptance (met):** all cross-references resolve; Phase 1 plan
+  readable under `docs/historical/PLAN-v4-phase1.md`.
 
-**P2.A0.2 — AgentLog v2 schema bump (no provider work).**
+**P2.A0.2 — Rubber-duck criticals (this PR).**
+
+- **Engine:** `hash_run` widened to feed `runner.messages()` into the
+  SHA-256, closing the rubber-duck CRITICAL #7 gap where stalled-
+  bridge warnings, panicked-agent faults, or varying LLM rationale
+  could leak past the determinism gate.
+- **Engine:** `TickRunner` agent hosts are now stored sorted by
+  stable `agent_id`, so multi-agent scenes execute in a
+  registration-order-independent order (rubber-duck CRITICAL #10).
+- **Protocol:** `WarningPayload::Behind` extended with optional
+  `agent_id: Option<String>` (additive, `#[serde(default)]` +
+  `skip_serializing_if = "Option::is_none"` for back-compat). LLM-
+  bridge `Warning::Behind` emissions can now name the responsible
+  agent.
+- **Spec:** this §3.0 restructure (five-PR prep phase enumeration),
+  §10.2.1 request lifecycle formalism (next item), §2 sequencing
+  diagram fix (P2.E removed from "opportunistic in parallel"), §10.5
+  testing strategy updated.
+- **Determinism baseline regenerated** (`tests/baselines/demo-paths.hash`)
+  because `hash_run` now covers messages.
+- **Acceptance:** all of `cargo test --workspace`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `cd frontend && npm
+  run typecheck && npm test -- --run`, `cargo test -p simetro-engine
+  --test determinism_baseline` are green. Two new state_hash tests
+  prove the messages-in-hash behavior (`hash_run_distinguishes_runs_that_differ_only_in_rationale`
+  is the canary for the rubber-duck gap).
+
+**P2.A0.3 — Pre-P2.A §2: Error & Rescue Map (analysis doc, no code).**
+
+- Per user plan-mode decision `run_min_security_and_error_map_before_p2a`
+  (see §14 "Post-rubber-duck plan-mode decisions"): mega-review §2
+  Error/Rescue Map runs as an analysis-doc PR before any P2.A
+  implementation PR.
+- Output: `docs/superpowers/analysis/p2a-error-map.md` enumerating
+  every `LlmError` variant, every subprocess-spawn failure, every
+  JSON-parse failure, every AgentLog write failure, and for each:
+  rescue action + user-visible behavior + test coverage requirement.
+  Becomes a constraint set for P2.A implementation PRs.
+- **No code changes.** This is the "what could go wrong" registry the
+  P2.A code must satisfy.
+- **Acceptance:** analysis doc committed; every error variant has a
+  matching rescue/test row.
+
+**P2.A0.4 — Pre-P2.A §3: Security & Threat Model (analysis doc, no code).**
+
+- Same posture: analysis-doc PR before any P2.A implementation.
+- Output: `docs/superpowers/analysis/p2a-security-threat-model.md`
+  covering (must include — these are the security-review-deferred
+  MEDIUMs from PR #4 adversarial-review):
+  - **Subprocess hardening for `copilot --acp`**: absolute path
+    resolution, environment scrubbing (drop sensitive vars; pin
+    minimum required), process-group kill on engine shutdown / Drop,
+    wall-clock subprocess timeout independent of per-message timeout.
+  - **AgentLog `raw_response` controls**: byte-size cap (e.g. 64 KiB)
+    with truncation marker, secret-pattern redaction, JSON-schema
+    validation before persistence with `parse_error` fallback, write
+    location pinned to `dirs::data_dir()` with file mode 0600,
+    filename derived from `scene_id` after registry validation
+    (never from raw scene JSON, to prevent path traversal).
+  - **XPIA isolation**: structural separator between system prompt
+    and untrusted `Observation` data (distinct ACP roles, sentinel
+    framing, schema-wrapped fields). A regression test that a scene
+    whose label contains a prompt-injection payload does not alter
+    the chosen `Action`.
+- **Acceptance:** analysis doc committed; every P2.A entry-point that
+  spawns, parses, or persists has a security row.
+
+**P2.A0.5 — AgentLog v2 schema bump (no provider work).**
 
 - Bump the AgentLog jsonl `schema_version` v1 → v2.
 - New fields are **all optional**: `backend`, `model`, `latency_ms`,
-  `prompt_tokens`, `completion_tokens`, `raw_response` (when the
-  backend exposes it). Existing v1 rows continue to load via an
-  explicit migration shim that maps to v2 defaults.
+  `prompt_tokens`, `completion_tokens`, `raw_response` (size-capped
+  + redacted per §3.0 P2.A0.4 above). Existing v1 rows continue to
+  load via an explicit migration shim that maps to v2 defaults.
 - This PR adds the schema, the loader, the migration shim, the
   golden-file test (replay an existing v1 jsonl), and a v2 sample
   fixture. **No provider/network code in this PR.**
@@ -432,8 +496,8 @@ replay.
 
 ### PR-sized tasks (P2.A)
 
-> P2.A0.1 (instructions lift) and P2.A0.2 (AgentLog v2 schema split)
-> from §3.0 must merge **before** any of the tasks below.
+> All five prep PRs (P2.A0.1 through P2.A0.5; see §3.0) must merge
+> **before** any of the tasks below.
 
 1. **Bridge: tool-spec round-trip tests** — assert every `Action`
    variant in `actions.rs` has a matching `ToolSpec` and the inline
@@ -811,6 +875,84 @@ Sequence per decision:
    mode): scrubber consumes the same jsonl, addressed by the
    DecisionTimeline ID.
 
+### 10.2.1 Request lifecycle (formal model)
+
+Every outbox/inbox exchange uses a `RequestId` keyed by four fields.
+This is the formal model the rubber-duck CRITICAL #6 review
+required; it eliminates the "late-reply / duplicate-reply /
+post-restart stale reply" classes of nondeterminism.
+
+```rust
+struct RequestId {
+    timeline_id: u64,   // DecisionTimeline entry (§3 task 7);
+                        // monotonic per-engine-run, never reused.
+    agent_id: String,   // Source LlmAgent's stable id.
+    source_tick: u64,   // Engine tick that emitted the request.
+    attempt: u32,       // Increments on each re-issue (0, 1, 2, ...).
+}
+```
+
+**Engine-side state for each agent:**
+
+- `pending: HashMap<RequestId, Deadline>` — requests emitted to the
+  outbox but not yet drained from the inbox. Keyed by full
+  `RequestId` so an `attempt=0` and `attempt=1` for the "same"
+  decision are distinct entries.
+- `completed: BoundedRingBuffer<RequestId>` — fixed-capacity FIFO of
+  request IDs whose replies have been applied. Used to dedup
+  duplicate replies (bridge crash-and-replay scenario).
+- `expired: HashMap<RequestId, ExpiryReason>` — requests that hit
+  their deadline and were re-issued with `attempt+=1`. Replies for
+  these IDs are deterministically rejected with a logged warning
+  (`Warning::Behind { agent_id: Some(_), lag_frames }`) rather than
+  applied.
+
+**Drain-time rules (executed at tick boundary, in stable agent-ID order):**
+
+1. For each `AgentReply` in the inbox:
+   - If `reply.id ∈ completed` → **duplicate**. Emit
+     `Warning::InvalidAction { agent_id, reason: "duplicate reply" }`
+     deterministically; drop the reply.
+   - Else if `reply.id ∈ expired` → **stale post-expiry**. Emit
+     `Warning::Behind { agent_id: Some(_), lag_frames }` (the lag is
+     the difference between current tick and `source_tick`). Do not
+     mutate the world.
+   - Else if `reply.id ∈ pending` and `current_tick ≤ deadline` →
+     **on-time apply**. Move from `pending` to `completed`. Apply the
+     contained `Action` via the deterministic action pipeline.
+   - Else (reply for an unknown ID — should never happen under
+     correct bridge) → emit `Fault::EngineFault { message: "unknown
+     request id" }` and stop.
+2. For each entry in `pending` whose `deadline < current_tick`:
+   - Move to `expired`. Emit `Warning::Behind { agent_id, lag_frames
+     = current_tick - source_tick }`. If `attempt < MAX_ATTEMPTS`,
+     enqueue a new outbox entry with `attempt += 1`. Otherwise,
+     emit `Warning::InvalidAction { agent_id, reason: "max attempts
+     exceeded" }` and give up on this decision.
+
+**Backpressure:**
+
+- The outbox is bounded **one-outstanding-per-agent**. If a second
+  request would be emitted for an agent while a prior request is
+  still in `pending`, the engine emits a deterministic
+  `Warning::Behind` and **does not enqueue**. (Determinism preserved:
+  the decision to drop is keyed to tick + agent, not to bridge wall
+  clock.)
+
+**Determinism invariants:**
+
+- Two runs of the same scene + seed produce identical sequences of
+  `pending` / `completed` / `expired` transitions because all
+  decisions are keyed to engine ticks and stable agent IDs, never to
+  wall-clock arrival order.
+- A bridge that arbitrarily stalls or crashes-and-restarts produces
+  the same world hash as one that never replied at all, **modulo the
+  warnings** emitted by the rules above (which now ARE in the hash —
+  see `hash_run` §10.5 and `state_hash::feed_message`).
+- `RequestId` uses `timeline_id` (monotonic per run) so a restarted
+  bridge cannot accidentally replay an old session's request ID;
+  collision is structurally impossible.
+
 ### 10.3 Schema versioning
 
 - JSON game files: currently v2 (PR #3 adds resources/inventory). P2.C
@@ -843,12 +985,14 @@ live calls:
 | Layer | Approach |
 | --- | --- |
 | Engine `LlmAgent` wrapper | Unit tests with a `MockBackend` that returns scripted responses. |
-| Bridge `CopilotBackend` ACP framing | Recorded fixtures under `crates/agent-bridge/tests/fixtures/copilot-acp/` — one per error-mode + one happy path. |
+| Bridge `CopilotBackend` ACP framing | Recorded fixtures under `crates/agent-bridge/tests/fixtures/copilot-acp/` — one per error-mode + one happy path. **The happy-path fixture must be captured from a real `copilot --acp` invocation (`captured-happy-path.jsonl`) before any real-ACP-wiring PR opens; synthetic-only fixtures are insufficient (rubber-duck CRITICAL #4).** |
 | Tool-spec round-trip | Property-style test that every `Action` variant has a tool and that the JSON Schema validates the canonical instance. |
 | AgentLog v2 migration | Read v1 fixture, assert it upgrades cleanly; write v2, assert read-back is identity. |
 | Replay UI | Playwright spec opens a committed `session-fixture.tar`, scrubs, asserts visible state. |
 | Live smoke | `cargo xtask copilot-smoke` — human-run only, not in CI. |
-| Determinism | Live-LLM scenes are excluded from the `demo-paths.hash` gate via scene-list allow/deny. |
+| Determinism baseline | `tests/baselines/demo-paths.hash` covers `runner.events()` AND `runner.messages()` (state_hash.rs `hash_run` — extended in P2.A0.2). Live-LLM scenes are excluded from the baseline gate via scene-list allow/deny. |
+| Outbox/inbox determinism | New test `crates/engine/tests/outbox_inbox_determinism.rs`: same scene + seed + a "bridge that arbitrarily stalls" produces a deterministic world hash AND a deterministic warning sequence. Covers §10.2.1 rules. |
+| Multi-agent stable ordering | `tick::tests::agent_hosts_run_in_id_sorted_order_regardless_of_registration_order` (added in P2.A0.2) — registers same agents in different orders, asserts identical iteration order. |
 
 ---
 
@@ -906,43 +1050,26 @@ live calls:
   `TODOS.md` are now pointers.
 - ✅ PR #3 merged; branch protection (`ci-ok` + conversations
   resolved + admins enforced) active on `main`.
-- ▶️ **PR #4 is the final PR cut from `ridermw/post-pr3-roadmap-spec`.**
-  After PR #4 merges, the branch is **retired** (deleted on remote
-  + local) per §2.6.3, and every subsequent PR cuts a fresh feature
-  branch from `origin/main`. The "single long-running working branch"
-  language that previously appeared in this section is **superseded**
-  by §2.6.3.
-- ⏳ Mega plan review Sections 2–10 are scheduled but **deferred to
+- ✅ **PR #4 (P2.A0.1) MERGED** at squash commit `0605eb1` after 7
+  rounds of §2.7 adversarial review (all CRITICAL/HIGH findings fixed
+  in code). Working branch `ridermw/post-pr3-roadmap-spec` retired.
+- ▶️ **THIS PR (P2.A0.2) carries the rubber-duck criticals:**
+  `hash_run` widened to include `runner.messages()` (CRITICAL #7
+  fix); `TickRunner` hosts sorted by stable `agent_id`
+  (CRITICAL #10 fix); `WarningPayload::Behind` extended with
+  `agent_id: Option<String>` (additive, back-compat preserved); spec
+  §3.0 restructured to enumerate all 5 prep PRs; spec §10.2.1
+  formalizes the request lifecycle.
+- ⏳ Mega plan review Sections 4–10 are scheduled but **deferred to
   user return** so they do not block week-of-autonomy execution.
-  Section 1 decisions (outbox/inbox, separate bridge process,
-  DecisionTimeline first-class, LLM-as-author in P2.A) are
-  authoritative for week-of-autonomy work.
-- ▶️ **Next concrete action (after PR #4 merges):** retire the
-  `ridermw/post-pr3-roadmap-spec` branch (delete on remote + local),
-  sync the main checkout to the post-merge `origin/main`, then cut a
-  **fresh feature branch from `origin/main`** for the next PR. The
-  next PR carries the rubber-duck and adversarial-review derived
-  prerequisites the spec does not yet enumerate in §3.0:
-  - the `hash_run` widening to cover `runner.messages()` (so stalled
-    bridges cannot leak nondeterminism past the determinism gate),
-  - sorting `TickRunner` agent hosts by stable `agent_id` (so multi-
-    agent same-tick ordering is reproducible across registration
-    order changes),
-  - extending `WarningPayload::Behind` with an optional `agent_id`
-    field (additive, no schema bump),
-  - the spec amendments that formalize the §10.2 request lifecycle
-    `{timeline_id, agent_id, source_tick, attempt}` and add §3.0
-    entries for itself plus two pre-P2.A analysis PRs derived from
-    the user's plan-mode decisions during the rubber-duck pass:
-    mega-review §2 (Error & Rescue Map) and mega-review §3 (Security
-    & Threat Model) promoted from "deferred" to "pre-P2.A blocking"
-    (see §14 "Post-rubber-duck plan-mode decisions" below).
-
-  That PR runs the full §2.7 adversarial-review workflow and merges
-  per §2.6.1. After it lands, §3.0 will list **five** prep PRs
-  (P2.A0.1 ← this PR, the amendments PR, the two pre-P2.A analysis
-  PRs, and P2.A0.2 AgentLog v2 schema), all of which must merge
-  before any P2.A implementation PR opens.
+  Sections 2 and 3 were **promoted to pre-P2.A blocking** per user
+  plan-mode pick (`run_min_security_and_error_map_before_p2a`); they
+  are P2.A0.3 and P2.A0.4 in the queue.
+- ▶️ **After this PR (P2.A0.2) merges:** open P2.A0.3 (Error & Rescue
+  Map analysis doc) as the next PR, then P2.A0.4 (Security & Threat
+  Model analysis doc), then P2.A0.5 (AgentLog v2 schema bump). When
+  all five prep PRs have merged, P2.A implementation can begin
+  starting with §3 task 1 (tool-spec round-trip tests).
 
 ---
 

@@ -85,8 +85,28 @@ impl TickRunner {
 
     /// Register a built-in agent. Agents fire per their own
     /// [`AgentHost::should_fire`] schedule.
+    ///
+    /// Hosts are kept sorted by stable `agent_id` so that multi-agent
+    /// scenes execute in a registration-order-independent order. This
+    /// is a determinism invariant: two builds of the same scene that
+    /// register the same agents in different orders (e.g. due to a
+    /// loader refactor or scene-JSON reordering) must produce
+    /// bit-identical world hashes (see `crates/engine/src/state_hash.rs`
+    /// and the multi-agent ordering test in this file).
+    ///
+    /// # Panics
+    /// Does NOT panic on duplicate `agent_id`; the loader is
+    /// responsible for rejecting duplicates with a `LoadError` before
+    /// `register_agent` is called. Two hosts with the same `agent_id`
+    /// would still iterate in insertion-order-after-sort which is
+    /// stable but semantically ambiguous.
     pub fn register_agent(&mut self, host: AgentHost) {
-        self.hosts.push(host);
+        // Find the insertion point that keeps `hosts` sorted by id.
+        // `partition_point` is O(log n) for the position lookup;
+        // `insert` is O(n) for the shift. n is tiny in practice
+        // (typically 1-5 agents per scene) so total cost is trivial.
+        let pos = self.hosts.partition_point(|h| h.id() < host.id());
+        self.hosts.insert(pos, host);
     }
 
     /// Attach an AgentLog. All subsequent successful agent decisions
@@ -636,5 +656,71 @@ mod tests {
         let log = runner.take_agent_log().unwrap();
         assert!(log.is_degraded());
         assert!(!log.ring_snapshot().is_empty());
+    }
+
+    // ---- Stable agent-host ordering (rubber-duck CRITICAL fix) -----
+
+    /// Tracks the order in which agents are invoked across multiple
+    /// ticks. Used by `agent_hosts_run_in_id_sorted_order` to assert
+    /// the iteration order does NOT depend on registration order.
+    struct RecordingAgent {
+        id: &'static str,
+        log: std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
+    }
+
+    impl Agent for RecordingAgent {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn interval_ticks(&self) -> u32 {
+            1
+        }
+        fn observe(&mut self, _w: &World) -> Observation {
+            Observation::default()
+        }
+        fn act(&mut self, _o: &Observation) -> Result<AgentReport, AgentError> {
+            self.log.lock().unwrap().push(self.id);
+            Ok(AgentReport {
+                tick: 0,
+                agent_id: self.id.into(),
+                considered: vec![],
+                chosen: None,
+                rationale: String::new(),
+                confidence: 1.0,
+            })
+        }
+    }
+
+    fn record_ids_after_one_tick(register_order: &[&'static str]) -> Vec<&'static str> {
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut loaded = load_scene_str(SCENE, 0).unwrap();
+        let mut runner = TickRunner::new();
+        for id in register_order {
+            runner.register_agent(AgentHost::new(Box::new(RecordingAgent {
+                id,
+                log: std::sync::Arc::clone(&log),
+            })));
+        }
+        runner.tick_once(&mut loaded.world);
+        let result = log.lock().unwrap().clone();
+        result
+    }
+
+    /// Multi-agent invocation order MUST be by stable `agent_id`,
+    /// not by registration order. Without this, multi-agent scenes
+    /// would produce different world hashes depending on JSON
+    /// declaration order or loader-side iteration order — a
+    /// determinism gap rubber-duck CRITICAL #10 identified.
+    #[test]
+    fn agent_hosts_run_in_id_sorted_order_regardless_of_registration_order() {
+        // Same three agents, two different registration orders.
+        let abc = record_ids_after_one_tick(&["alpha", "bravo", "charlie"]);
+        let cba = record_ids_after_one_tick(&["charlie", "bravo", "alpha"]);
+        let bca = record_ids_after_one_tick(&["bravo", "charlie", "alpha"]);
+
+        // All three must run in the same alphabetical order.
+        assert_eq!(abc, vec!["alpha", "bravo", "charlie"]);
+        assert_eq!(cba, vec!["alpha", "bravo", "charlie"]);
+        assert_eq!(bca, vec!["alpha", "bravo", "charlie"]);
     }
 }

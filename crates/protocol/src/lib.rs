@@ -265,9 +265,22 @@ pub enum FaultPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WarningPayload {
-    InvalidAction { agent_id: String, reason: String },
-    Behind { lag_frames: u32 },
-    TickOverBudget { ms: f32 },
+    InvalidAction {
+        agent_id: String,
+        reason: String,
+    },
+    /// Engine fell behind real-time by `lag_frames` ticks.
+    /// `agent_id` is set when the lag is attributable to a specific
+    /// agent (e.g. a live LLM bridge that missed its reply deadline);
+    /// `None` for engine-wide pacing issues.
+    Behind {
+        lag_frames: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
+    },
+    TickOverBudget {
+        ms: f32,
+    },
     AgentLogSlow,
 }
 
@@ -464,10 +477,47 @@ mod tests {
 
     #[test]
     fn warning_behind_roundtrips() {
-        let w = WarningPayload::Behind { lag_frames: 7 };
+        // Engine-pacing (no agent_id) — default form.
+        let w = WarningPayload::Behind {
+            lag_frames: 7,
+            agent_id: None,
+        };
         let s = serde_json::to_string(&w).expect("encode");
-        let _back: WarningPayload = serde_json::from_str(&s).expect("decode");
+        let back: WarningPayload = serde_json::from_str(&s).expect("decode");
+        assert_eq!(back, w);
         assert!(s.contains("\"lag_frames\":7"));
+        // agent_id: None must NOT appear in serialized form (backward
+        // compat: old consumers that don't know about the field still
+        // see the v1 shape).
+        assert!(!s.contains("agent_id"));
+    }
+
+    #[test]
+    fn warning_behind_with_agent_id_roundtrips() {
+        // Live LLM agent attribution case.
+        let w = WarningPayload::Behind {
+            lag_frames: 3,
+            agent_id: Some("metro-pulse-llm".to_string()),
+        };
+        let s = serde_json::to_string(&w).expect("encode");
+        let back: WarningPayload = serde_json::from_str(&s).expect("decode");
+        assert_eq!(back, w);
+        assert!(s.contains("\"lag_frames\":3"));
+        assert!(s.contains("\"agent_id\":\"metro-pulse-llm\""));
+    }
+
+    #[test]
+    fn warning_behind_legacy_payload_decodes() {
+        // A v1-era payload without agent_id must still deserialize.
+        let legacy = r#"{"kind":"behind","lag_frames":5}"#;
+        let w: WarningPayload = serde_json::from_str(legacy).expect("decode legacy");
+        assert_eq!(
+            w,
+            WarningPayload::Behind {
+                lag_frames: 5,
+                agent_id: None
+            }
+        );
     }
 
     // ---- 6. Snapshot + Static --------------------------------------
