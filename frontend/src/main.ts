@@ -104,26 +104,52 @@ function resetSnapshotState(state: AppState): void {
 }
 
 function handleControl(intent: ControlIntent, state: AppState): void {
+  if (isTauri()) {
+    // Route control intents to the Rust engine driver via Tauri commands.
+    routeControlToTauri(intent, state);
+    return;
+  }
+
+  // Browser-only mock fallback: local state manipulation.
   switch (intent.kind) {
     case "TogglePause":
       state.paused = !state.paused;
       break;
     case "Step":
-      // P2: send to backend. P1 logs intent so the UI is exercised.
-      console.info("simetro: step requested (P1 stub)");
+      console.info("simetro: step requested (mock — no backend)");
       break;
     case "Reload":
-      // Step 22 will route this through Tauri to re-read the JSON.
-      // For now, dismiss the fault overlay AND clear cached scene
-      // and snapshots so we don't draw against pre-reload state.
       if (state.fault !== null) state.fault.hide();
       resetSnapshotState(state);
-      console.info("simetro: reload requested (P1 stub)");
+      console.info("simetro: reload requested (mock — no backend)");
       break;
     case "SetSpeed":
-      console.info(`simetro: speed ${intent.factor}× requested (P1 stub)`);
+      console.info(`simetro: speed ${intent.factor}× requested (mock — no backend)`);
       break;
   }
+}
+
+function routeControlToTauri(intent: ControlIntent, state: AppState): void {
+  // Dynamic import to avoid bundling @tauri-apps/api in browser builds.
+  import("@tauri-apps/api/core").then(({ invoke }) => {
+    switch (intent.kind) {
+      case "TogglePause":
+        state.paused = !state.paused;
+        invoke("cmd_toggle_pause");
+        break;
+      case "Step":
+        invoke("cmd_step");
+        break;
+      case "Reload":
+        if (state.fault !== null) state.fault.hide();
+        resetSnapshotState(state);
+        invoke("cmd_reload");
+        break;
+      case "SetSpeed":
+        invoke("cmd_set_speed", { factor: intent.factor });
+        break;
+    }
+  });
 }
 
 function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): void {
