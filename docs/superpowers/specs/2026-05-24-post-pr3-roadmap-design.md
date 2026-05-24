@@ -40,7 +40,7 @@ and authoring/production primitives. Two product promises remain
    layer is "v1 polished" rather than "Mini-Metro-class motion." Replay
    exists only as a headless command.
 
-Confirmed user decisions for this design:
+Confirmed user decisions for this design (in chronological order):
 
 | Decision | Value |
 | --- | --- |
@@ -51,6 +51,18 @@ Confirmed user decisions for this design:
 | In-scope tracks | Live LLM, replay UI, juice/theme/audio, perf + WebGL eval, world-quality, dev/ops, visual editor (P3) |
 | Out-of-scope-by-choice | WebSocket external agents + WASM plugin agents (shelved, not active) |
 | Sequencing | Marquee-first (Option A from the approaches list) |
+| AgentLog v2 split | **Split out of P2.A** into a prep phase P2.A0 (per AGENTS.md "keep replay separate from provider") |
+| Moratorium lift | **First** PR of P2.A0 must lift the live-LLM moratorium in `AGENTS.md` and `.github/copilot-instructions.md` so subsequent PRs aren't blocked by Copilot Code Review's standing instructions |
+| Mega-review mode | **EXPANSION** — cathedral posture: pressure-test everything + push scope up where it raises the ceiling |
+| Async boundary (§10) | **Outbox/inbox** (Issue 1A) — engine emits an `AgentRequest`, bridge fulfils async, engine drains at tick boundary. Determinism preserved for the non-LLM world. |
+| Bridge process model | **Separate process from P2.A day 1** (Issue 2A) — matches PLAN-v4 §3.4; isolates blast radius |
+| DecisionTimeline | **First-class engine object** (Issue 3) — addressable, version-pinned; replay/editor/bundle consume it; lives in `crates/protocol/` |
+| LLM-as-author | **In P2.A** (Issue 4A) — add `define_resource`, `add_producer`, `add_consumer`, `set_goal` tool specs alongside the existing five |
+| Merge policy this week | **Self-merge with guardrails** (see §2.6) — `ci-ok` green, no open conversations, in-scope, feature-flag default-off |
+| Active-week scope | **P2.A → P2.C only** — P2.D / P2.E / P3.A queue for after user return |
+| Branch strategy | **Single long-running working branch** with frequent commits; PRs cut against it; merge train into `main` |
+| Stop conditions | **External dep unreachable** only — everything else gets retried with autonomy, captured in PR body, or queued as a follow-up |
+| PR review policy | **Always request Copilot Code Review** (`@copilot review`) on every PR opened during the week |
 
 ### Success criteria for this design
 
@@ -149,14 +161,147 @@ quality + ops), and P3.A (editor) have **zero** human-only steps.
 
 ---
 
+## 2.6. Week-of-autonomous-execution policy
+
+This spec is the schedule for a full working week with **no human
+intervention** until the user returns. The constraints below override
+any conflicting workflow heuristic; they are the actual operating
+contract.
+
+### 2.6.1 Merge policy — "self-merge with guardrails"
+
+The agent **may** merge its own PRs into `main` (and into the
+single long-running working branch) **iff all** of the following hold
+simultaneously:
+
+1. `ci-ok` is green on the PR head SHA (branch protection enforces this).
+2. There are **zero unresolved review conversations** on the PR.
+3. The change is in scope per this spec (§3 / §4 / §5).
+4. Every new capability is feature-flag-gated **default-off** so a
+   regression does not corrupt the deterministic default world.
+5. The PR body cites the spec section it implements and lists the
+   tests added.
+
+Any PR that fails any one of these gates **must NOT be merged** —
+queue the failure into the PR description, post a comment, and move on
+to the next ready task. Branch protection on `main` (already
+configured: `ci-ok` required, conversations required,
+`enforce_admins=true`, no force pushes) is the safety net behind
+guardrails 1–2.
+
+### 2.6.2 Active-week scope: P2.A → P2.C only
+
+The week works **P2.A → P2.B → P2.C** in that order. Tasks may run in
+parallel within a phase when they touch disjoint files (per the
+PR-sized task lists). Do **not** start P2.D / P2.E / P3.A this week;
+they wait for user return. The "do not idle" rule from §2.5 means:
+within scope, pick the next ready task from the same phase or the next
+phase; it does NOT mean drift into out-of-scope phases.
+
+### 2.6.3 Branch strategy: single long-running branch
+
+All week-of-autonomy work happens on **one** long-running working
+branch (`ridermw/post-pr3-roadmap-spec` continues to serve, or a
+sibling branch like `ridermw/p2a-live-llm` if a cleaner cut is
+preferred). PRs are cut **from feature sub-branches into the working
+branch**, then the working branch is merged into `main` periodically
+(once `ci-ok` is green on the working branch tip). No stacked-PR
+ladder; one long branch keeps merge complexity contained and matches
+the user's stated preference.
+
+### 2.6.4 Stop conditions — "external dep unreachable" only
+
+The agent halts and posts a status comment **only** when an external
+dependency it depends on is unreachable. Examples:
+
+- `copilot --acp` subprocess refuses to start because the user's
+  GitHub Copilot entitlement lapsed or `gh auth status` is logged out.
+- GitHub API rate-limit exhaustion blocking PR operations.
+- `npm install` / `cargo fetch` failing due to registry outage.
+
+All other classes of failure — failing tests, flaky CI, ambiguous
+requirements, design ambiguity, lint warnings, dependency conflicts —
+are handled with autonomy: try alternative approaches, write the bug
+into the PR body, capture the open question in
+`docs/superpowers/specs/.../open-questions.md` (or as a PR comment),
+and **keep moving**. The user prefers more progress with a few flagged
+questions over zero progress while waiting for clarification.
+
+### 2.6.5 Pull request review policy
+
+**Every PR opened during this week requests Copilot Code Review.**
+After `gh pr create`, post a comment containing `@copilot review` (or
+add `copilot-pull-request-reviewer` as a reviewer via
+`gh pr edit --add-reviewer`). When Copilot Code Review posts comments,
+respond to each comment with the fix (or a justification + the
+"resolve" action). Because branch protection requires conversations
+resolved before merge, this is also a **technical** prerequisite, not
+just a style preference.
+
+### 2.6.6 Per-PR checklist (agent must satisfy each)
+
+Before opening a PR:
+
+- Build green locally (the narrowest applicable command from
+  `docs/testing.md`).
+- New behavior gated behind a feature flag default-off if it touches
+  the engine or the bridge.
+- Spec section cited in the PR body.
+- Tests added: at minimum one unit + one path covered.
+
+After opening a PR:
+
+- Request Copilot Code Review.
+- Watch `ci-ok` to green.
+- Resolve all conversations Copilot Code Review opens.
+- Self-merge iff §2.6.1 guardrails pass.
+
+---
+
 ## 3. Phase P2.A — Live LLM agent via Copilot SDK (marquee)
+
+### 3.0 Prep phase — P2.A0 (must merge before P2.A starts)
+
+Two pieces have to land **before** any P2.A live-LLM PR opens. They
+are small, low-risk, and unblock the marquee. Each is a separate PR.
+
+**P2.A0.1 — Lift the live-LLM moratorium in standing instructions.**
+
+- `.github/copilot-instructions.md` and `AGENTS.md` previously said
+  "live Copilot/provider integration is intentionally deferred." That
+  language conflicts with this spec's marquee. Until it is lifted,
+  Copilot Code Review will block every subsequent P2.A PR.
+- This PR replaces those instructions with the current direction (see
+  the new `AGENTS.md` / `.github/copilot-instructions.md` that point
+  to this spec), archives `PLAN.md` (Phase 1) into
+  `docs/historical/`, and archives the post-Phase-1 `TODOS.md` to
+  `docs/historical/`. Top-level `PLAN.md` and `TODOS.md` become
+  pointers to this spec.
+- **Acceptance:** `docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`
+  is referenced from `AGENTS.md`, `.github/copilot-instructions.md`,
+  `PLAN.md`, and `TODOS.md`. Phase 1 plan still readable under
+  `docs/historical/PLAN-v4-phase1.md`.
+
+**P2.A0.2 — AgentLog v2 schema bump (no provider work).**
+
+- Bump the AgentLog jsonl `schema_version` v1 → v2.
+- New fields are **all optional**: `backend`, `model`, `latency_ms`,
+  `prompt_tokens`, `completion_tokens`, `raw_response` (when the
+  backend exposes it). Existing v1 rows continue to load via an
+  explicit migration shim that maps to v2 defaults.
+- This PR adds the schema, the loader, the migration shim, the
+  golden-file test (replay an existing v1 jsonl), and a v2 sample
+  fixture. **No provider/network code in this PR.**
+- **Acceptance:** `simetro-headless replay` works against both a v1
+  log (existing fixture) and a v2 log (new fixture), bit-for-bit
+  deterministic.
+
+### 3.1 Acceptance criteria (P2.A proper)
 
 **Goal:** A Copilot-CLI-SDK-backed agent appears in the Inspector,
 makes a visible decision every few hundred ticks on `metro-pulse` and
 `emergency-dispatch`, and its decisions are captured in AgentLog for
 replay.
-
-### Acceptance criteria
 
 - [ ] `cargo run -p simetro-bridge -- --backend copilot` connects to the
   engine and produces an `AgentReport` with `considered`, `chosen`,
@@ -185,6 +330,9 @@ replay.
 
 ### PR-sized tasks (P2.A)
 
+> P2.A0.1 (instructions lift) and P2.A0.2 (AgentLog v2 schema split)
+> from §3.0 must merge **before** any of the tasks below.
+
 1. **Bridge: tool-spec round-trip tests** — assert every `Action`
    variant in `actions.rs` has a matching `ToolSpec` and the inline
    JSON Schema in `tools.rs` validates a known-good call. Regression
@@ -201,24 +349,48 @@ replay.
    `include_str!`. **Effort:** S
 4. **`LlmError` → `Fault`/`Warning` mapping** — table-driven mapping
    with a unit test per variant. **Effort:** S
-5. **AgentLog v2** — extend the jsonl row with `backend`, `model`,
-   `latency_ms`, `prompt_tokens`, `completion_tokens` when the backend
-   reports them. Bump AgentLog `schema_version` v1 → v2 with a
-   migration shim. **Effort:** S
-6. **Engine `LlmAgent` wrapper** — thin in-engine `Agent` impl that
-   sends `AgentMessage::Action` to the bridge and awaits the report.
-   Behind feature `llm-live`. **Effort:** M
-7. **Scene wiring** — `metro-pulse.json` adds an `agents` entry with
-   `kind: "llm"` and `interval_ticks: 600`. Loader rejects
-   `kind: "llm"` unless the runtime is built with the feature.
-   **Effort:** S
-8. **Recorded-fixture test suite** — capture synthetic ACP exchanges
-   per §2.5 and drive the bridge through them. **Effort:** M
-9. **`cargo xtask copilot-smoke`** — human-run smoke that spawns real
-   `copilot --acp` once. **Effort:** S
-10. **Docs** — `docs/agents.md` gets "Running with a live LLM";
-    `docs/runbook.md` gets `NotAuthenticated`, `RateLimited`,
-    `Timeout`, `Refused` rows. **Effort:** S
+5. **Outbox / inbox boundary** — introduce `AgentRequest` / `AgentReply`
+   queues on the engine side (bounded, deterministic ordering, stable
+   IDs). Engine emits to outbox at tick N and drains the inbox at tick
+   N + k where k is the configured deadline (default 1; bridge can
+   pre-empt with a request-marker). Documented in §10.2; backed by a
+   determinism test where a stalled bridge does not perturb the
+   non-LLM world's hash. **Effort:** M
+6. **`simetro-bridge` as a separate process** — split bridge into a
+   standalone binary spawned by the Tauri shell (or by
+   `simetro-headless`). Wire protocol uses framed JSON over stdio
+   with `schema_version: u32` per envelope. Reuse `crates/protocol/`
+   types. **Effort:** M
+7. **DecisionTimeline as first-class** — promote DecisionTimeline to a
+   versioned engine object with stable ID, addressable from replay,
+   editor, and bundle export. Lives in `crates/protocol/` (or a new
+   tiny crate `crates/decision-timeline/`). Schema versioned the same
+   way as AgentLog. **Effort:** M
+8. **Engine `LlmAgent` wrapper** — thin in-engine `Agent` impl that
+   sends `AgentMessage::Action` to the bridge through the outbox and
+   awaits the reply from the inbox. Behind feature `llm-live`.
+   **Driver.rs taste guard:** any new wiring goes through a new
+   `agent_runtime` module — do not grow `src-tauri/src/driver.rs`
+   further. **Effort:** M
+9. **LLM-as-author tool surface** — add `define_resource`,
+   `add_producer`, `add_consumer`, `set_goal` to `tools.rs` and
+   `actions.rs`. The new actions mutate the world's resource/production
+   graph (the existing one shipped in PR #3) via the same deterministic
+   action-application pipeline. Feature-flag the new tools so they are
+   only exposed in author-mode scenes. **Effort:** M
+10. **Scene wiring** — `metro-pulse.json` adds an `agents` entry with
+    `kind: "llm"` and `interval_ticks: 600`. Loader rejects
+    `kind: "llm"` unless the runtime is built with the feature.
+    **Effort:** S
+11. **Recorded-fixture test suite** — capture synthetic ACP exchanges
+    per §2.5 and drive the bridge through them. Every `LlmError`
+    variant has its own fixture file. **Effort:** M
+12. **`cargo xtask copilot-smoke`** — human-run smoke that spawns real
+    `copilot --acp` once. **Effort:** S
+13. **Docs** — `docs/agents.md` gets "Running with a live LLM" section
+    (outbox/inbox, process model, fixtures); `docs/runbook.md` gets
+    `NotAuthenticated`, `RateLimited`, `Timeout`, `Refused`,
+    `MalformedJson`, `SubprocessCrash` rows. **Effort:** S
 
 ---
 
@@ -422,60 +594,113 @@ roadmap.
 ### 10.1 Component map (new + changed)
 
 ```
-                    ┌───────────────────────────────────────┐
-                    │              ENGINE (pure)            │
-                    │  ┌──────────┐    ┌──────────────────┐ │
-                    │  │ tick.rs  │───▶│   LlmAgent (NEW) │ │  feature: llm-live
-                    │  └──────────┘    └────────┬─────────┘ │
-                    └──────────────────────────│────────────┘
-                                               │ AgentMessage
+                    ┌────────────────────────────────────────────┐
+                    │              ENGINE (pure)                 │
+                    │  ┌──────────┐    ┌──────────────────────┐  │
+                    │  │ tick.rs  │───▶│   LlmAgent (NEW)      │ │  feature: llm-live
+                    │  └──────────┘    └─────────┬─────────────┘  │
+                    │                            │ enqueue        │
+                    │                  ┌─────────▼──────────┐     │
+                    │                  │  outbox (bounded,  │     │  NEW (P2.A task 5)
+                    │                  │  deterministic     │     │
+                    │                  │  order, stable IDs)│     │
+                    │                  └─────────┬──────────┘     │
+                    │                            │                │
+                    │                  ┌─────────▼──────────┐     │
+                    │                  │  inbox (drained at │     │
+                    │                  │  tick boundary)    │     │
+                    │                  └─────────▲──────────┘     │
+                    └────────────────────────────│───────────────┘
+                                                 │ wire protocol
+                                                 │ (framed JSON over stdio,
+                                                 │  schema_version: u32)
+                                                 ▼
+                          ┌──────────────────────────────────────────┐
+                          │      simetro-bridge  (SEPARATE PROCESS)  │  NEW (P2.A task 6)
+                          │                                          │
+                          │   Backend trait                          │
+                          │   ┌──────────┐ ┌──────────┐              │
+                          │   │ Mock     │ │ Copilot  │              │  CHANGED
+                          │   │ Backend  │ │ Backend  │              │  (real ACP)
+                          │   └──────────┘ └────┬─────┘              │
+                          └────────────────────│─────────────────────┘
+                                               │ subprocess (only when
+                                               │  feature copilot-live)
                                                ▼
-                              ┌───────────────────────────────┐
-                              │      simetro-agent-bridge     │
-                              │                               │
-                              │   Backend trait               │
-                              │   ┌──────────┐ ┌──────────┐   │
-                              │   │ Mock     │ │ Copilot  │   │  CHANGED
-                              │   │ Backend  │ │ Backend  │   │  (real ACP)
-                              │   └──────────┘ └────┬─────┘   │
-                              └───────────────────│───────────┘
-                                                  │ subprocess (only when
-                                                  │  feature copilot-live)
-                                                  ▼
-                                       copilot --acp
-                                       (gh-auth-gated)
+                                    copilot --acp
+                                    (gh-auth-gated)
 
-   ┌─────────────────────────────────────────────────────────────┐
-   │                    FRONTEND (TS)                            │
-   │                                                             │
-   │  TauriTransport (existing)        ReplayTransport (NEW)     │  P2.B
-   │           │                                │                │
-   │           └─────────────┬──────────────────┘                │
-   │                         ▼                                   │
-   │                  decision timeline                          │
-   │                         │                                   │
-   │                         ▼                                   │
-   │     inspector  +  scrubber (NEW, P2.B)  +  renderer v2      │  P2.C
-   │                                              (bezier, fog,  │
-   │                                               time-of-day)  │
-   └─────────────────────────────────────────────────────────────┘
+   ┌─────────────────────────────────────────────────────────────────┐
+   │                    FRONTEND (TS)                                │
+   │                                                                 │
+   │  TauriTransport (existing)        ReplayTransport (NEW)         │  P2.B
+   │           │                                │                    │
+   │           └─────────────┬──────────────────┘                    │
+   │                         ▼                                       │
+   │              DecisionTimeline (NEW: first-class, addressable)   │  P2.A task 7
+   │                         │                                       │
+   │                         ▼                                       │
+   │     inspector  +  scrubber (NEW, P2.B)  +  renderer v2          │  P2.C
+   │                                              (bezier, fog,      │
+   │                                               time-of-day)      │
+   └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 10.2 Data flow for a live decision
+### 10.2 Data flow for a live decision (outbox/inbox boundary)
 
-1. Engine reaches `LlmAgent::act` (every `interval_ticks`).
-2. Engine builds `Observation`; emits `AgentMessage::Action(Observation)`
-   to the bridge.
+The engine never blocks on an LLM call. The async boundary is the
+outbox/inbox queue pair.
+
+```
+   Tick N           Tick N+1                  Tick N+k (k ≤ deadline)
+     │                 │                            │
+     ▼                 ▼                            ▼
+ ┌────────┐       ┌────────┐                  ┌────────────┐
+ │  emit  │       │ engine │   bridge fulfils │  drain     │
+ │ Agent  │──┐    │ ticks  │   in background  │ inbox →    │
+ │Request │  │    │ on the │ ─ ─ ─ ─ ─ ─ ─ ─▶ │ apply      │
+ │ to     │  │    │ deter- │                  │ Action     │
+ │ outbox │  │    │ minist │                  │ via tools/ │
+ └────────┘  │    │ ic     │                  │ actions    │
+             │    │ path   │                  └────────────┘
+             ▼    └────────┘                        │
+       (bounded queue,                              ▼
+        stable id order)                       AgentLog v2
+                                                  row
+```
+
+Deterministic-world invariants:
+
+- Non-LLM agents (e.g. `SpeedTuner`) still produce a bit-for-bit
+  identical hash across runs even when the LLM bridge is stalled or
+  killed. Test: `tests/determinism/llm_stalled.rs`.
+- The LLM's reply is applied at a **known** tick boundary. If the
+  reply arrives later than the deadline, the engine emits
+  `Warning::Behind { agent_id, ticks_late }` and re-issues the
+  request. No "apply at unpredictable tick" race.
+- The outbox uses stable agent-IDs for ordering, never wall-clock or
+  request-arrival order.
+
+Sequence per decision:
+
+1. Engine reaches `LlmAgent::act` (every `interval_ticks`); builds
+   `Observation`; enqueues `AgentRequest` into the bounded outbox.
+2. Bridge process reads the outbox over the stdio wire protocol.
 3. Bridge `CopilotBackend::invoke`:
    - Catches the inbound message under `catch_unwind`.
    - Sends a JSON-RPC `tools/call` payload over the ACP stdio of the
      `copilot --acp` subprocess.
    - Awaits a response, validates it against the tool's JSON Schema.
-4. Bridge returns `BackendResponse` to engine; engine constructs an
-   `AgentReport`.
-5. AgentLog v2 writer appends a row with the full tuple.
-6. Frontend (live mode): inspector renders the report; events drive
-   juice. Frontend (replay mode): scrubber consumes the same jsonl.
+4. Bridge writes `AgentReply` back into the wire protocol; engine's
+   inbox-drainer applies it on the next tick boundary as an
+   `AgentReport` + `Action` pair.
+5. AgentLog v2 writer appends a row with the full
+   `(observation, raw_response, parsed_action, latency_ms, model)`
+   tuple, indexed by DecisionTimeline ID.
+6. Frontend (live mode): inspector renders the report and the
+   DecisionTimeline entry; events drive juice. Frontend (replay
+   mode): scrubber consumes the same jsonl, addressed by the
+   DecisionTimeline ID.
 
 ### 10.3 Schema versioning
 
@@ -562,12 +787,66 @@ live calls:
 
 ## 13. Status
 
-- ✅ Spec written and committed under `docs/superpowers/specs/`.
-- ⏸️ **Awaiting user review on return.** Per brainstorming-skill
-  discipline, `writing-plans` is not invoked until the user reviews
-  this doc.
-- During the autonomous window, the existing P2.E (world quality +
-  dev/ops) and the deterministic pieces of P2.A (items 1, 3, 4, 5, 7
-  from §3) are eligible to start *only after PR #3 merges to main*.
-  Until then, the working environment is paused on this branch.
+- ✅ Spec written, mega-reviewed (Section 0 + Section 1), committed.
+- ✅ Standing instructions (`AGENTS.md`,
+  `.github/copilot-instructions.md`) refreshed to point at this spec
+  and to require Copilot Code Review on every PR.
+- ✅ Phase 1 plan archived to `docs/historical/PLAN-v4-phase1.md`;
+  post-Phase-1 backlog archived to
+  `docs/historical/TODOS-post-phase1.md`. Top-level `PLAN.md` and
+  `TODOS.md` are now pointers.
+- ✅ PR #3 merged; branch protection (`ci-ok` + conversations
+  resolved + admins enforced) active on `main`.
+- ▶️ **Active week starts now.** The current working branch is
+  `ridermw/post-pr3-roadmap-spec`. Per §2.6.3 it is the single
+  long-running branch for the autonomous week; feature PRs cut from
+  sub-branches into it, then it merges to `main` periodically when
+  `ci-ok` is green.
+- ⏳ Mega plan review Sections 2–10 are scheduled but **deferred to
+  user return** so they do not block week-of-autonomy execution.
+  Section 1 decisions (outbox/inbox, separate bridge process,
+  DecisionTimeline first-class, LLM-as-author in P2.A) are
+  authoritative for week-of-autonomy work.
+- ▶️ **Next concrete action (this branch):** open PR P2.A0.1 from
+  this branch lifting the LLM moratorium and archiving the old
+  plans (already prepared as part of this same commit). Request
+  Copilot Code Review on the PR per §2.6.5.
 
+---
+
+## 14. Mega plan review trail
+
+Decisions resolved (committed into the body above):
+
+| § | Decision | Outcome |
+| --- | --- | --- |
+| Step 0 | Mode | EXPANSION (user pick) |
+| Step 0 | 10x | LLM-as-author tool surface (folded into §3) |
+| Step 0 | Delight | 5+ identified; tracked under §3 task 9 + §5 |
+| Step 0 | Taste | `crates/engine/src/actions.rs` chosen as style reference; `src-tauri/src/driver.rs` flagged as anti-pattern (§3 task 8 guard) |
+| §1 | Async boundary | Outbox/inbox (1A) — §10.2 |
+| §1 | Process model | Separate bridge process day 1 (2A) — §10.1, §3 task 6 |
+| §1 | DecisionTimeline | First-class object (3) — §3 task 7 |
+| §1 | LLM-as-author | In P2.A (4A) — §3 task 9 |
+| §2.5 | Autonomy live-call policy | Confirmed: recorded fixtures + human smoke |
+| §2.6 | Merge policy | Self-merge with guardrails |
+| §2.6 | Scope this week | P2.A → P2.C only |
+| §2.6 | Branch strategy | Single long-running working branch |
+| §2.6 | Stop conditions | External dependency unreachable only |
+| §2.6 | PR review policy | Copilot Code Review on every PR |
+
+Sections deferred to user return (not blocking execution):
+
+- §2 Error & Rescue Map (full registry per mega-review skill)
+- §3 Security & Threat Model
+- §4 Data Flow & Interaction Edge Cases
+- §5 Code Quality Review
+- §6 Test Review (test pyramid + chaos scenarios)
+- §7 Performance Review
+- §8 Observability & Debuggability Review ("joy to operate" pass)
+- §9 Deployment & Rollout Review
+- §10 Long-Term Trajectory Review
+
+Each PR opened during the autonomous week will include its own
+section-by-section mini-review in the PR body so the user can pick up
+the mega-review thread on return without losing context.
