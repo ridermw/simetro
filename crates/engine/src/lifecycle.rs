@@ -96,8 +96,12 @@ impl RequestId {
 pub struct AgentRequest {
     pub id: RequestId,
     /// Engine-relative deadline (in ticks) by which a reply must be
-    /// drained or the request expires. Absolute tick = `source_tick +
-    /// deadline_ticks`. Per `(world.dt * deadline_ticks)` real-time.
+    /// drained or the request expires. Absolute tick is computed at
+    /// [`RequestLifecycle::try_enqueue`] time as
+    /// `current_tick + deadline_ticks` — NOT
+    /// `source_tick + deadline_ticks` — so re-issued requests get a
+    /// fresh deadline window rather than inheriting an already-overdue
+    /// one. Per `(world.dt * deadline_ticks)` real-time.
     pub deadline_ticks: u32,
     /// Serialized observation. Opaque to the engine; bridge converts
     /// to whatever shape the backend wants. Stored as bytes so the
@@ -226,7 +230,8 @@ pub struct RequestLifecycle {
 
 #[derive(Debug, Clone)]
 struct PendingEntry {
-    /// Absolute tick by which a reply must arrive (`source_tick + deadline_ticks`).
+    /// Absolute tick by which a reply must arrive
+    /// (`enqueue_tick + deadline_ticks`).
     deadline_abs: u64,
     /// The full request so we can reconstruct it on re-issue.
     request: AgentRequest,
@@ -270,21 +275,30 @@ impl RequestLifecycle {
     /// Try to enqueue a new request. If another request for the same
     /// agent is already `pending`, returns [`EnqueueOutcome::BackpressureDropped`]
     /// per spec §10.2.1 ("one-outstanding-per-agent backpressure").
-    pub fn try_enqueue(&mut self, request: AgentRequest) -> EnqueueOutcome {
+    ///
+    /// **Deadline semantics.** `deadline_abs` is computed from
+    /// `current_tick + deadline_ticks`, NOT `source_tick + deadline_ticks`.
+    /// This matters for re-issued requests (see
+    /// [`expire_overdue`](Self::expire_overdue)): a re-issue preserves
+    /// `source_tick` for stable identity, but the deadline rebases to
+    /// the re-issue tick so the bridge gets a real chance to respond.
+    /// Spec §10.2.1 wording is "tick N + k where k is the configured
+    /// deadline" — N is the issue tick (which equals `current_tick`),
+    /// not the original `source_tick`.
+    pub fn try_enqueue(&mut self, request: AgentRequest, current_tick: u64) -> EnqueueOutcome {
         if self.has_pending_for_agent(&request.id.agent_id) {
-            let lag = (request.id.source_tick).saturating_sub(0); // 0 = N/A here; caller can recompute with current tick if desired
-            let _ = lag;
+            // Backpressure-dropped lag: how far behind real time the
+            // dropped request would have been. Clamped to ≥1 for the
+            // same reason `llm_error_to_message` clamps Behind variants.
+            let lag_frames = current_tick.saturating_sub(request.id.source_tick).max(1) as u32;
             return EnqueueOutcome::BackpressureDropped {
                 message: SimMessage::Warning(WarningPayload::Behind {
-                    lag_frames: 1, // Deterministic constant; we don't know how far we'd lag without knowing current tick.
+                    lag_frames,
                     agent_id: Some(request.id.agent_id.clone()),
                 }),
             };
         }
-        let deadline_abs = request
-            .id
-            .source_tick
-            .saturating_add(u64::from(request.deadline_ticks));
+        let deadline_abs = current_tick.saturating_add(u64::from(request.deadline_ticks));
         let id = request.id.clone();
         self.pending.insert(
             id,
@@ -466,7 +480,7 @@ mod tests {
     #[test]
     fn enqueue_accepts_first_request_per_agent() {
         let mut life = RequestLifecycle::new();
-        let outcome = life.try_enqueue(req("agent-a", 1, 100, 0, 10));
+        let outcome = life.try_enqueue(req("agent-a", 1, 100, 0, 10), 100);
         assert!(matches!(outcome, EnqueueOutcome::Enqueued));
         assert!(life.has_pending_for_agent("agent-a"));
         assert_eq!(life.pending_count(), 1);
@@ -475,8 +489,8 @@ mod tests {
     #[test]
     fn enqueue_drops_second_request_for_same_agent_with_backpressure_warning() {
         let mut life = RequestLifecycle::new();
-        life.try_enqueue(req("agent-a", 1, 100, 0, 10));
-        let outcome = life.try_enqueue(req("agent-a", 2, 101, 0, 10));
+        life.try_enqueue(req("agent-a", 1, 100, 0, 10), 100);
+        let outcome = life.try_enqueue(req("agent-a", 2, 101, 0, 10), 101);
         match outcome {
             EnqueueOutcome::BackpressureDropped { message } => {
                 assert!(matches!(
@@ -500,11 +514,11 @@ mod tests {
     fn enqueue_allows_independent_agents_in_parallel() {
         let mut life = RequestLifecycle::new();
         assert!(matches!(
-            life.try_enqueue(req("agent-a", 1, 100, 0, 10)),
+            life.try_enqueue(req("agent-a", 1, 100, 0, 10), 100),
             EnqueueOutcome::Enqueued
         ));
         assert!(matches!(
-            life.try_enqueue(req("agent-b", 2, 100, 0, 10)),
+            life.try_enqueue(req("agent-b", 2, 100, 0, 10), 100),
             EnqueueOutcome::Enqueued
         ));
         assert_eq!(life.pending_count(), 2);
@@ -516,7 +530,7 @@ mod tests {
     fn drain_on_time_reply_returns_apply_and_moves_to_completed() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, 0, 10);
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
 
         let outcome = life.drain_reply(reply_for(&req_a, Some(Action::NoOp)), 105);
         match outcome {
@@ -541,7 +555,7 @@ mod tests {
     fn drain_duplicate_reply_returns_duplicate_warning() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, 0, 10);
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
         let _ = life.drain_reply(reply_for(&req_a, Some(Action::NoOp)), 105);
 
         // Same reply arrives again.
@@ -567,7 +581,7 @@ mod tests {
     fn drain_stale_reply_after_expiry_returns_stale_warning() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, 0, 5); // deadline at tick 105
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
 
         // Expire at tick 200 (well past deadline).
         let outcomes = life.expire_overdue(200);
@@ -620,7 +634,7 @@ mod tests {
     fn expire_overdue_reissues_with_attempt_increment() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, 0, 5); // deadline tick 105
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
 
         let outcomes = life.expire_overdue(110);
         assert_eq!(outcomes.len(), 1);
@@ -650,7 +664,7 @@ mod tests {
         // Insert at attempt = MAX_ATTEMPTS; the spec formula
         // `attempt < MAX_ATTEMPTS` is FALSE here, so we give up.
         let req_a = req("agent-a", 1, 100, MAX_ATTEMPTS, 5);
-        life.try_enqueue(req_a);
+        life.try_enqueue(req_a, 100);
 
         let outcomes = life.expire_overdue(200);
         assert_eq!(outcomes.len(), 1);
@@ -674,7 +688,7 @@ mod tests {
     fn expire_overdue_reissues_at_max_attempts_minus_one() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, MAX_ATTEMPTS - 1, 5);
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
 
         let outcomes = life.expire_overdue(200);
         assert_eq!(outcomes.len(), 1);
@@ -692,7 +706,7 @@ mod tests {
     #[test]
     fn expire_does_nothing_when_no_request_is_overdue() {
         let mut life = RequestLifecycle::new();
-        life.try_enqueue(req("agent-a", 1, 100, 0, 10)); // deadline 110
+        life.try_enqueue(req("agent-a", 1, 100, 0, 10), 100); // deadline 110
         let outcomes = life.expire_overdue(105); // not yet
         assert!(outcomes.is_empty());
         assert!(life.has_pending_for_agent("agent-a"));
@@ -705,9 +719,9 @@ mod tests {
         let mut life = RequestLifecycle::new();
         // Register in REVERSE alphabetical order; expire must return
         // outcomes in alphabetical order.
-        life.try_enqueue(req("zulu", 1, 100, 0, 5));
-        life.try_enqueue(req("charlie", 2, 100, 0, 5));
-        life.try_enqueue(req("alpha", 3, 100, 0, 5));
+        life.try_enqueue(req("zulu", 1, 100, 0, 5), 100);
+        life.try_enqueue(req("charlie", 2, 100, 0, 5), 100);
+        life.try_enqueue(req("alpha", 3, 100, 0, 5), 100);
         let outcomes = life.expire_overdue(200);
         assert_eq!(outcomes.len(), 3);
 
@@ -732,7 +746,7 @@ mod tests {
         let mut life = RequestLifecycle::with_caps(3, 100);
         for i in 0..5_u64 {
             let r = req("agent-a", i, 100 + i * 10, 0, 10);
-            life.try_enqueue(r.clone());
+            life.try_enqueue(r.clone(), 100 + i * 10);
             let _ = life.drain_reply(reply_for(&r, Some(Action::NoOp)), 110 + i * 10);
         }
         // Only the last 3 IDs should be in the completed ring.
@@ -750,7 +764,7 @@ mod tests {
         assert_ne!(r0.id, r1.id);
 
         let mut life = RequestLifecycle::new();
-        life.try_enqueue(r0.clone());
+        life.try_enqueue(r0.clone(), 100);
         // Expire attempt-0 → re-issue attempt-1.
         let outcomes = life.expire_overdue(200);
         match &outcomes[0] {
@@ -771,7 +785,7 @@ mod tests {
     fn drain_reply_rejects_pending_reply_after_deadline_as_stale() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, 0, 5); // deadline tick 105
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
 
         // Reply arrives at tick 200, past deadline, but
         // expire_overdue hasn't run yet for any tick > 105.
@@ -805,12 +819,62 @@ mod tests {
     fn drain_reply_at_exact_deadline_is_on_time_apply() {
         let mut life = RequestLifecycle::new();
         let req_a = req("agent-a", 1, 100, 0, 5); // deadline tick 105
-        life.try_enqueue(req_a.clone());
+        life.try_enqueue(req_a.clone(), 100);
 
         let outcome = life.drain_reply(reply_for(&req_a, Some(Action::NoOp)), 105);
         assert!(
             matches!(outcome, DrainOutcome::Apply { .. }),
             "drain at exact deadline must be on-time apply; got {outcome:?}"
+        );
+    }
+
+    /// Regression: Codex bot PR #12 R2 P1 — re-issued requests must
+    /// get a deadline rebased to the re-issue tick. If a re-issue
+    /// kept the original deadline (`source_tick + deadline_ticks`),
+    /// the next `expire_overdue` pass would immediately re-expire it
+    /// without giving the bridge a real chance to respond.
+    #[test]
+    fn reissued_request_gets_fresh_deadline_window_not_immediate_re_expire() {
+        let mut life = RequestLifecycle::new();
+        let req_a = req("agent-a", 1, 100, 0, 5); // original: deadline_abs = 105
+        life.try_enqueue(req_a.clone(), 100);
+
+        // Tick 200: original expires; expire_overdue produces a Reissue
+        // (attempt 1). Caller must re-enqueue it via try_enqueue with
+        // the current tick, NOT the original source_tick.
+        let outcomes = life.expire_overdue(200);
+        let next_request = match outcomes.into_iter().next().expect("one outcome") {
+            ExpiryOutcome::Reissue { next_request, .. } => next_request,
+            other => panic!("expected Reissue, got {other:?}"),
+        };
+        assert_eq!(next_request.id.attempt, 1);
+        assert_eq!(
+            next_request.id.source_tick, 100,
+            "source_tick preserved for stable identity"
+        );
+
+        // Re-enqueue the re-issue at tick 200. Deadline must be
+        // 200 + 5 = 205, NOT 100 + 5 = 105 (which is already past).
+        let enq = life.try_enqueue(next_request.clone(), 200);
+        assert!(
+            matches!(enq, EnqueueOutcome::Enqueued),
+            "re-enqueue must succeed"
+        );
+
+        // Now call expire_overdue at tick 201 — the re-issue is well
+        // within its deadline window (deadline_abs = 205) and MUST NOT
+        // be re-expired.
+        let outcomes = life.expire_overdue(201);
+        assert!(
+            outcomes.is_empty(),
+            "re-issue must not be immediately re-expired; got {outcomes:?}"
+        );
+
+        // A reply arriving at tick 204 is still on-time.
+        let outcome = life.drain_reply(reply_for(&next_request, Some(Action::NoOp)), 204);
+        assert!(
+            matches!(outcome, DrainOutcome::Apply { .. }),
+            "on-time reply for re-issue must apply; got {outcome:?}"
         );
     }
 }
