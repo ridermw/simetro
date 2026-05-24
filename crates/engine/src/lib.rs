@@ -18,6 +18,7 @@ pub mod agent_log;
 pub mod components;
 pub mod error;
 pub mod events;
+pub mod lifecycle;
 pub mod loader;
 pub mod rng;
 pub mod snapshot;
