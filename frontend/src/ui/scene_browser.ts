@@ -7,10 +7,17 @@ export interface SceneSelectIntent {
 
 export type SceneSelectHandler = (intent: SceneSelectIntent) => void;
 
+const LIST_ID = "simetro-scene-list";
+const TOGGLE_ID = "simetro-scene-toggle";
+
 export class SceneBrowser {
   private root: HTMLElement;
+  private toggle: HTMLButtonElement;
+  private indicator: HTMLSpanElement;
+  private list: HTMLElement;
   private sceneButtons: Map<string, HTMLButtonElement> = new Map();
   private selectedSceneId: string | null = null;
+  private collapsed = false;
 
   constructor(
     parent: HTMLElement,
@@ -20,6 +27,9 @@ export class SceneBrowser {
   ) {
     const built = buildDom(parent, scenes);
     this.root = built.root;
+    this.toggle = built.toggle;
+    this.indicator = built.indicator;
+    this.list = built.list;
     this.sceneButtons = built.sceneButtons;
     this.selectedSceneId = selectedSceneId;
 
@@ -30,12 +40,28 @@ export class SceneBrowser {
       });
     }
 
+    this.toggle.addEventListener("click", () => {
+      this.setCollapsed(!this.collapsed);
+    });
+
     this.refresh();
+    this.applyCollapsed();
   }
 
   setSelected(scene_id: string | null): void {
     this.selectedSceneId = scene_id;
     this.refresh();
+  }
+
+  /** Collapse (hide list, keep header) or expand the panel. */
+  setCollapsed(collapsed: boolean): void {
+    this.collapsed = collapsed;
+    this.applyCollapsed();
+  }
+
+  /** Current collapse state — useful for tests and persistence. */
+  isCollapsed(): boolean {
+    return this.collapsed;
   }
 
   __testRoot(): HTMLElement {
@@ -51,10 +77,20 @@ export class SceneBrowser {
         : "rgba(232, 234, 237, 0.15)";
     }
   }
+
+  private applyCollapsed(): void {
+    this.toggle.setAttribute("aria-expanded", this.collapsed ? "false" : "true");
+    // Chevron indicator: ▾ expanded, ▸ collapsed
+    this.indicator.textContent = this.collapsed ? "▸" : "▾";
+    this.list.style.display = this.collapsed ? "none" : "flex";
+  }
 }
 
 interface BuiltDom {
   root: HTMLElement;
+  toggle: HTMLButtonElement;
+  indicator: HTMLSpanElement;
+  list: HTMLElement;
   sceneButtons: Map<string, HTMLButtonElement>;
 }
 
@@ -70,6 +106,9 @@ function buildDom(parent: HTMLElement, scenes: readonly SceneCatalogEntry[]): Bu
     "flex-direction: column",
     "gap: 8px",
     "width: min(320px, calc(100vw - 24px))",
+    // Constrain to viewport so the scrollable list has somewhere to
+    // overflow into. 24px = top offset + breathing room at the bottom.
+    "max-height: calc(100vh - 24px)",
     "padding: 10px",
     "background: rgba(14, 17, 22, 0.85)",
     "border: 1px solid rgba(232, 234, 237, 0.15)",
@@ -77,22 +116,77 @@ function buildDom(parent: HTMLElement, scenes: readonly SceneCatalogEntry[]): Bu
     "font: 12px ui-monospace, SFMono-Regular, monospace",
     "color: #e8eaed",
     "z-index: 10",
+    // Allow the inner list to shrink-and-scroll inside the flex column
+    // even when the page itself has fixed sizing.
+    "min-height: 0",
+    "box-sizing: border-box",
   ].join(";");
 
-  const heading = document.createElement("div");
+  const toggle = document.createElement("button");
+  toggle.id = TOGGLE_ID;
+  toggle.type = "button";
+  toggle.setAttribute("aria-controls", LIST_ID);
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.style.cssText = [
+    "display: flex",
+    "align-items: center",
+    "justify-content: space-between",
+    "gap: 8px",
+    "padding: 2px 0",
+    "background: transparent",
+    "color: inherit",
+    "border: none",
+    "font: inherit",
+    "letter-spacing: 0.08em",
+    "text-transform: uppercase",
+    "cursor: pointer",
+    "text-align: left",
+  ].join(";");
+
+  const heading = document.createElement("span");
   heading.textContent = "scenes";
-  heading.style.cssText = "opacity: 0.75; letter-spacing: 0.08em; text-transform: uppercase";
-  root.appendChild(heading);
+  heading.style.cssText = "opacity: 0.75";
+
+  const indicator = document.createElement("span");
+  indicator.dataset.role = "scene-toggle-indicator";
+  indicator.textContent = "▾";
+  indicator.setAttribute("aria-hidden", "true");
+  indicator.style.cssText = "opacity: 0.75";
+
+  toggle.appendChild(heading);
+  toggle.appendChild(indicator);
+
+  const list = document.createElement("div");
+  list.id = LIST_ID;
+  list.setAttribute("role", "group");
+  list.setAttribute("aria-label", "Scenes");
+  list.style.cssText = [
+    "display: flex",
+    "flex-direction: column",
+    "gap: 8px",
+    // Scrollable when content exceeds available height.
+    "overflow-y: auto",
+    "min-height: 0",
+    // Stay within the panel's max-height; flex shrink handles the rest.
+    "flex: 1 1 auto",
+    // Thin scrollbar so it doesn't dominate the panel visually.
+    "scrollbar-width: thin",
+    "scrollbar-color: rgba(232, 234, 237, 0.25) transparent",
+    // Small right padding so cards don't touch the scrollbar.
+    "padding-right: 4px",
+  ].join(";");
 
   const sceneButtons = new Map<string, HTMLButtonElement>();
   for (const scene of scenes) {
     const sceneButton = sceneCard(scene);
     sceneButtons.set(scene.id, sceneButton);
-    root.appendChild(sceneButton);
+    list.appendChild(sceneButton);
   }
 
+  root.appendChild(toggle);
+  root.appendChild(list);
   parent.appendChild(root);
-  return { root, sceneButtons };
+  return { root, toggle, indicator, list, sceneButtons };
 }
 
 function sceneCard(scene: SceneCatalogEntry): HTMLButtonElement {
@@ -112,6 +206,9 @@ function sceneCard(scene: SceneCatalogEntry): HTMLButtonElement {
     "border-radius: 6px",
     "font: inherit",
     "cursor: pointer",
+    // Don't allow individual cards to shrink — they must keep their
+    // natural height, and the parent .list scrolls instead.
+    "flex: 0 0 auto",
   ].join(";");
 
   const title = document.createElement("strong");
