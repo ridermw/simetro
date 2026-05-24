@@ -1,0 +1,99 @@
+//! `World` is the owning container for simulation state.
+//!
+//! Collections are `BTreeMap` rather than `HashMap` so iteration order
+//! is deterministic across runs and platforms (PLAN §16).
+
+use std::collections::BTreeMap;
+
+use crate::components::{Mover, MoverId, Node, NodeId, Path, PathId};
+use crate::rng::SimRng;
+
+/// Top-level run state per PLAN §3.6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunState {
+    /// World exists but has nothing loaded.
+    Idle,
+    /// JSON scene loaded; tick has not started.
+    Loaded,
+    /// Tick loop is active.
+    Running,
+    /// Tick loop is paused by user.
+    Paused,
+    /// An engine fault has paused the loop; export-session is recommended.
+    Faulted,
+}
+
+#[derive(Debug)]
+pub struct World {
+    /// Monotonically increasing tick counter.
+    pub tick: u64,
+    /// Fixed simulation timestep in seconds (typically 1/60).
+    pub dt: f32,
+    /// Sim-owned RNG.
+    pub rng: SimRng,
+    /// Run state machine.
+    pub state: RunState,
+    /// Nodes by stable id.
+    pub nodes: BTreeMap<NodeId, Node>,
+    /// Paths by stable id.
+    pub paths: BTreeMap<PathId, Path>,
+    /// Movers by stable id.
+    pub movers: BTreeMap<MoverId, Mover>,
+}
+
+impl World {
+    /// Create an empty world. `dt` defaults to 1/60s; override with
+    /// [`World::with_dt`] for tests that want larger steps.
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
+        Self {
+            tick: 0,
+            dt: 1.0 / 60.0,
+            rng: SimRng::from_seed(seed),
+            state: RunState::Idle,
+            nodes: BTreeMap::new(),
+            paths: BTreeMap::new(),
+            movers: BTreeMap::new(),
+        }
+    }
+
+    /// Override the default fixed timestep.
+    #[must_use]
+    pub fn with_dt(mut self, dt: f32) -> Self {
+        self.dt = dt;
+        self
+    }
+
+    /// True if the world has at least one node loaded.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty() && self.paths.is_empty() && self.movers.is_empty()
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_world_is_empty_and_idle() {
+        let w = World::new(42);
+        assert_eq!(w.tick, 0);
+        assert!(w.is_empty());
+        assert_eq!(w.state, RunState::Idle);
+        assert!((w.dt - 1.0 / 60.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn with_dt_overrides_default() {
+        let w = World::new(0).with_dt(0.1);
+        assert!((w.dt - 0.1).abs() < 1e-9);
+    }
+}

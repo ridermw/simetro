@@ -1,0 +1,29 @@
+[package]
+name = "simetro-agent-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Pluggable LLM backends for simetro. Talks to the engine over the wire protocol."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "simetro-bridge"
+path = "src/main.rs"
+
+[dependencies]
+simetro-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }

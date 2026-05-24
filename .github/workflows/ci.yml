@@ -1,0 +1,253 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "ridermw/*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # -----------------------------------------------------------------
+  # Rust: fmt + clippy + test on every push. Always required.
+  # -----------------------------------------------------------------
+  rust:
+    name: rust (fmt + clippy + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --all-targets
+
+      - name: cargo doc (no deps, warnings denied)
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+  # -----------------------------------------------------------------
+  # Security: cargo audit + cargo deny on every push.
+  # PLAN Issue 6A: High/Critical fails the build.
+  # -----------------------------------------------------------------
+  audit:
+    name: rust security (audit + deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit + cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: cargo audit
+        run: cargo audit --deny warnings
+
+      - name: cargo deny check
+        run: cargo deny check
+        if: hashFiles('deny.toml') != ''
+
+  # -----------------------------------------------------------------
+  # Determinism gate. Enabled at Step 14 once the baseline hash and
+  # demo-paths.json land. Until then, the job runs as a no-op success.
+  # -----------------------------------------------------------------
+  determinism:
+    name: determinism baseline hash
+    runs-on: ubuntu-latest
+    needs: [rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for baseline file (gates the job)
+        id: gate
+        run: |
+          if [ -f tests/baselines/demo-paths.hash ] && [ -f games/demo-paths.json ]; then
+            echo "enabled=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::determinism gate: skipped — baseline + scene not yet produced (lands in Step 14)"
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.gate.outputs.enabled == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        if: steps.gate.outputs.enabled == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run hash and diff vs baseline
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          out=$(cargo run --release -p simetro-headless -- hash \
+                  --scene games/demo-paths.json --ticks 10000 --seed 42)
+          expected=$(cat tests/baselines/demo-paths.hash)
+          if [ "$out" != "$expected" ]; then
+            echo "::error::baseline hash mismatch: expected $expected, got $out"
+            exit 1
+          fi
+
+  # -----------------------------------------------------------------
+  # Frontend (Vite + TS + Playwright). Enabled at Step 16.
+  # -----------------------------------------------------------------
+  frontend:
+    name: frontend (lint + typecheck + unit + e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for frontend package.json (gates the job)
+        id: gate
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "enabled=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::frontend job: skipped — frontend/package.json not yet present (lands in Step 16)"
+          fi
+
+      - name: Setup Node
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm run lint
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm run lint --if-present
+
+      - name: npm run typecheck
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm run typecheck --if-present
+
+      - name: npm test (unit)
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm test --if-present
+
+      - name: npm audit --production
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: npm run build
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm run build --if-present
+
+      - name: Install Playwright browsers
+        if: steps.gate.outputs.enabled == 'true' && hashFiles('frontend/playwright.config.ts') != ''
+        working-directory: frontend
+        run: npx playwright install --with-deps
+
+      - name: Playwright E2E
+        if: steps.gate.outputs.enabled == 'true' && hashFiles('frontend/playwright.config.ts') != ''
+        working-directory: frontend
+        run: npm run test:e2e --if-present
+
+  # -----------------------------------------------------------------
+  # Tauri build sanity. Enabled at Step 22.
+  # -----------------------------------------------------------------
+  tauri:
+    name: tauri build (sanity)
+    runs-on: ubuntu-latest
+    needs: [rust, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Tauri config (gates the job)
+        id: gate
+        run: |
+          if [ -f src-tauri/tauri.conf.json ]; then
+            echo "enabled=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::tauri job: skipped — src-tauri/tauri.conf.json not yet present (lands in Step 22)"
+          fi
+
+      - name: Install system deps
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Rust toolchain
+        if: steps.gate.outputs.enabled == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        if: steps.gate.outputs.enabled == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target\nsrc-tauri -> target"
+
+      - name: Setup Node
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend (Tauri reads frontend/dist)
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: frontend
+        run: npm run build
+
+      - name: cargo build (src-tauri shell)
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: src-tauri
+        run: cargo build
+
+  # -----------------------------------------------------------------
+  # CI summary: this job is what branch protection should require.
+  # It depends on every other job so a single check covers the whole CI.
+  # -----------------------------------------------------------------
+  ci-ok:
+    name: ci-ok
+    runs-on: ubuntu-latest
+    needs: [rust, audit, determinism, frontend, tauri]
+    if: always()
+    steps:
+      - name: Check upstream job statuses
+        run: |
+          set -e
+          jq -e 'all(.[]; . == "success" or . == "skipped")' <<< '${{ toJSON(needs.*.result) }}'

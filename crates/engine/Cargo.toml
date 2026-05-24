@@ -1,0 +1,27 @@
+[package]
+name = "simetro-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Pure simulation core for simetro. No IO, no LLM deps."
+
+[lints]
+workspace = true
+
+[dependencies]
+simetro-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand_pcg = { workspace = true }
+rand = { workspace = true }
+glam = { workspace = true }
+hecs = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+dhat = { workspace = true }

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# simetro pre-commit hook.
+#
+# Install:  git config core.hooksPath .githooks
+#
+# Runs: rustfmt + clippy (with deny lints from PLAN §11.3) on changed crates.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Find staged Rust files so we only run when relevant.
+staged_rs=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' || true)
+
+if [ -n "$staged_rs" ]; then
+  echo "[pre-commit] cargo fmt --check"
+  cargo fmt --all -- --check
+
+  echo "[pre-commit] cargo clippy --workspace --all-targets -- -D warnings"
+  cargo clippy --workspace --all-targets -- -D warnings
+fi
+
+echo "[pre-commit] ok"

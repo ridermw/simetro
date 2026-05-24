@@ -1,0 +1,26 @@
+[package]
+name = "simetro-tauri-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Tauri desktop shell. Full integration wired in Step 22."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "simetro-tauri-app"
+path = "src/main.rs"
+
+[dependencies]
+simetro-engine = { workspace = true }
+simetro-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# Tauri itself is wired in Step 21/22; kept out of Step 1 to keep the
+# initial workspace `cargo check` fast and dependency-light.
