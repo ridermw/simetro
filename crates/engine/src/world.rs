@@ -5,7 +5,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::components::{Mover, MoverId, Node, NodeId, Path, PathId};
+use crate::components::{
+    Consumer, ConsumerId, Mover, MoverId, Node, NodeId, Path, PathId, Producer, ProducerId,
+    Resource, ResourceId,
+};
 use crate::rng::SimRng;
 
 /// Top-level run state per PLAN §3.6.
@@ -39,6 +42,14 @@ pub struct World {
     pub paths: BTreeMap<PathId, Path>,
     /// Movers by stable id.
     pub movers: BTreeMap<MoverId, Mover>,
+    /// Resource kinds by stable id.
+    pub resources: BTreeMap<ResourceId, Resource>,
+    /// Global inventory by resource id.
+    pub inventory: BTreeMap<ResourceId, u64>,
+    /// Producers by stable id.
+    pub producers: BTreeMap<ProducerId, Producer>,
+    /// Consumers by stable id.
+    pub consumers: BTreeMap<ConsumerId, Consumer>,
 }
 
 impl World {
@@ -54,6 +65,10 @@ impl World {
             nodes: BTreeMap::new(),
             paths: BTreeMap::new(),
             movers: BTreeMap::new(),
+            resources: BTreeMap::new(),
+            inventory: BTreeMap::new(),
+            producers: BTreeMap::new(),
+            consumers: BTreeMap::new(),
         }
     }
 
@@ -67,7 +82,13 @@ impl World {
     /// True if the world has at least one node loaded.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty() && self.paths.is_empty() && self.movers.is_empty()
+        self.nodes.is_empty()
+            && self.paths.is_empty()
+            && self.movers.is_empty()
+            && self.resources.is_empty()
+            && self.inventory.is_empty()
+            && self.producers.is_empty()
+            && self.consumers.is_empty()
     }
 }
 

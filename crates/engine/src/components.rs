@@ -24,6 +24,18 @@ pub struct PathId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct MoverId(pub u32);
 
+/// Stable numeric handle for a [`Resource`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ResourceId(pub u32);
+
+/// Stable numeric handle for a [`Producer`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ProducerId(pub u32);
+
+/// Stable numeric handle for a [`Consumer`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ConsumerId(pub u32);
+
 /// Geometric primitive a [`Node`] is drawn as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -92,6 +104,33 @@ pub struct Mover {
     /// path in one second).
     pub speed: f32,
     state: MoverState,
+}
+
+/// A globally tracked resource kind used by production chains.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Resource {
+    pub id: ResourceId,
+    /// Palette index used by future inspection/rendering surfaces.
+    pub color: u8,
+}
+
+/// Deterministic source that adds one resource kind to global inventory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Producer {
+    pub id: ProducerId,
+    pub resource: ResourceId,
+    pub amount: u64,
+    pub interval_ticks: u32,
+}
+
+/// Deterministic sink that removes one resource kind from global inventory
+/// when enough stock is available.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Consumer {
+    pub id: ConsumerId,
+    pub resource: ResourceId,
+    pub amount: u64,
+    pub interval_ticks: u32,
 }
 
 impl Mover {

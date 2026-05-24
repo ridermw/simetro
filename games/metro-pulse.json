@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "name": "metro-pulse",
+  "catalog": {
+    "slug": "metro-pulse",
+    "title": "Metro Pulse",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A neon transit-map loop shaped like a heartbeat pulse with clear terminal, transfer, and neighborhood station language.",
+    "tags": ["metro", "pulse", "transit-map", "loop"],
+    "palette_note": "Midnight navy canvas, porcelain foreground, and five saturated route accents: magenta mainline, cyan river link, amber downtown transfer, mint garden branch, and violet pulse peak.",
+    "layout_note": "Eight stations trace a wide left-to-right ECG silhouette: west approach, downtown beat, tall pulse peak, garden settle, east terminus, and a low return leg.",
+    "node_language_note": "Circles mark terminals, diamonds mark transfers, squares mark neighborhood stops, the triangle marks the pulse peak, and the hexagon marks the central hub.",
+    "mover_path_note": "Four movers start on long, differently colored route segments so the first frame shows traffic on the west inlet, central pulse, eastern glide, and south return.",
+    "review_note": "Visual review target: 960x540 first-frame canvas; checked for v1 validity, transit-map palette separation, heartbeat silhouette, distinct node shapes/colors, and visible mover starts."
+  },
+  "theme": {
+    "palette": ["#07111f", "#f4f7fb", "#ff4d8d", "#20d6c7", "#ffc857", "#4cd964", "#8f6cff", "#ff6b35"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "west_gate",       "pos": [90, 270],  "shape": "circle",   "color": 2 },
+      { "id": "canal_square",    "pos": [210, 170], "shape": "square",   "color": 3 },
+      { "id": "central_hub",     "pos": [350, 270], "shape": "hexagon",  "color": 4 },
+      { "id": "pulse_peak",      "pos": [480, 115], "shape": "triangle", "color": 6 },
+      { "id": "garden_transfer", "pos": [620, 270], "shape": "diamond",  "color": 5 },
+      { "id": "east_gate",       "pos": [820, 270], "shape": "circle",   "color": 3 },
+      { "id": "south_market",    "pos": [610, 420], "shape": "square",   "color": 7 },
+      { "id": "west_transfer",   "pos": [300, 410], "shape": "diamond",  "color": 2 }
+    ],
+    "paths": [
+      { "id": "west_canals", "from": "west_gate",       "to": "canal_square",    "color": 2 },
+      { "id": "canal_hub",   "from": "canal_square",    "to": "central_hub",     "color": 4 },
+      { "id": "hub_peak",    "from": "central_hub",     "to": "pulse_peak",      "color": 6 },
+      { "id": "peak_garden", "from": "pulse_peak",      "to": "garden_transfer", "color": 6 },
+      { "id": "garden_east", "from": "garden_transfer", "to": "east_gate",       "color": 5 },
+      { "id": "east_south",  "from": "east_gate",       "to": "south_market",    "color": 3 },
+      { "id": "south_west",  "from": "south_market",    "to": "west_transfer",   "color": 7 },
+      { "id": "west_return", "from": "west_transfer",   "to": "west_gate",       "color": 2 }
+    ],
+    "movers": [
+      { "id": "pulse_local_01",  "on_path": "west_canals", "speed": 0.75 },
+      { "id": "pulse_express_02", "on_path": "hub_peak",    "speed": 0.95 },
+      { "id": "garden_glide_03", "on_path": "garden_east",  "speed": 0.65 },
+      { "id": "market_return_04", "on_path": "south_west",  "speed": 0.85 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

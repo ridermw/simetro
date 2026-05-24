@@ -35,12 +35,10 @@ describe("Action formatting", () => {
     expect(formatAction({ kind: "set_speed", mover: 7, speed: 1.5 })).toBe(
       "SetSpeed(mover=7, speed=1.50)"
     );
-    expect(
-      formatAction({ kind: "place_piece", piece_kind: "node", pos: [10, 20] })
-    ).toBe("PlacePiece(node, [10, 20])");
-    expect(formatAction({ kind: "connect_pieces", from: 1, to: 2 })).toBe(
-      "ConnectPieces(1 → 2)"
+    expect(formatAction({ kind: "place_piece", piece_kind: "node", pos: [10, 20] })).toBe(
+      "PlacePiece(node, [10, 20])"
     );
+    expect(formatAction({ kind: "connect_pieces", from: 1, to: 2 })).toBe("ConnectPieces(1 → 2)");
     expect(formatAction({ kind: "remove_piece", id: 9 })).toBe("RemovePiece(9)");
   });
 

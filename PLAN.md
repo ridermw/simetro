@@ -15,7 +15,7 @@ The product bet: **fast, responsive, visually pleasing → everything else falls
 Three core capabilities:
 
 1. **Watch** — desktop app renders simulations at 60fps with juice (Mini Metro-class motion, audio per event).
-2. **Author** — JSON describes pieces, interactions, goals, theme. Agents can also produce/edit JSON. (Author actions stubbed in P1, live in P2.)
+2. **Author** — JSON describes pieces, interactions, goals, theme. Agents can also produce/edit JSON through deterministic, engine-validated author actions. Live LLM/provider authoring remains deferred.
 3. **Reason** — Inspector panel shows what each agent sees, considered, chose, and why; AgentLog enables replay.
 
 This is for me. Not for distribution. That decision is reversible later; the architecture supports public release if I ever want it.
@@ -409,7 +409,8 @@ pub enum LoadError {
     InvalidId { section: &'static str, id: String },
     NonFiniteCoord { id: String },
     SpeedOutOfRange { id: String, value: f32 },
-    IntervalOOB { agent_index: usize, value: u32 },
+    IntervalOOB { section: &'static str, index: usize, value: u32 },
+    AmountOOB { field: &'static str, value: u64 },
     UnknownReference { from: String, to: String },
 }
 
@@ -690,6 +691,58 @@ This is a desktop personal-use app. "Rollback" = `git revert` + rebuild. No DB, 
 
 Each of the 22 implementation steps below produces a runnable artifact (test, binary, or visible behavior). Don't move on if the previous step doesn't run.
 
+### 18.5 Continuous PR delivery loop
+
+The operating loop is documented in `docs/testing.md` and referenced from
+`TODOS.md`; keep that document as the source of truth for exact validation
+commands and PR-body checklist fields. The plan-level contract is:
+
+- **Cadence:** target one independently reviewable PR per hour where feasible.
+  If the change cannot validate or review cleanly in that window, split it or
+  stop at the smallest green slice.
+- **Compressed paired-world mode:** when a logic change also needs scene JSON,
+  baselines, generated assets, or demo-world churn, keep the logic PR focused
+  and open a companion mechanical world PR in the same delivery window when
+  feasible. The companion PR should be declarative/generated, list its
+  generator or manual edit recipe, and avoid unrelated code.
+- **Fast CI is an assumption, not a hope:** each PR must be able to get a
+  green `ci-ok` from the matching local validation commands plus GitHub
+  Actions without depending on a long follow-up branch.
+- **Review feedback loop:** blocking review or CI feedback is fixed in the
+  current PR with validation evidence; non-blocking ideas are captured as
+  follow-ups instead of expanding scope.
+- **Non-blocking follow-ups:** only correctness, safety, determinism, CI, data
+  loss, or user-visible breakage should block merge. Everything else goes to
+  `TODOS.md`, an issue, or the PR body follow-up list.
+
+### 18.6 Autonomous execution policy for future work
+
+When implementation work is delegated to autonomous agents, they should keep
+moving without waiting for interactive clarification. If a decision is
+under-specified, use the defaults below, document the assumption in the PR body
+or `TODOS.md`, and continue with the smallest safe change.
+
+- **Do not block on user input:** choose the conservative documented behavior
+  and leave a follow-up TODO only when the ambiguity is not correctness-,
+  safety-, determinism-, or CI-blocking.
+- **Scene selection is registry-backed:** any future scene picker or launch
+  flag must select by stable `scene_id`, resolved through a local registry that
+  maps ids to repo-relative `games/*.json` paths. Do not accept arbitrary
+  renderer-supplied paths.
+- **Reload/switch is atomic:** build and validate the replacement world,
+  runner, id map, static payload, and initial snapshot off to the side; replace
+  the active scene only after all steps succeed. On read/parse/validation
+  failure, emit the typed fault and keep the old scene running.
+- **No new dependencies or binary assets by default:** prefer stdlib, existing
+  crates, existing frontend packages, and existing `games/` JSON. Add deps or
+  assets only when required by the task and justified in the PR body.
+- **Pair mechanical world PRs when needed:** schema/data/demo-scene/baseline
+  churn should follow the compressed paired-world mode in §18.5 so logic diffs
+  stay reviewable.
+- **Fallback tasks for blocked work:** if a blocker is truly external, mark it
+  in `TODOS.md` and switch to ready fallback work such as docs, narrow tests,
+  protocol shape clarification, or scene-registry acceptance criteria.
+
 ---
 
 ## 19. Phase 1 Implementation Order (22 Steps)
@@ -782,11 +835,11 @@ Written **during** Phase 1, not at the end:
 | Item | Why deferred |
 | --- | --- |
 | LLM agent live end-to-end | Bridge ready; live in P2 |
-| Author actions (PlacePiece/ConnectPieces/RemovePiece) | Action stubs in P1; live in P2 |
-| Resources / inventory / producers / consumers | Schema v2 in P2 |
+| Author actions (PlacePiece/ConnectPieces/RemovePiece) | Core engine actions delivered; richer policy/UX remains follow-up |
+| Resources / inventory / producers / consumers | Schema v2 loader + deterministic production delivered; scenario polish remains follow-up |
 | WebGL renderer | Canvas2D suffices; switch when stress demands |
-| Live JSON file watcher | Manual reload in P1 |
-| Replay/scrubbing UI | AgentLog captured P1; tool in P2 |
+| Live JSON file watcher | Delivered in desktop driver with debounced reload |
+| Replay/scrubbing UI | Headless replay delivered; UI scrubber remains follow-up |
 | Visual editor | P3 |
 | Multi-sim tiled view | P3 |
 | External-language agents over WebSocket | Protocol ready; P3 |
@@ -800,7 +853,7 @@ Written **during** Phase 1, not at the end:
 
 ## 24. Phase 2 / Phase 3 Trajectory
 
-**Phase 2** (1-3 months after P1): LLM agent end-to-end via Copilot SDK; author actions; resources + production chain; scored goals; replay tool; live JSON watcher; theme expansion; expanded audio; additional bridge backends; optional WebGL.
+**Phase 2** (1-3 months after P1): LLM agent end-to-end via Copilot SDK; scored goals; replay UI scrubber; richer author-action policy/UX; theme expansion; expanded audio; additional bridge backends; optional WebGL.
 
 **Phase 3**: visual editor; multi-sim tiled view; external-language agents; WASM plugin agents; procedural scenario generation; sharable session bundles as first-class artifact.
 

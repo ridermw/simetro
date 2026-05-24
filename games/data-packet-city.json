@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "name": "data-packet-city",
+  "catalog": {
+    "slug": "data-packet-city",
+    "title": "Data Packet City",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A dark terminal city where neon packets traverse gateways, firewalls, caches, routers, and uplink towers.",
+    "tags": ["data", "packet", "terminal", "network", "city", "v1"],
+    "palette_note": "Nearly black terminal background and phosphor foreground are crossed by green packet lanes, cyan fiber, magenta firewall scans, amber uplink traces, violet edge routes, and red alert hops.",
+    "layout_note": "The nodes form a cyber-city skyline: low ingress streets, stacked cache blocks, a central router plaza, a tall firewall spire, and a right-side antenna/egress tower.",
+    "node_language_note": "Squares are data blocks, circles are routers/gateways, diamonds are switches/firewalls, triangles are towers/uplinks, and hexagons are high-capacity hubs.",
+    "mover_path_note": "Six movers start on long visible ingress, cache, firewall, uplink, archive, and return segments so the first frame reads as packets crossing separate city districts.",
+    "review_note": "Visual review target: default 960x540 #scene first-frame screenshot; checked for v1 JSON validity, v2-capable loader compatibility, terminal palette separation, skyline silhouette, node language, and visible packet starts."
+  },
+  "theme": {
+    "palette": ["#05070c", "#d7ffe8", "#39ff88", "#00d9ff", "#ff3fd5", "#ffb000", "#8b5cff", "#ff4b4b"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "ingress_gate", "pos": [70, 335], "shape": "circle", "color": 2 },
+      { "id": "packet_plaza", "pos": [175, 260], "shape": "hexagon", "color": 3 },
+      { "id": "cache_stack", "pos": [265, 155], "shape": "square", "color": 2 },
+      { "id": "dns_switch", "pos": [370, 225], "shape": "diamond", "color": 5 },
+      { "id": "core_router", "pos": [480, 310], "shape": "circle", "color": 3 },
+      { "id": "firewall_spire", "pos": [520, 95], "shape": "triangle", "color": 4 },
+      { "id": "subnet_market", "pos": [380, 420], "shape": "square", "color": 6 },
+      { "id": "uplink_tower", "pos": [660, 170], "shape": "triangle", "color": 5 },
+      { "id": "edge_proxy", "pos": [760, 285], "shape": "diamond", "color": 6 },
+      { "id": "archive_vault", "pos": [865, 370], "shape": "hexagon", "color": 7 },
+      { "id": "egress_node", "pos": [885, 215], "shape": "circle", "color": 2 }
+    ],
+    "paths": [
+      { "id": "ingress_to_plaza", "from": "ingress_gate", "to": "packet_plaza", "color": 2 },
+      { "id": "plaza_to_cache", "from": "packet_plaza", "to": "cache_stack", "color": 3 },
+      { "id": "cache_to_dns", "from": "cache_stack", "to": "dns_switch", "color": 5 },
+      { "id": "dns_to_firewall", "from": "dns_switch", "to": "firewall_spire", "color": 4 },
+      { "id": "firewall_to_uplink", "from": "firewall_spire", "to": "uplink_tower", "color": 5 },
+      { "id": "uplink_to_egress", "from": "uplink_tower", "to": "egress_node", "color": 5 },
+      { "id": "egress_to_edge", "from": "egress_node", "to": "edge_proxy", "color": 6 },
+      { "id": "edge_to_archive", "from": "edge_proxy", "to": "archive_vault", "color": 7 },
+      { "id": "archive_to_subnet", "from": "archive_vault", "to": "subnet_market", "color": 6 },
+      { "id": "subnet_to_ingress", "from": "subnet_market", "to": "ingress_gate", "color": 2 },
+      { "id": "plaza_to_core", "from": "packet_plaza", "to": "core_router", "color": 3 },
+      { "id": "core_to_dns", "from": "core_router", "to": "dns_switch", "color": 5 },
+      { "id": "core_to_firewall", "from": "core_router", "to": "firewall_spire", "color": 4 },
+      { "id": "core_to_edge", "from": "core_router", "to": "edge_proxy", "color": 3 },
+      { "id": "core_to_subnet", "from": "core_router", "to": "subnet_market", "color": 6 },
+      { "id": "subnet_to_cache", "from": "subnet_market", "to": "cache_stack", "color": 2 }
+    ],
+    "movers": [
+      { "id": "icmp_ping", "on_path": "ingress_to_plaza", "speed": 0.82 },
+      { "id": "cache_burst", "on_path": "plaza_to_cache", "speed": 0.74 },
+      { "id": "firewall_scan", "on_path": "dns_to_firewall", "speed": 0.96 },
+      { "id": "uplink_beacon", "on_path": "firewall_to_uplink", "speed": 0.68 },
+      { "id": "archive_write", "on_path": "edge_to_archive", "speed": 0.78 },
+      { "id": "return_ack", "on_path": "archive_to_subnet", "speed": 1.04 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

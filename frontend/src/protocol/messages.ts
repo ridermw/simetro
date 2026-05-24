@@ -32,12 +32,7 @@ export interface Envelope<T> {
 //  Engine  →  consumers
 // ---------------------------------------------------------------------
 
-export type NodeShapeTag =
-  | "circle"
-  | "square"
-  | "triangle"
-  | "diamond"
-  | "hexagon";
+export type NodeShapeTag = "circle" | "square" | "triangle" | "diamond" | "hexagon";
 
 export interface NodeView {
   id: number;
@@ -90,12 +85,7 @@ export interface SnapshotPayload {
 
 export type HighlightReason = "agent_focus" | "bottleneck" | "goal_reached";
 
-export type ActionTag =
-  | "no_op"
-  | "set_speed"
-  | "place_piece"
-  | "connect_pieces"
-  | "remove_piece";
+export type ActionTag = "no_op" | "set_speed" | "place_piece" | "connect_pieces" | "remove_piece";
 
 export type SimEvent =
   | { kind: "tick"; tick: number }

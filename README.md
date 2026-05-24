@@ -59,6 +59,7 @@ tests/baselines/     # determinism hashes + visual diff PNGs
 - [`docs/tauri-bridge.md`](./docs/tauri-bridge.md) — Tauri engine driver architecture + message flow
 - [`docs/architecture.md`](./docs/architecture.md) — system tour, crate map, determinism contract
 - [`docs/schema.md`](./docs/schema.md) — JSON scene schema
+- [`docs/world-quality.md`](./docs/world-quality.md) + [`docs/world-template.jsonc`](./docs/world-template.jsonc) — polished v1 world checklist and template
 - [`docs/protocol.md`](./docs/protocol.md) — wire envelope reference
 - [`docs/agents.md`](./docs/agents.md) — agent loop, backends, AgentLog
 - [`docs/testing.md`](./docs/testing.md) — what every test layer guarantees

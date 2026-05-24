@@ -23,7 +23,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod capabilities;
 pub mod version;
+pub mod websocket;
 
 pub use version::SCHEMA_VERSION;
 
@@ -288,8 +290,8 @@ pub enum AgentMessage {
 }
 
 /// Actions an agent may take. Author actions (PlacePiece/ConnectPieces/
-/// RemovePiece) are stubbed in P1; engine ignores them with a typed
-/// [`WarningPayload::InvalidAction`]. Full impl in P2.
+/// RemovePiece) mutate the world when valid; malformed or unsafe requests
+/// are rejected with a typed [`WarningPayload::InvalidAction`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {

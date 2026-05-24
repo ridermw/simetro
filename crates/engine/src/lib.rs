@@ -29,7 +29,10 @@ pub mod world;
 pub use actions::{apply_action, Outcome};
 pub use agent::{Agent, AgentHost, MoverObservation, Observation, SpeedTuner};
 pub use agent_log::{observation_hash, AgentLog, AgentLogEntry};
-pub use components::{Mover, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId};
+pub use components::{
+    Consumer, ConsumerId, Mover, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId,
+    Producer, ProducerId, Resource, ResourceId,
+};
 pub use error::{AgentError, EngineFault, LoadError};
 pub use events::{agent_error_to_message, engine_fault_to_payload, load_error_to_fault};
 pub use loader::{load_scene_str, AgentSpec, Goal, IdMap, LoadedScene, Theme};

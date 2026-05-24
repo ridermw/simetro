@@ -76,9 +76,7 @@ export class ControlsBar {
     this.playPauseBtn.setAttribute("aria-label", this.isPaused ? "Play" : "Pause");
     for (const [factor, btn] of this.speedButtons) {
       btn.style.borderColor =
-        factor === this.speedFactor
-          ? "rgba(232, 234, 237, 0.6)"
-          : "rgba(232, 234, 237, 0.15)";
+        factor === this.speedFactor ? "rgba(232, 234, 237, 0.6)" : "rgba(232, 234, 237, 0.15)";
       btn.setAttribute("aria-pressed", factor === this.speedFactor ? "true" : "false");
     }
   }

@@ -57,8 +57,17 @@ pub enum LoadError {
     #[error("speed for mover `{id}` = {value} is out of range (0..=100)")]
     SpeedOutOfRange { id: String, value: f32 },
 
-    #[error("agents[{agent_index}].interval_ticks = {value} is out of range (1..=10_000)")]
-    IntervalOOB { agent_index: usize, value: u32 },
+    #[error("{section}[{index}].interval_ticks = {value} is out of range (1..=10_000)")]
+    IntervalOOB {
+        section: &'static str,
+        index: usize,
+        value: u32,
+    },
+
+    #[error(
+        "{field} = {value} is out of range (0..=1_000_000 for inventory, 1..=1_000_000 otherwise)"
+    )]
+    AmountOOB { field: &'static str, value: u64 },
 
     #[error("unknown reference: `{from}` -> `{to}`")]
     UnknownReference { from: String, to: String },

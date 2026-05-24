@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "name": "orbital-transfers",
+  "catalog": {
+    "slug": "orbital-transfers",
+    "title": "Orbital Transfers",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A starfield transfer-control fantasy where shuttles hop between orbital yards, station hubs, lunar windows, and slingshot beacons.",
+    "tags": ["orbital", "space", "station", "transfer", "starfield", "v1"],
+    "palette_note": "A near-black starfield background and crisp white foreground frame cyan orbital lanes, orange burn vectors, magenta transfer windows, violet station hubs, solar gold arrays, life-support green docks, lunar blue routes, and red hazard beacons.",
+    "layout_note": "Fourteen nodes form a tilted orbital-transfer silhouette: an inner station diamond, a broad outer ellipse, high lunar transfer window, right-side slingshot arc, and low cargo-return orbit.",
+    "node_language_note": "Hexagons are command and station hubs, circles are orbital docks and Lagrange holds, diamonds are transfer windows, triangles are burn/slingshot beacons, and squares are solar arrays or cargo yards; cyan/blue nodes read as lanes, violet hubs as stations, orange/red as burn risk, and green/gold as support infrastructure.",
+    "mover_path_note": "Seven movers start on separate visible station departure, retro-burn, lunar window, slingshot, cargo return, solar resupply, and hazard-watch segments so the first frame shows traffic distributed across the transfer map.",
+    "review_note": "Visual review target: default 960x540 #scene first-frame screenshot; checked for v1 JSON validity, v2-capable loader compatibility, starfield palette separation, orbital transfer silhouette, node language, local catalog/registry paths, and visible shuttle starts."
+  },
+  "theme": {
+    "palette": ["#020617", "#f8fbff", "#38bdf8", "#f97316", "#d946ef", "#a78bfa", "#facc15", "#22c55e", "#60a5fa", "#ef4444"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "earth_dock", "pos": [110, 285], "shape": "circle", "color": 2 },
+      { "id": "low_orbit_yard", "pos": [190, 170], "shape": "square", "color": 6 },
+      { "id": "perigee_burn", "pos": [320, 105], "shape": "triangle", "color": 3 },
+      { "id": "zenith_window", "pos": [475, 72], "shape": "diamond", "color": 4 },
+      { "id": "lunar_gate", "pos": [645, 118], "shape": "diamond", "color": 8 },
+      { "id": "slingshot_beacon", "pos": [825, 210], "shape": "triangle", "color": 9 },
+      { "id": "outer_hold", "pos": [875, 345], "shape": "circle", "color": 8 },
+      { "id": "cargo_return", "pos": [705, 432], "shape": "square", "color": 7 },
+      { "id": "aft_station", "pos": [530, 382], "shape": "hexagon", "color": 5 },
+      { "id": "central_hab", "pos": [455, 270], "shape": "hexagon", "color": 5 },
+      { "id": "solar_spoke", "pos": [320, 330], "shape": "square", "color": 6 },
+      { "id": "retro_burn", "pos": [215, 420], "shape": "triangle", "color": 3 },
+      { "id": "l4_parking", "pos": [650, 255], "shape": "circle", "color": 2 },
+      { "id": "hazard_watch", "pos": [540, 202], "shape": "diamond", "color": 9 }
+    ],
+    "paths": [
+      { "id": "earth_to_yard", "from": "earth_dock", "to": "low_orbit_yard", "color": 2 },
+      { "id": "yard_to_perigee", "from": "low_orbit_yard", "to": "perigee_burn", "color": 6 },
+      { "id": "perigee_to_zenith", "from": "perigee_burn", "to": "zenith_window", "color": 3 },
+      { "id": "zenith_to_lunar", "from": "zenith_window", "to": "lunar_gate", "color": 4 },
+      { "id": "lunar_to_slingshot", "from": "lunar_gate", "to": "slingshot_beacon", "color": 8 },
+      { "id": "slingshot_to_hold", "from": "slingshot_beacon", "to": "outer_hold", "color": 9 },
+      { "id": "hold_to_cargo", "from": "outer_hold", "to": "cargo_return", "color": 8 },
+      { "id": "cargo_to_aft", "from": "cargo_return", "to": "aft_station", "color": 7 },
+      { "id": "aft_to_retro", "from": "aft_station", "to": "retro_burn", "color": 5 },
+      { "id": "retro_to_earth", "from": "retro_burn", "to": "earth_dock", "color": 3 },
+      { "id": "earth_to_solar", "from": "earth_dock", "to": "solar_spoke", "color": 2 },
+      { "id": "solar_to_hab", "from": "solar_spoke", "to": "central_hab", "color": 6 },
+      { "id": "hab_to_hazard", "from": "central_hab", "to": "hazard_watch", "color": 5 },
+      { "id": "hazard_to_l4", "from": "hazard_watch", "to": "l4_parking", "color": 9 },
+      { "id": "l4_to_hold", "from": "l4_parking", "to": "outer_hold", "color": 2 },
+      { "id": "l4_to_lunar", "from": "l4_parking", "to": "lunar_gate", "color": 8 },
+      { "id": "hab_to_aft", "from": "central_hab", "to": "aft_station", "color": 5 },
+      { "id": "aft_to_cargo", "from": "aft_station", "to": "cargo_return", "color": 7 },
+      { "id": "solar_to_retro", "from": "solar_spoke", "to": "retro_burn", "color": 3 },
+      { "id": "hab_to_zenith", "from": "central_hab", "to": "zenith_window", "color": 4 },
+      { "id": "hazard_to_slingshot", "from": "hazard_watch", "to": "slingshot_beacon", "color": 9 },
+      { "id": "yard_to_hab", "from": "low_orbit_yard", "to": "central_hab", "color": 6 }
+    ],
+    "movers": [
+      { "id": "station_departure", "on_path": "earth_to_yard", "speed": 0.76 },
+      { "id": "retro_tug", "on_path": "solar_to_retro", "speed": 0.84 },
+      { "id": "lunar_shuttle", "on_path": "zenith_to_lunar", "speed": 0.92 },
+      { "id": "slingshot_probe", "on_path": "lunar_to_slingshot", "speed": 1.06 },
+      { "id": "cargo_capsule", "on_path": "hold_to_cargo", "speed": 0.7 },
+      { "id": "solar_resupply", "on_path": "yard_to_hab", "speed": 0.88 },
+      { "id": "hazard_watchdog", "on_path": "hazard_to_slingshot", "speed": 0.98 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

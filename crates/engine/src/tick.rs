@@ -22,7 +22,7 @@ use crate::actions::{apply_action, Outcome};
 use crate::agent::AgentHost;
 use crate::agent_log::{AgentLog, AgentLogEntry};
 use crate::events::agent_error_to_message;
-use crate::systems::{interaction, lifecycle, movement};
+use crate::systems::{interaction, lifecycle, movement, production};
 use crate::world::{RunState, World};
 
 #[derive(Debug, Default)]
@@ -46,6 +46,7 @@ pub struct TickRunner {
     spawn_scratch: Vec<lifecycle::SpawnScratch>,
     arrival_scratch: Vec<movement::ArrivalScratch>,
     route_scratch: Vec<interaction::RouteScratch>,
+    production_scratch: production::ProductionScratch,
     /// Built-in / in-process agents driven by the engine.
     hosts: Vec<AgentHost>,
     /// Optional append-only log of agent decisions (PLAN §15). When
@@ -160,6 +161,7 @@ impl TickRunner {
         self.run_agents(world);
 
         interaction::run(world, &mut self.events, &mut self.route_scratch);
+        production::run(world, &mut self.production_scratch);
 
         self.events.push(SimEvent::Tick { tick: world.tick });
         self.last_arrivals = arrivals;
@@ -273,7 +275,7 @@ mod tests {
     use crate::agent::{Agent, Observation, SpeedTuner};
     use crate::error::AgentError;
     use crate::loader::load_scene_str;
-    use simetro_protocol::{AgentReport, FaultPayload};
+    use simetro_protocol::{Action, AgentReport, FaultPayload, WarningPayload};
 
     const SCENE: &str = include_str!("../../../games/demo-paths.json");
 
@@ -337,6 +339,32 @@ mod tests {
         }
     }
 
+    struct InvalidAuthorAgent;
+    impl Agent for InvalidAuthorAgent {
+        fn id(&self) -> &str {
+            "author"
+        }
+        fn interval_ticks(&self) -> u32 {
+            1
+        }
+        fn observe(&mut self, _w: &World) -> Observation {
+            Observation::default()
+        }
+        fn act(&mut self, _o: &Observation) -> Result<AgentReport, AgentError> {
+            Ok(AgentReport {
+                tick: 0,
+                agent_id: "author".into(),
+                considered: vec![],
+                chosen: Some(Action::PlacePiece {
+                    piece_kind: "mover".into(),
+                    pos: [0.0, 0.0],
+                }),
+                rationale: "invalid author action".into(),
+                confidence: 1.0,
+            })
+        }
+    }
+
     #[test]
     fn agent_panic_emits_fault_and_pauses_engine() {
         let mut loaded = load_scene_str(SCENE, 0).unwrap();
@@ -348,6 +376,20 @@ mod tests {
             .messages()
             .iter()
             .any(|m| matches!(m, SimMessage::Fault(FaultPayload::AgentCrashed { .. }))));
+    }
+
+    #[test]
+    fn invalid_author_action_emits_visible_warning() {
+        let mut world = World::new(0);
+        let mut runner = TickRunner::new();
+        runner.register_agent(AgentHost::new(Box::new(InvalidAuthorAgent)));
+        runner.tick_once(&mut world);
+
+        assert!(runner.messages().iter().any(|m| matches!(
+            m,
+            SimMessage::Warning(WarningPayload::InvalidAction { agent_id, reason })
+                if agent_id == "author" && reason.contains("unsupported piece_kind")
+        )));
     }
 
     /// Once an agent panics and the world is `Faulted`, subsequent

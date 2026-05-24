@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "name": "garden-pollinators",
+  "catalog": {
+    "slug": "garden-pollinators",
+    "title": "Garden Pollinators",
+    "version": "1.0.0",
+    "author": "simetro team",
+    "description": "A solarpunk pollination loop where bees, moths, and seed carriers braid pastel garden beds around a warm hive hub.",
+    "tags": ["garden", "pollinators", "solarpunk", "pastel", "v1"],
+    "palette_note": "Sunwashed cream and deep ink frame blossom pink, pollen gold, leaf mint, sky blue, lavender, terracotta, and teal water accents.",
+    "layout_note": "Ten nodes form a butterfly-garden silhouette: left nectar wing, high lavender and solar canopy, central hive body, right orchard wing, and low rain-meadow return.",
+    "node_language_note": "Circles mark bloom/meadow endpoints, squares mark cultivated beds, diamonds mark pollinator crossings, triangles mark tall spires/trellises, and hexagons mark hive or water infrastructure.",
+    "mover_path_note": "Five movers start on the entry hedge, lavender-to-hive, solar orchard, cistern meadow, and seed return paths so the first frame shows pollination across every garden wing.",
+    "review_note": "Visual review target: 960x540 #scene first-frame canvas; checked for v1 validity, v2-loader compatibility, pastel palette separation, butterfly-garden silhouette, distinct node language, and visible mover starts."
+  },
+  "theme": {
+    "palette": ["#fff3d7", "#3b3f58", "#ff8fab", "#ffd166", "#66d9a3", "#a9def9", "#cdb4db", "#f4a261", "#2ec4b6"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [
+      { "id": "garden_gate", "pos": [95, 300], "shape": "circle", "color": 4 },
+      { "id": "nectar_bridge", "pos": [200, 230], "shape": "diamond", "color": 2 },
+      { "id": "clover_bed", "pos": [255, 125], "shape": "square", "color": 4 },
+      { "id": "lavender_spire", "pos": [420, 85], "shape": "triangle", "color": 6 },
+      { "id": "hive_hub", "pos": [515, 245], "shape": "hexagon", "color": 3 },
+      { "id": "solar_trellis", "pos": [660, 120], "shape": "triangle", "color": 5 },
+      { "id": "orchard_arch", "pos": [835, 235], "shape": "square", "color": 2 },
+      { "id": "rain_cistern", "pos": [735, 415], "shape": "hexagon", "color": 8 },
+      { "id": "meadow_basin", "pos": [515, 455], "shape": "circle", "color": 4 },
+      { "id": "seed_library", "pos": [310, 390], "shape": "diamond", "color": 7 }
+    ],
+    "paths": [
+      { "id": "ring_01_gate_bridge", "from": "garden_gate", "to": "nectar_bridge", "color": 4 },
+      { "id": "ring_02_bridge_clover", "from": "nectar_bridge", "to": "clover_bed", "color": 2 },
+      { "id": "ring_03_clover_lavender", "from": "clover_bed", "to": "lavender_spire", "color": 6 },
+      { "id": "ring_04_lavender_hive", "from": "lavender_spire", "to": "hive_hub", "color": 6 },
+      { "id": "ring_05_hive_solar", "from": "hive_hub", "to": "solar_trellis", "color": 3 },
+      { "id": "ring_06_solar_orchard", "from": "solar_trellis", "to": "orchard_arch", "color": 5 },
+      { "id": "ring_07_orchard_cistern", "from": "orchard_arch", "to": "rain_cistern", "color": 2 },
+      { "id": "ring_08_cistern_meadow", "from": "rain_cistern", "to": "meadow_basin", "color": 8 },
+      { "id": "ring_09_meadow_seed", "from": "meadow_basin", "to": "seed_library", "color": 4 },
+      { "id": "ring_10_seed_gate", "from": "seed_library", "to": "garden_gate", "color": 7 },
+      { "id": "spur_clover_hive", "from": "clover_bed", "to": "hive_hub", "color": 4 },
+      { "id": "spur_hive_orchard", "from": "hive_hub", "to": "orchard_arch", "color": 3 },
+      { "id": "spur_seed_hive", "from": "seed_library", "to": "hive_hub", "color": 7 },
+      { "id": "spur_hive_cistern", "from": "hive_hub", "to": "rain_cistern", "color": 8 },
+      { "id": "spur_meadow_bridge", "from": "meadow_basin", "to": "nectar_bridge", "color": 4 }
+    ],
+    "movers": [
+      { "id": "petal_bee", "on_path": "ring_01_gate_bridge", "speed": 0.78 },
+      { "id": "pollen_drone", "on_path": "ring_04_lavender_hive", "speed": 0.92 },
+      { "id": "solar_mason", "on_path": "ring_06_solar_orchard", "speed": 0.66 },
+      { "id": "rain_moth", "on_path": "ring_08_cistern_meadow", "speed": 0.86 },
+      { "id": "seed_bumble", "on_path": "ring_10_seed_gate", "speed": 1.04 }
+    ]
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+}

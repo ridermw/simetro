@@ -66,11 +66,40 @@ TypeScript frontend.
    send `DriverCommand` variants over the mpsc channel.
 
 6. **Reload:** `cmd_reload` re-reads the JSON file from disk,
-   rebuilds the world, and emits fresh Static + Snapshot.
+   builds the replacement world off to the side, and emits fresh
+   Static + Snapshot only after validation succeeds. If reading or
+   loading fails, the driver emits the typed fault and keeps the
+   previous scene running.
 
-7. **Faults:** If `tick_once` panics inside `catch_unwind`, the
+7. **Live file watch:** The desktop driver also watches the same
+   scene path with a short debounce. If the file changes again before
+   the window closes, the debounce deadline resets. Stable file changes
+   enqueue the same reload command as the UI button, so successful
+   reloads and load faults follow the exact same message path.
+
+8. **Faults:** If `tick_once` panics inside `catch_unwind`, the
    driver transitions to `Faulted` state and emits a `Fault` message.
    It does not resume (corrupted state cannot be trusted).
+
+## Future Scene Selection Policy
+
+The next scene-switching implementation should preserve the current
+manual-reload safety guarantees and add selection without interactive
+blocking:
+
+- The frontend or CLI sends a stable `scene_id`, not a filesystem path.
+- Tauri resolves `scene_id` through a local registry of known scenes
+  (static table or deterministic scan of `games/`), producing a
+  repo-relative JSON path.
+- Unknown ids, read errors, and `LoadError`s surface as typed faults;
+  none of them clear or pause the old scene.
+- Scene replacement is atomic: create the new `World`, `TickRunner`,
+  metadata, static payload, and first snapshot before swapping state.
+- Do not add new dependencies or binary assets for the picker/registry
+  unless the task explicitly requires them.
+- If labels, artwork, or UX copy are blocked, implement/test the
+  registry and atomic swap first, then record the polish as follow-up
+  work in `TODOS.md`.
 
 ## Browser-only Mode
 
@@ -78,6 +107,26 @@ When running without Tauri (`npm run dev`), the frontend detects
 the absence of `__TAURI_INTERNALS__` and falls back to
 `MockTransport`, which animates 3 movers along the demo-paths
 triangle at 50ms intervals. Control intents are handled locally.
+
+## Frontend scene-switch invariants
+
+The fixed gallery (10 polished worlds plus `demo-paths`) must switch
+only among the catalog; it must not accept arbitrary filesystem paths
+from the WebView. The current manual reload path uses the same frontend
+invariant helper:
+
+- A successful `Static` payload is the commit point. It clears the
+  snapshot buffer, animation slots, hover tooltip, inspector report,
+  warnings, stale fault overlay, heartbeat timestamp, and mover scratch
+  buffer before installing the new scene metadata.
+- Renderer metadata (`warm` + `setScene`) is updated exactly once per
+  committed `Static` payload.
+- Browser mock reloads may reset locally because there is no backend
+  load operation. Tauri reloads do not clear frontend state when the
+  command is invoked; they wait for the driver to emit `Static`.
+- A failed Tauri reload or future catalog switch emits a `Fault` and
+  preserves the previously running scene/snapshot until a valid `Static`
+  arrives.
 
 ## Files
 

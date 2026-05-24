@@ -95,6 +95,12 @@ export class HoverTooltip {
     this.snap = snap;
   }
 
+  clear(): void {
+    this.scene = null;
+    this.snap = null;
+    this.hide();
+  }
+
   attach(canvas: HTMLCanvasElement): void {
     canvas.addEventListener("mousemove", (ev) => this.onMove(ev, canvas));
     canvas.addEventListener("mouseleave", () => this.hide());

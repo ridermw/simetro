@@ -3,11 +3,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { AnimationEngine } from "../../renderer/animation_engine";
 import { animations } from "../../renderer/animations";
 import { DEFAULT_THEME } from "../../renderer/theme";
-import type {
-  SimEvent,
-  SnapshotPayload,
-  StaticPayload,
-} from "../../protocol/messages";
+import type { SimEvent, SnapshotPayload, StaticPayload } from "../../protocol/messages";
 
 const scene: StaticPayload = {
   name: "test",
@@ -99,6 +95,14 @@ describe("AnimationEngine", () => {
       e.spawn({ kind: "mover_arrived", mover: 7, at_node: 1, path: 0 }, 0);
     }
     expect(e.liveCount()).toBe(cap);
+  });
+
+  it("clear drops all active slots", () => {
+    const e = new AnimationEngine();
+    e.spawn({ kind: "mover_arrived", mover: 7, at_node: 1, path: 0 }, 0);
+    e.spawn({ kind: "path_pulsed", path: 42 }, 0);
+    e.clear();
+    expect(e.liveCount()).toBe(0);
   });
 
   it("draw handles missing pieces in payload gracefully", () => {

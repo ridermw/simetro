@@ -1,7 +1,12 @@
 // frontend/src/tests/unit/renderer.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
 import { Renderer } from "../../renderer/canvas";
-import { DEFAULT_THEME, paletteColor, backgroundColor, themeFromStatic } from "../../renderer/theme";
+import {
+  DEFAULT_THEME,
+  paletteColor,
+  backgroundColor,
+  themeFromStatic,
+} from "../../renderer/theme";
 import { demoSnapshotEnvelope, demoStaticEnvelope } from "../../transport/mock";
 
 // jsdom does not implement Canvas2D or Path2D — stub both.
