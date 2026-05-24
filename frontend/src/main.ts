@@ -23,18 +23,28 @@
 // the slots already present in this wiring.
 
 import { MockTransport, type Transport } from "./transport/mock";
-import type { MoverSnapshot, SimEvent, SimMessage, ThemePayload } from "./protocol/messages";
+import type {
+  MoverSnapshot,
+  NodeSnapshot,
+  SimEvent,
+  SimMessage,
+  SnapshotPayload,
+  ThemePayload,
+} from "./protocol/messages";
 import { Renderer } from "./renderer/canvas";
 import { DEFAULT_THEME } from "./renderer/theme";
 import { AnimationEngine } from "./renderer/animation_engine";
 import { SnapshotBuffer } from "./store/snapshots";
 import { EventQueue } from "./store/events";
+import { AudioEngine } from "./audio/engine";
+import { fallbackArrivalTone, toneForShape } from "./audio/mappings";
 
 interface AppState {
   theme: ThemePayload;
   snapshots: SnapshotBuffer;
   events: EventQueue;
   animations: AnimationEngine;
+  audio: AudioEngine;
   lastSnapshotAt: number;
   /** Estimated ms between snapshots; refined as we receive more. */
   snapshotPeriodMs: number;
@@ -53,12 +63,18 @@ function createAppState(): AppState {
     snapshots: new SnapshotBuffer(),
     events: new EventQueue(),
     animations: new AnimationEngine(),
+    audio: new AudioEngine(),
     lastSnapshotAt: 0,
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
     moverScratch: [],
     eventScratch: [],
     rafHandle: null,
   };
+}
+
+function findArrivalNode(snap: SnapshotPayload, nodeId: number): NodeSnapshot | undefined {
+  for (const n of snap.nodes) if (n.id === nodeId) return n;
+  return undefined;
 }
 
 function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): void {
@@ -71,7 +87,6 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       const now = nowMs();
       if (state.lastSnapshotAt !== 0) {
         const dt = now - state.lastSnapshotAt;
-        // EMA smoothing — bounded so a stutter doesn't poison interp.
         state.snapshotPeriodMs = Math.max(
           16,
           Math.min(500, state.snapshotPeriodMs * 0.8 + dt * 0.2)
@@ -83,9 +98,16 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
     }
     case "Events": {
       const now = nowMs();
+      const snap = state.snapshots.current();
       for (const ev of msg.payload) {
         state.events.enqueue(ev);
         state.animations.spawn(ev, now);
+        // Audio: ping on arrivals, pitched by the destination node's shape.
+        if (ev.tag === "MoverArrived" && snap !== null) {
+          const node = findArrivalNode(snap, ev.at_node);
+          const tone = node !== undefined ? toneForShape(node.shape) : fallbackArrivalTone();
+          state.audio.play(tone);
+        }
       }
       break;
     }
@@ -161,6 +183,12 @@ function boot(): void {
 
   const transport: Transport = new MockTransport();
   transport.connect((msg) => handleMessage(msg, state, renderer));
+
+  // Tone.js / WebAudio cannot start without a user gesture; wire
+  // the consent listener to the canvas + body so the first click or
+  // key press initializes audio.
+  state.audio.attachConsent(canvas);
+  state.audio.attachConsent(document.body);
 
   state.rafHandle = requestAnimationFrame(() => frame(state, renderer));
 }
