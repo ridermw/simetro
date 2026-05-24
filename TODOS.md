@@ -5,6 +5,18 @@ beyond Phase 1, per plan §23 and §24.
 
 ---
 
+## P1.5 (done)
+
+- ✅ Animated MockTransport (3 movers, events, agent reports)
+- ✅ Engine driver task in Tauri (60Hz tick, 20Hz snapshot, mpsc commands)
+- ✅ TauriTransport in frontend (listen + subscribe handshake)
+- ✅ Control intents bridge (pause/resume/speed/reload via invoke)
+- ✅ Reload from disk (re-read JSON, rebuild world)
+- ✅ Animation E2E test (pixel-diff + heartbeat, 9 E2E total)
+- ✅ Docs + stale comment cleanup
+
+---
+
 ## P2 (next after Phase 1 ships)
 
 ### LLM agent end-to-end via Copilot SDK

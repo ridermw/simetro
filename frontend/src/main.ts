@@ -23,12 +23,8 @@
 // the slots already present in this wiring.
 
 import { MockTransport, type Transport } from "./transport/mock";
-import type {
-  MoverState,
-  NodeView,
-  SimMessage,
-  StaticPayload,
-} from "./protocol/messages";
+import { TauriTransport } from "./transport/tauri";
+import type { MoverState, NodeView, SimMessage, StaticPayload } from "./protocol/messages";
 import { Renderer } from "./renderer/canvas";
 import { DEFAULT_THEME, themeFromStatic, type Theme } from "./renderer/theme";
 import { AnimationEngine } from "./renderer/animation_engine";
@@ -55,6 +51,7 @@ interface AppState {
   heartbeat: HeartbeatBadge | null;
   perf: PerfOverlay | null;
   paused: boolean;
+  speedFactor: number;
   lastSnapshotAt: number;
   /** Estimated ms between snapshots; refined as we receive more. */
   snapshotPeriodMs: number;
@@ -80,6 +77,7 @@ function createAppState(): AppState {
     heartbeat: null,
     perf: null,
     paused: false,
+    speedFactor: 1,
     lastSnapshotAt: 0,
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
     moverScratch: [],
@@ -103,26 +101,68 @@ function resetSnapshotState(state: AppState): void {
 }
 
 function handleControl(intent: ControlIntent, state: AppState): void {
+  if (isTauri()) {
+    // Route control intents to the Rust engine driver via Tauri commands.
+    void routeControlToTauri(intent, state);
+    return;
+  }
+
+  // Browser-only mock fallback: local state manipulation.
   switch (intent.kind) {
     case "TogglePause":
-      state.paused = !state.paused;
+      setPaused(state, !state.paused);
       break;
     case "Step":
-      // P2: send to backend. P1 logs intent so the UI is exercised.
-      console.info("simetro: step requested (P1 stub)");
+      console.info("simetro: step requested (mock — no backend)");
       break;
     case "Reload":
-      // Step 22 will route this through Tauri to re-read the JSON.
-      // For now, dismiss the fault overlay AND clear cached scene
-      // and snapshots so we don't draw against pre-reload state.
       if (state.fault !== null) state.fault.hide();
       resetSnapshotState(state);
-      console.info("simetro: reload requested (P1 stub)");
+      console.info("simetro: reload requested (mock — no backend)");
       break;
     case "SetSpeed":
-      console.info(`simetro: speed ${intent.factor}× requested (P1 stub)`);
+      state.speedFactor = intent.factor;
+      console.info(`simetro: speed ${intent.factor}× requested (mock — no backend)`);
       break;
   }
+}
+
+async function routeControlToTauri(intent: ControlIntent, state: AppState): Promise<void> {
+  try {
+    // Dynamic import to avoid bundling @tauri-apps/api in browser builds.
+    const { invoke } = await import("@tauri-apps/api/core");
+    switch (intent.kind) {
+      case "TogglePause":
+        await invoke("cmd_toggle_pause");
+        setPaused(state, !state.paused);
+        break;
+      case "Step":
+        await invoke("cmd_step");
+        break;
+      case "Reload":
+        await invoke("cmd_reload");
+        if (state.fault !== null) state.fault.hide();
+        resetSnapshotState(state);
+        break;
+      case "SetSpeed":
+        await invoke("cmd_set_speed", { factor: intent.factor });
+        state.speedFactor = intent.factor;
+        state.controls?.setSpeed(intent.factor);
+        break;
+    }
+  } catch (error) {
+    console.error("simetro: failed to route Tauri control", error);
+    state.controls?.setPaused(state.paused);
+    state.controls?.setSpeed(state.speedFactor);
+    if (state.fault !== null) state.fault.show({ kind: "transport_lost" });
+  }
+}
+
+function setPaused(state: AppState, paused: boolean): void {
+  state.paused = paused;
+  state.controls?.setPaused(paused);
+  state.snapshots.markStale();
+  if (!paused) state.lastSnapshotAt = 0;
 }
 
 function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): void {
@@ -139,6 +179,11 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
     }
     case "snapshot": {
       const now = nowMs();
+      if (state.paused) {
+        state.lastSnapshotAt = now;
+        state.snapshots.markStale();
+        return;
+      }
       if (state.lastSnapshotAt !== 0) {
         const dt = now - state.lastSnapshotAt;
         state.snapshotPeriodMs = Math.max(
@@ -154,6 +199,7 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       break;
     }
     case "events": {
+      if (state.paused) return;
       const now = nowMs();
       const scene = state.scene;
       for (const ev of msg.payload) {
@@ -187,7 +233,7 @@ function frame(state: AppState, renderer: Renderer): void {
   if (cur !== null && scene !== null) {
     const elapsed = now - state.lastSnapshotAt;
     const alpha =
-      state.snapshots.previous() === null
+      state.paused || state.snapshots.previous() === null
         ? 1
         : Math.max(0, Math.min(1, elapsed / state.snapshotPeriodMs));
     const movers = state.snapshots.interpolatedMovers(alpha, state.moverScratch);
@@ -195,7 +241,9 @@ function frame(state: AppState, renderer: Renderer): void {
       theme: state.theme,
       scene,
       movers,
-      overlay: (ctx) => state.animations.draw(ctx, now, state.theme, scene, cur),
+      overlay: state.paused
+        ? undefined
+        : (ctx) => state.animations.draw(ctx, now, state.theme, scene, cur),
     });
   }
   if (state.warnings !== null) state.warnings.tick(now);
@@ -206,6 +254,18 @@ function frame(state: AppState, renderer: Renderer): void {
 
 function nowMs(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+/** Detect Tauri runtime. When present, use the real engine transport. */
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function createTransport(): Transport {
+  if (isTauri()) {
+    return new TauriTransport();
+  }
+  return new MockTransport();
 }
 
 function resize(canvas: HTMLCanvasElement): void {
@@ -271,7 +331,7 @@ function boot(): void {
     }
   });
 
-  const transport: Transport = new MockTransport();
+  const transport: Transport = createTransport();
   transport.connect((msg) => handleMessage(msg, state, renderer));
 
   // Tone.js / WebAudio cannot start without a user gesture; wire
