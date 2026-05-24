@@ -9,6 +9,9 @@ AI agents author and play.
 ## Quick start
 
 ```bash
+# Install the pre-commit hook (fmt + clippy on staged Rust changes)
+git config core.hooksPath .githooks
+
 # Sanity-check the Rust workspace
 cargo check --workspace
 

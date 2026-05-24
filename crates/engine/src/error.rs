@@ -9,7 +9,11 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum LoadError {
     #[error("JSON parse error at line {line}, col {col}: {message}")]
-    Parse { line: u32, col: u32, message: String },
+    Parse {
+        line: u32,
+        col: u32,
+        message: String,
+    },
 
     #[error("unsupported schema_version: found {found}, supported {supported}")]
     UnsupportedVersion { found: u32, supported: u32 },
