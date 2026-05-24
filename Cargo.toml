@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/engine",
+    "crates/protocol",
+    "crates/agent-bridge",
+    "crates/headless",
+    "crates/tauri-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Matthew Williams"]
+repository = "https://github.com/ridermw/simetro"
+rust-version = "1.80"
+
+[workspace.dependencies]
+# Internal
+simetro-engine = { path = "crates/engine" }
+simetro-protocol = { path = "crates/protocol" }
+simetro-agent-bridge = { path = "crates/agent-bridge" }
+
+# External
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+rand_pcg = "0.3"
+rand = { version = "0.8", default-features = false }
+glam = { version = "0.27", features = ["serde"] }
+hecs = "0.10"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+
+# dev-fast: fast iteration with some optimization
+[profile.dev.package."*"]
+opt-level = 2
