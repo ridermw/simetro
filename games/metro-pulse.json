@@ -48,5 +48,13 @@
     ]
   },
   "goals": [{ "type": "loop_forever" }],
-  "agents": [{ "kind": "speed_tuner", "interval_ticks": 45 }]
+  "agents": [
+    { "kind": "speed_tuner", "interval_ticks": 45 },
+    {
+      "_comment": "LLM author agent (P2.A task 10). Loader rejects this entry unless the engine is built with the `llm-live` feature; rejection is silent + typed (LoadError::AgentKindRequiresFeature) so production-only runtimes refuse the scene at load time rather than silently downgrading.",
+      "kind": "llm",
+      "interval_ticks": 600,
+      "deadline_ticks": 120
+    }
+  ]
 }

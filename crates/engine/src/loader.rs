@@ -43,6 +43,11 @@ const AMOUNT_MAX: u64 = 1_000_000;
 pub struct AgentSpec {
     pub kind: String,
     pub interval_ticks: u32,
+    /// Per spec §10.2.1: ticks the bridge has to reply before an LLM
+    /// request is expired and (possibly) re-issued. Only meaningful
+    /// for `kind: "llm"`; ignored otherwise. Default 60 (≈1 s @ 60 Hz)
+    /// applied when the JSON omits it.
+    pub deadline_ticks: u32,
 }
 
 /// Win/end condition for the scene. Only `LoopForever` is defined in P1.
@@ -171,7 +176,22 @@ struct RawAgent {
     kind: String,
     #[serde(default)]
     interval_ticks: u32,
+    /// Optional; defaults to [`DEFAULT_LLM_DEADLINE_TICKS`] when
+    /// loading an `llm` agent that doesn't specify it.
+    #[serde(default)]
+    deadline_ticks: Option<u32>,
 }
+
+/// Default per-agent deadline (in ticks) for `kind: "llm"` agents
+/// when the scene JSON does not specify one. ≈1 second at 60 Hz.
+pub const DEFAULT_LLM_DEADLINE_TICKS: u32 = 60;
+
+/// Agent kinds the loader recognizes today. `"llm"` is gated behind
+/// the `llm-live` Cargo feature.
+const KNOWN_AGENT_KINDS: &[&str] = &["speed_tuner", "llm"];
+
+/// Agent kinds that require the `llm-live` feature.
+const FEATURE_GATED_AGENT_KINDS: &[&str] = &["llm"];
 
 #[derive(Debug, Deserialize)]
 struct RawResource {
@@ -478,9 +498,12 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
     let mut agents = Vec::with_capacity(raw.agents.len());
     for (i, a) in raw.agents.into_iter().enumerate() {
         validate_interval("agents", i, a.interval_ticks)?;
+        validate_agent_kind(i, &a.kind)?;
+        let deadline_ticks = a.deadline_ticks.unwrap_or(DEFAULT_LLM_DEADLINE_TICKS);
         agents.push(AgentSpec {
             kind: a.kind,
             interval_ticks: a.interval_ticks,
+            deadline_ticks,
         });
     }
 
@@ -633,6 +656,25 @@ fn validate_amount(field: &'static str, amount: u64) -> Result<(), LoadError> {
         return Err(LoadError::AmountOOB {
             field,
             value: amount,
+        });
+    }
+    Ok(())
+}
+
+/// Per spec §3 task 10. Accept only known agent kinds; reject
+/// feature-gated kinds when the binary wasn't built with the
+/// corresponding feature.
+fn validate_agent_kind(index: usize, kind: &str) -> Result<(), LoadError> {
+    if !KNOWN_AGENT_KINDS.contains(&kind) {
+        return Err(LoadError::UnknownAgentKind {
+            index,
+            kind: kind.to_string(),
+        });
+    }
+    if FEATURE_GATED_AGENT_KINDS.contains(&kind) && !cfg!(feature = "llm-live") {
+        return Err(LoadError::AgentKindRequiresFeature {
+            index,
+            kind: kind.to_string(),
         });
     }
     Ok(())
@@ -907,6 +949,71 @@ mod tests {
             }
             other => panic!("got {other:?}"),
         }
+    }
+
+    #[test]
+    fn agent_default_deadline_ticks_is_60() {
+        let scene = load_scene_str(VALID_SCENE, 0).unwrap();
+        assert_eq!(scene.agents[0].deadline_ticks, DEFAULT_LLM_DEADLINE_TICKS);
+        assert_eq!(DEFAULT_LLM_DEADLINE_TICKS, 60);
+    }
+
+    #[test]
+    fn agent_deadline_ticks_overridable_in_scene_json() {
+        let s = modify_scene(
+            "agents",
+            serde_json::json!([
+                { "kind": "speed_tuner", "interval_ticks": 30, "deadline_ticks": 120 }
+            ]),
+        );
+        let scene = load_scene_str(&s, 0).unwrap();
+        assert_eq!(scene.agents[0].deadline_ticks, 120);
+    }
+
+    #[test]
+    fn unknown_agent_kind_rejected() {
+        let s = modify_scene(
+            "agents",
+            serde_json::json!([{ "kind": "bogus_planner", "interval_ticks": 30 }]),
+        );
+        match load_scene_str(&s, 0).unwrap_err() {
+            LoadError::UnknownAgentKind { index, kind } => {
+                assert_eq!(index, 0);
+                assert_eq!(kind, "bogus_planner");
+            }
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(not(feature = "llm-live"))]
+    fn llm_agent_kind_rejected_without_feature() {
+        let s = modify_scene(
+            "agents",
+            serde_json::json!([{ "kind": "llm", "interval_ticks": 600 }]),
+        );
+        match load_scene_str(&s, 0).unwrap_err() {
+            LoadError::AgentKindRequiresFeature { index, kind } => {
+                assert_eq!(index, 0);
+                assert_eq!(kind, "llm");
+            }
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "llm-live")]
+    fn llm_agent_kind_accepted_with_feature() {
+        let s = modify_scene(
+            "agents",
+            serde_json::json!([
+                { "kind": "llm", "interval_ticks": 600, "deadline_ticks": 90 }
+            ]),
+        );
+        let scene = load_scene_str(&s, 0).unwrap();
+        assert_eq!(scene.agents[0].kind, "llm");
+        assert_eq!(scene.agents[0].interval_ticks, 600);
+        assert_eq!(scene.agents[0].deadline_ticks, 90);
     }
 
     #[test]

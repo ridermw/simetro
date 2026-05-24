@@ -74,6 +74,14 @@ pub enum LoadError {
 
     #[error("missing required field `{field}`")]
     MissingField { field: &'static str },
+
+    #[error("unknown agent kind `{kind}` at agents[{index}]")]
+    UnknownAgentKind { index: usize, kind: String },
+
+    #[error(
+        "agent kind `{kind}` at agents[{index}] requires building with the `llm-live` feature"
+    )]
+    AgentKindRequiresFeature { index: usize, kind: String },
 }
 
 #[derive(Debug, Error, PartialEq)]

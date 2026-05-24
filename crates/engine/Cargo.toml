@@ -26,3 +26,10 @@ regex = { workspace = true }
 
 [dev-dependencies]
 dhat = { workspace = true }
+
+[features]
+# Enable per spec §3 task 10: scenes may declare `agents: [{ "kind": "llm", ... }]`.
+# When this feature is disabled, the loader rejects `kind: "llm"` with
+# `LoadError::AgentKindRequiresFeature` so production binaries can't
+# silently load an LLM scene without the supporting infrastructure built in.
+llm-live = []
