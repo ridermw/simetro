@@ -124,13 +124,16 @@ pub struct AgentReply {
     pub confidence: f32,
 }
 
-/// Maximum re-issue attempts before the lifecycle gives up on a
-/// decision. Hard-coded for now; can be made configurable per scene
-/// in a later PR. Per spec §10.2.1: "if `attempt < MAX_ATTEMPTS`,
-/// enqueue a new outbox entry with `attempt += 1`. Otherwise, emit
-/// `Warning::InvalidAction { agent_id, reason: "max attempts
-/// exceeded" }` and give up on this decision."
-pub const MAX_ATTEMPTS: u32 = 3;
+/// Maximum re-issues per decision. Total attempts allowed =
+/// `MAX_ATTEMPTS + 1` (the original `attempt=0` plus `MAX_ATTEMPTS`
+/// re-issues). With `MAX_ATTEMPTS = 2` the lifecycle accepts
+/// attempts `0, 1, 2` before giving up. This matches spec §10.2.1's
+/// formula `if attempt < MAX_ATTEMPTS, enqueue a new outbox entry
+/// with attempt += 1`.
+///
+/// Hard-coded for now; can be made configurable per scene in a later
+/// PR.
+pub const MAX_ATTEMPTS: u32 = 2;
 
 /// Size of the `completed` ring buffer. Larger means we remember
 /// more historical request IDs for dedup; smaller means a late
@@ -296,7 +299,15 @@ impl RequestLifecycle {
     /// Drain ONE reply through the lifecycle's drain-time rules.
     /// Returns the [`DrainOutcome`] describing what the caller
     /// should do with the reply.
-    pub fn drain_reply(&mut self, reply: AgentReply, _current_tick: u64) -> DrainOutcome {
+    ///
+    /// **Deadline enforcement.** Per spec §10.2.1, the on-time apply
+    /// rule requires BOTH `reply.id ∈ pending` AND
+    /// `current_tick ≤ deadline`. If a reply arrives for a request
+    /// whose deadline has passed but `expire_overdue` has not yet
+    /// been called this tick, this function still rejects the apply
+    /// via the `Stale` outcome AND moves the entry to `expired` so
+    /// a subsequent `expire_overdue` doesn't double-process it.
+    pub fn drain_reply(&mut self, reply: AgentReply, current_tick: u64) -> DrainOutcome {
         let agent_id = reply.id.agent_id.clone();
 
         // Order matters per spec §10.2.1:
@@ -311,7 +322,7 @@ impl RequestLifecycle {
         }
         // 2. Stale (post-expiry)?
         if self.expired.contains(&reply.id) {
-            let lag_frames = _current_tick.saturating_sub(reply.id.source_tick) as u32;
+            let lag_frames = current_tick.saturating_sub(reply.id.source_tick) as u32;
             return DrainOutcome::Stale {
                 message: SimMessage::Warning(WarningPayload::Behind {
                     lag_frames: lag_frames.max(1),
@@ -319,16 +330,30 @@ impl RequestLifecycle {
                 }),
             };
         }
-        // 3. On-time apply?
+        // 3. On-time apply (must satisfy both pending-membership AND
+        //    deadline-not-yet-passed)?
         if let Some(entry) = self.pending.remove(&reply.id) {
-            // Move to completed (bounded ring).
-            push_ring(&mut self.completed, reply.id.clone(), self.completed_cap);
-            let _ = entry;
-            return DrainOutcome::Apply {
-                agent_id,
-                chosen: reply.chosen,
-                rationale: reply.rationale,
-                confidence: reply.confidence,
+            if current_tick <= entry.deadline_abs {
+                // On-time: move to completed.
+                push_ring(&mut self.completed, reply.id.clone(), self.completed_cap);
+                return DrainOutcome::Apply {
+                    agent_id,
+                    chosen: reply.chosen,
+                    rationale: reply.rationale,
+                    confidence: reply.confidence,
+                };
+            }
+            // Pending but past deadline — same disposition as the
+            // stale-after-expiry branch above, but we also move the
+            // entry to `expired` ourselves so a later
+            // `expire_overdue(current_tick)` won't re-process it.
+            push_ring(&mut self.expired, reply.id.clone(), self.expired_cap);
+            let lag_frames = current_tick.saturating_sub(reply.id.source_tick) as u32;
+            return DrainOutcome::Stale {
+                message: SimMessage::Warning(WarningPayload::Behind {
+                    lag_frames: lag_frames.max(1),
+                    agent_id: Some(agent_id),
+                }),
             };
         }
         // 4. Unknown ID — bridge bug.
@@ -372,7 +397,7 @@ impl RequestLifecycle {
             let lag_frames = current_tick.saturating_sub(id.source_tick) as u32;
             let lag_frames = lag_frames.max(1);
 
-            if id.attempt + 1 < MAX_ATTEMPTS {
+            if id.attempt < MAX_ATTEMPTS {
                 // Re-issue with attempt+=1.
                 let mut next = entry.request.clone();
                 next.id = id.next_attempt();
@@ -622,9 +647,9 @@ mod tests {
     #[test]
     fn expire_overdue_gives_up_at_max_attempts() {
         let mut life = RequestLifecycle::new();
-        // Insert at attempt = MAX_ATTEMPTS - 1; next attempt would be
-        // MAX_ATTEMPTS which is the giveup condition.
-        let req_a = req("agent-a", 1, 100, MAX_ATTEMPTS - 1, 5);
+        // Insert at attempt = MAX_ATTEMPTS; the spec formula
+        // `attempt < MAX_ATTEMPTS` is FALSE here, so we give up.
+        let req_a = req("agent-a", 1, 100, MAX_ATTEMPTS, 5);
         life.try_enqueue(req_a);
 
         let outcomes = life.expire_overdue(200);
@@ -638,6 +663,29 @@ mod tests {
                 }
             }
             other => panic!("expected GiveUp, got {other:?}"),
+        }
+    }
+
+    /// Boundary: at `attempt = MAX_ATTEMPTS - 1`, the spec formula
+    /// `attempt < MAX_ATTEMPTS` is still TRUE so we re-issue to
+    /// `attempt = MAX_ATTEMPTS`. This + the giveup test above
+    /// document the exact attempts allowed: 0, 1, ..., MAX_ATTEMPTS.
+    #[test]
+    fn expire_overdue_reissues_at_max_attempts_minus_one() {
+        let mut life = RequestLifecycle::new();
+        let req_a = req("agent-a", 1, 100, MAX_ATTEMPTS - 1, 5);
+        life.try_enqueue(req_a.clone());
+
+        let outcomes = life.expire_overdue(200);
+        assert_eq!(outcomes.len(), 1);
+        match &outcomes[0] {
+            ExpiryOutcome::Reissue { next_request, .. } => {
+                assert_eq!(
+                    next_request.id.attempt, MAX_ATTEMPTS,
+                    "attempt = MAX_ATTEMPTS - 1 must re-issue to MAX_ATTEMPTS"
+                );
+            }
+            other => panic!("expected Reissue at the boundary, got {other:?}"),
         }
     }
 
@@ -711,5 +759,58 @@ mod tests {
             }
             other => panic!("expected Reissue, got {other:?}"),
         }
+    }
+
+    /// Critical: drain_reply must enforce the deadline check (spec
+    /// §10.2.1). A reply that arrives for a request whose deadline
+    /// has passed but `expire_overdue` has not yet run this tick
+    /// must be rejected as Stale, NOT applied. Also: the lifecycle
+    /// must move the entry to `expired` so a subsequent
+    /// `expire_overdue` doesn't double-process it.
+    #[test]
+    fn drain_reply_rejects_pending_reply_after_deadline_as_stale() {
+        let mut life = RequestLifecycle::new();
+        let req_a = req("agent-a", 1, 100, 0, 5); // deadline tick 105
+        life.try_enqueue(req_a.clone());
+
+        // Reply arrives at tick 200, past deadline, but
+        // expire_overdue hasn't run yet for any tick > 105.
+        let outcome = life.drain_reply(reply_for(&req_a, Some(Action::NoOp)), 200);
+        match outcome {
+            DrainOutcome::Stale { message } => {
+                if let SimMessage::Warning(WarningPayload::Behind {
+                    lag_frames,
+                    agent_id,
+                }) = message
+                {
+                    assert_eq!(agent_id, Some("agent-a".to_string()));
+                    assert!(lag_frames > 0);
+                } else {
+                    panic!("expected Behind warning, got {message:?}");
+                }
+            }
+            other => panic!("expected Stale, got {other:?}"),
+        }
+        // The entry was moved to expired (not just left in pending).
+        assert!(!life.has_pending_for_agent("agent-a"));
+        // And a subsequent expire_overdue produces 0 outcomes (no
+        // double-processing).
+        let later = life.expire_overdue(250);
+        assert!(later.is_empty(), "drained-after-deadline must not re-fire");
+    }
+
+    /// Boundary: drain_reply at exactly deadline is on-time per spec
+    /// §10.2.1 (`current_tick ≤ deadline`).
+    #[test]
+    fn drain_reply_at_exact_deadline_is_on_time_apply() {
+        let mut life = RequestLifecycle::new();
+        let req_a = req("agent-a", 1, 100, 0, 5); // deadline tick 105
+        life.try_enqueue(req_a.clone());
+
+        let outcome = life.drain_reply(reply_for(&req_a, Some(Action::NoOp)), 105);
+        assert!(
+            matches!(outcome, DrainOutcome::Apply { .. }),
+            "drain at exact deadline must be on-time apply; got {outcome:?}"
+        );
     }
 }
