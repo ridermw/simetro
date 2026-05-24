@@ -62,8 +62,16 @@ P2.A may extend the enum; any new variant gets a row added here
 
 ### 1.1 P2.A0.3 *new* `LlmError` variants required
 
-These variants do NOT exist yet; they must be added in P2.A task 2
-(ACP wiring) and have rows added to this table at the same time.
+These variants do NOT exist yet in `crates/agent-bridge/src/error.rs`;
+they must be added by the **P2.A task 2 PR** (ACP wiring) AT THE
+SAME TIME as that PR's spawn / handshake / version-probe call-sites
+start using them. This analysis doc is the constraint set; the
+implementation PR is responsible for landing the enum variants AND
+the call-site updates AND the per-variant tests in one atomic change.
+
+Once those variants land, the §2 rows below that reference them
+become accurate descriptions of current behavior. Until then, they
+describe target behavior.
 
 | Proposed variant | Reason | Distinct from |
 | --- | --- | --- |
@@ -82,6 +90,15 @@ These are operational failures around the `copilot --acp` subprocess
 itself, distinct from response-content failures in §1. Per
 security-review Finding 3 (PR #4), the bridge must harden the
 subprocess interface.
+
+> **About variants referenced below.** Rows that map to variants
+> defined in §1.1 ("Proposed new variants") describe the TARGET
+> behavior once those variants are added by the P2.A task 2 PR
+> (real ACP wiring). They are NOT a claim that the current
+> `LlmError` enum already contains those variants. The P2.A task 2
+> PR is the one that adds them and updates the bridge spawn
+> call-sites; this analysis doc only specifies WHAT the variants
+> must distinguish and WHAT the rescue must look like.
 
 | Failure | Detection point | `LlmError` mapped to | Rescue | User-visible | Required test |
 | --- | --- | --- | --- | --- | --- |
