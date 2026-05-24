@@ -1,0 +1,23 @@
+[package]
+name = "simetro-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Tauri desktop shell for simetro. Builds outside the workspace to keep `cargo check --workspace` independent of platform WebKit/WebView2 dependencies. See ADR-003."
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "simetro-desktop"
+path = "src/main.rs"
