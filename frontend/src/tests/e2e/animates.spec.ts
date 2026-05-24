@@ -30,12 +30,8 @@ test.describe("simetro animation", () => {
     await page.waitForTimeout(500);
     const hb = page.locator("#simetro-heartbeat");
     await expect(hb).toBeVisible();
-    // The badge class or style indicates connectivity; it should not
-    // show the "stale" (amber) state while mock is actively emitting.
-    const text = await hb.textContent();
-    // Heartbeat renders a dot or status text; just verify it's mounted
-    // and not in a warning state.
-    expect(text).not.toContain("stale");
+    // The heartbeat is a styled dot; state is exposed via aria-label.
+    await expect(hb).toHaveAttribute("aria-label", "Engine heartbeat: ok");
   });
 });
 

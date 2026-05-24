@@ -13,8 +13,8 @@ TypeScript frontend.
 │  │  driver.rs           │     │  main.rs              │ │
 │  │  (tokio task)        │     │  (tauri commands)     │ │
 │  │                      │     │                       │ │
-│  │  TickRunner          │◀────│  cmd_pause/resume/    │ │
-│  │  World state         │ mpsc│  speed/reload/        │ │
+│  │  TickRunner          │◀────│  cmd_toggle_pause/    │ │
+│  │  World state         │ mpsc│  step/set_speed/      │ │
 │  │  60Hz tick loop      │     │  subscribe            │ │
 │  │  20Hz snapshot emit  │     │                       │ │
 │  └──────────┬───────────┘     └───────────────────────┘ │
@@ -38,7 +38,7 @@ TypeScript frontend.
 │  └────────────────────┘     └───────────────────────┘  │
 │                                                         │
 │  Control intents (pause/resume/speed/reload)            │
-│  → invoke("cmd_pause") etc.                            │
+│  → invoke("cmd_toggle_pause") etc.                     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +62,7 @@ TypeScript frontend.
    are filtered out.
 
 5. **Control:** Frontend control buttons invoke Tauri commands
-   (`cmd_pause`, `cmd_resume`, `cmd_speed`, `cmd_reload`). These
+   (`cmd_toggle_pause`, `cmd_step`, `cmd_set_speed`, `cmd_reload`). These
    send `DriverCommand` variants over the mpsc channel.
 
 6. **Reload:** `cmd_reload` re-reads the JSON file from disk,

@@ -13,16 +13,16 @@
 //!   └──────────────────────────────────────────────────────────────┘
 //! ```
 
+use std::any::Any;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use serde::Serialize;
 use simetro_engine::{
-    encode_snapshot, encode_static, load_scene_str, AgentHost, LoadedScene, RunState, SpeedTuner,
-    TickRunner, World,
+    encode_snapshot, encode_static, load_error_to_fault, load_scene_str, AgentHost, LoadedScene,
+    RunState, SpeedTuner, TickRunner, World,
 };
-use simetro_protocol::{SimEvent, SimMessage, SnapshotPayload};
+use simetro_protocol::{Envelope, SimEvent, SimMessage, SnapshotPayload};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -72,11 +72,12 @@ async fn driver_loop(
     mut rx: mpsc::UnboundedReceiver<DriverCommand>,
 ) {
     // Wait for frontend to subscribe before emitting anything.
+    let mut pending_commands = Vec::new();
     loop {
         match rx.recv().await {
             Some(DriverCommand::Subscribe) => break,
             None => return, // channel closed
-            _ => {}         // ignore commands before subscribe
+            Some(cmd) => pending_commands.push(cmd),
         }
     }
 
@@ -85,8 +86,19 @@ async fn driver_loop(
         None => return,
     };
 
-    let mut interval = tick_interval(state.speed_factor);
     let mut ticks_since_snapshot: u64 = 0;
+    for cmd in pending_commands {
+        handle_command(
+            &app,
+            &mut state,
+            cmd,
+            &scene_path,
+            seed,
+            &mut ticks_since_snapshot,
+        );
+    }
+
+    let mut interval = tick_interval(state.speed_factor);
 
     loop {
         tokio::select! {
@@ -155,11 +167,7 @@ fn load_and_init(app: &AppHandle, scene_path: &PathBuf, seed: u64) -> Option<Sim
         Ok(l) => l,
         Err(e) => {
             tracing::error!("load error: {e}");
-            let msg = SimMessage::Fault(simetro_protocol::FaultPayload::LoadError {
-                message: e.to_string(),
-                line: None,
-                col: None,
-            });
+            let msg = SimMessage::Fault(load_error_to_fault(&e));
             emit_sim(app, 0, msg);
             return None;
         }
@@ -210,7 +218,7 @@ fn load_and_init(app: &AppHandle, scene_path: &PathBuf, seed: u64) -> Option<Sim
         world,
         runner,
         meta,
-        snapshot_buf: SnapshotPayload::default(),
+        snapshot_buf,
         last_static: static_payload,
         seq,
         paused: false,
@@ -225,10 +233,7 @@ fn tick_and_emit(app: &AppHandle, state: &mut SimState, ticks_since_snapshot: &m
     }));
 
     if let Err(panic_info) = result {
-        let msg = match panic_info.downcast_ref::<&str>() {
-            Some(s) => s.to_string(),
-            None => "engine panic (unknown payload)".to_string(),
-        };
+        let msg = panic_payload_message(&*panic_info);
         tracing::error!("engine panic: {msg}");
         state.world.state = RunState::Faulted;
         state.paused = true;
@@ -318,11 +323,7 @@ fn handle_command(
             let loaded = match load_scene_str(&json, seed) {
                 Ok(l) => l,
                 Err(e) => {
-                    let msg = SimMessage::Fault(simetro_protocol::FaultPayload::LoadError {
-                        message: e.to_string(),
-                        line: None,
-                        col: None,
-                    });
+                    let msg = SimMessage::Fault(load_error_to_fault(&e));
                     emit_sim(app, state.seq, msg);
                     state.seq += 1;
                     return;
@@ -381,6 +382,16 @@ fn handle_command(
 //  Helpers
 // -------------------------------------------------------------------------
 
+fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "engine panic (unknown payload)".to_string()
+    }
+}
+
 fn clamp_speed_factor(factor: f32) -> f32 {
     if factor.is_finite() {
         factor.clamp(MIN_SPEED_FACTOR, MAX_SPEED_FACTOR)
@@ -399,19 +410,8 @@ fn tick_interval(speed_factor: f32) -> time::Interval {
     interval
 }
 
-#[derive(Clone, Serialize)]
-struct SimEnvelope {
-    schema_version: u32,
-    seq: u64,
-    payload: SimMessage,
-}
-
 fn emit_sim(app: &AppHandle, seq: u64, msg: SimMessage) {
-    let env = SimEnvelope {
-        schema_version: simetro_protocol::SCHEMA_VERSION,
-        seq,
-        payload: msg,
-    };
+    let env = Envelope::new(seq, msg);
     if let Err(e) = app.emit("sim", &env) {
         tracing::warn!("failed to emit sim event: {e}");
     }
@@ -444,5 +444,14 @@ mod tests {
         assert_eq!(tick_period(1.0), Duration::from_secs_f64(1.0 / 60.0));
         assert_eq!(tick_period(2.0), Duration::from_secs_f64(1.0 / 120.0));
         assert_eq!(tick_period(0.5), Duration::from_secs_f64(1.0 / 30.0));
+    }
+
+    #[test]
+    fn panic_payload_message_preserves_string_payloads() {
+        let borrowed: &'static str = "borrowed panic";
+        let owned = String::from("owned panic");
+
+        assert_eq!(panic_payload_message(&borrowed), "borrowed panic");
+        assert_eq!(panic_payload_message(&owned), "owned panic");
     }
 }

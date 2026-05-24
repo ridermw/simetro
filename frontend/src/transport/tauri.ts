@@ -33,7 +33,10 @@ export class TauriTransport implements Transport {
 
   connect(handler: MessageHandler): void {
     this.handler = handler;
-    this.setupListener();
+    void this.setupListener().catch((error: unknown) => {
+      console.error("simetro: failed to initialize Tauri transport", error);
+      this.emitTransportLost();
+    });
   }
 
   disconnect(): void {
@@ -45,39 +48,53 @@ export class TauriTransport implements Transport {
   }
 
   private async setupListener(): Promise<void> {
-    // Dynamic import so the Tauri API is not bundled in browser-only builds.
-    const { listen } = await import("@tauri-apps/api/event");
-    const { invoke } = await import("@tauri-apps/api/core");
+    let registeredUnlisten: (() => void) | null = null;
 
-    // Register listener first, then subscribe — guarantees no missed messages.
-    const unlistenFn = await listen<SimEnvelope>("sim", (event) => {
-      if (this.handler === null) return;
+    try {
+      // Dynamic import so the Tauri API is not bundled in browser-only builds.
+      const { listen } = await import("@tauri-apps/api/event");
+      const { invoke } = await import("@tauri-apps/api/core");
 
-      const env = event.payload;
-      if (env.schema_version !== SCHEMA_VERSION) {
-        this.handler({
-          kind: "fault",
-          payload: {
-            kind: "schema_mismatch",
-            expected: SCHEMA_VERSION,
-            found: env.schema_version,
-          },
-        });
+      // Register listener first, then subscribe — guarantees no missed messages.
+      registeredUnlisten = await listen<SimEnvelope>("sim", (event) => {
+        if (this.handler === null) return;
+
+        const env = event.payload;
+        if (env.schema_version !== SCHEMA_VERSION) {
+          this.handler({
+            kind: "fault",
+            payload: {
+              kind: "schema_mismatch",
+              expected: SCHEMA_VERSION,
+              found: env.schema_version,
+            },
+          });
+          return;
+        }
+
+        this.handler(env.payload);
+      });
+
+      // Store unlisten for disconnect(). If disconnect() was called during
+      // async setup, immediately unlisten and bail.
+      if (this.handler === null) {
+        registeredUnlisten();
         return;
       }
+      this.unlisten = registeredUnlisten;
 
-      this.handler(env.payload);
-    });
-
-    // Store unlisten for disconnect(). If disconnect() was called during
-    // async setup, immediately unlisten and bail.
-    if (this.handler === null) {
-      unlistenFn();
-      return;
+      // Signal the Rust driver that the frontend is ready.
+      await invoke("cmd_subscribe");
+    } catch (error) {
+      if (registeredUnlisten !== null && this.unlisten === registeredUnlisten) {
+        registeredUnlisten();
+        this.unlisten = null;
+      }
+      throw error;
     }
-    this.unlisten = unlistenFn;
+  }
 
-    // Signal the Rust driver that the frontend is ready.
-    await invoke("cmd_subscribe");
+  private emitTransportLost(): void {
+    this.handler?.({ kind: "fault", payload: { kind: "transport_lost" } });
   }
 }
