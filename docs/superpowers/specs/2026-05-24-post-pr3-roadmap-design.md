@@ -901,20 +901,27 @@ live calls:
   `TODOS.md` are now pointers.
 - ✅ PR #3 merged; branch protection (`ci-ok` + conversations
   resolved + admins enforced) active on `main`.
-- ▶️ **Active week starts now.** The current working branch is
-  `ridermw/post-pr3-roadmap-spec`. Per §2.6.3 it is the single
-  long-running branch for the autonomous week; feature PRs cut from
-  sub-branches into it, then it merges to `main` periodically when
-  `ci-ok` is green.
+- ▶️ **PR #4 is the final PR cut from `ridermw/post-pr3-roadmap-spec`.**
+  After PR #4 merges, the branch is **retired** (deleted on remote
+  + local) per §2.6.3, and every subsequent PR cuts a fresh feature
+  branch from `origin/main`. The "single long-running working branch"
+  language that previously appeared in this section is **superseded**
+  by §2.6.3.
 - ⏳ Mega plan review Sections 2–10 are scheduled but **deferred to
   user return** so they do not block week-of-autonomy execution.
   Section 1 decisions (outbox/inbox, separate bridge process,
   DecisionTimeline first-class, LLM-as-author in P2.A) are
   authoritative for week-of-autonomy work.
-- ▶️ **Next concrete action (this branch):** open PR P2.A0.1 from
-  this branch lifting the LLM moratorium and archiving the old
-  plans (already prepared as part of this same commit). Request
-  Copilot Code Review on the PR per §2.6.5.
+- ▶️ **Next concrete action (after PR #4 merges):** retire the
+  `ridermw/post-pr3-roadmap-spec` branch, sync the main checkout to
+  the post-merge `origin/main`, then cut a **fresh feature branch
+  from `origin/main`** for the amendments PR (rubber-duck criticals:
+  `hash_run` includes messages + agent host stable sort +
+  `Warning::Behind { agent_id }` + the spec amendments codifying
+  §2.6 / §2.7 / §10.2 request lifecycle that the rubber-duck and
+  adversarial-review passes surfaced). Open the amendments PR against
+  `main`; run the §2.7 adversarial-review workflow on it; merge per
+  §2.6.1.
 
 ---
 
