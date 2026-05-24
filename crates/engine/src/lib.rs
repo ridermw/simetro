@@ -12,6 +12,7 @@
 //!
 //! See `docs/architecture.md` and `PLAN.md` §3.
 
+pub mod agent;
 pub mod components;
 pub mod error;
 pub mod loader;
@@ -20,6 +21,7 @@ pub mod systems;
 pub mod tick;
 pub mod world;
 
+pub use agent::{Agent, AgentHost, MoverObservation, Observation, SpeedTuner};
 pub use components::{Mover, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId};
 pub use error::{AgentError, EngineFault, LoadError};
 pub use loader::{load_scene_str, AgentSpec, Goal, IdMap, LoadedScene, Theme};
