@@ -13,6 +13,7 @@ const TOGGLE_ID = "simetro-scene-toggle";
 export class SceneBrowser {
   private root: HTMLElement;
   private toggle: HTMLButtonElement;
+  private indicator: HTMLSpanElement;
   private list: HTMLElement;
   private sceneButtons: Map<string, HTMLButtonElement> = new Map();
   private selectedSceneId: string | null = null;
@@ -27,6 +28,7 @@ export class SceneBrowser {
     const built = buildDom(parent, scenes);
     this.root = built.root;
     this.toggle = built.toggle;
+    this.indicator = built.indicator;
     this.list = built.list;
     this.sceneButtons = built.sceneButtons;
     this.selectedSceneId = selectedSceneId;
@@ -79,12 +81,7 @@ export class SceneBrowser {
   private applyCollapsed(): void {
     this.toggle.setAttribute("aria-expanded", this.collapsed ? "false" : "true");
     // Chevron indicator: ▾ expanded, ▸ collapsed
-    const indicator = this.toggle.querySelector<HTMLSpanElement>(
-      "[data-role='scene-toggle-indicator']"
-    );
-    if (indicator) {
-      indicator.textContent = this.collapsed ? "▸" : "▾";
-    }
+    this.indicator.textContent = this.collapsed ? "▸" : "▾";
     this.list.style.display = this.collapsed ? "none" : "flex";
   }
 }
@@ -92,6 +89,7 @@ export class SceneBrowser {
 interface BuiltDom {
   root: HTMLElement;
   toggle: HTMLButtonElement;
+  indicator: HTMLSpanElement;
   list: HTMLElement;
   sceneButtons: Map<string, HTMLButtonElement>;
 }
@@ -188,7 +186,7 @@ function buildDom(parent: HTMLElement, scenes: readonly SceneCatalogEntry[]): Bu
   root.appendChild(toggle);
   root.appendChild(list);
   parent.appendChild(root);
-  return { root, toggle, list, sceneButtons };
+  return { root, toggle, indicator, list, sceneButtons };
 }
 
 function sceneCard(scene: SceneCatalogEntry): HTMLButtonElement {
