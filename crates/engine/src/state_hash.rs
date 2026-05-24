@@ -296,9 +296,30 @@ fn feed_agent_report(h: &mut Sha256, r: &AgentReport) {
         h.update([c.action.tag() as u8]);
         h.update(c.confidence.to_le_bytes());
     }
-    // `chosen` presence byte + tag (we intentionally hash only the
-    // discriminant, not the full Action payload, because actions are
-    // already hashed via `SimEvent::AgentDecided`).
+    // `chosen` presence byte + tag.
+    //
+    // We hash only the discriminant here (not the full Action payload)
+    // because the action's PAYLOAD-LEVEL effects are captured elsewhere
+    // in the hash:
+    //   - `SetSpeed { mover, speed }` → emits
+    //     `SimEvent::MoverSpeedChange { mover, old, new }` per-tick,
+    //     fed by `feed_event` (`0x12` tag).
+    //   - `PlacePiece { piece_kind, pos }` → mutates `world.nodes`;
+    //     captured by the FINAL `feed_world` call at the end of
+    //     `hash_run` (node positions + shapes + colors).
+    //   - `ConnectPieces { from, to, kind }` → mutates `world.paths`;
+    //     captured by the final `feed_world` (path endpoints +
+    //     colors).
+    //   - `RemovePiece { piece_kind, id }` → mutates world topology;
+    //     captured by the final `feed_world`.
+    //   - `NoOp` → no payload to hash.
+    //
+    // Hashing the full Action payload here would double-count for
+    // SetSpeed (since MoverSpeedChange already encodes both old and
+    // new) and would also leak per-tick payload changes that the
+    // final-world hash would catch anyway. Test
+    // `hash_run_distinguishes_runs_that_differ_only_in_action_payload`
+    // is the regression for this design choice.
     match &r.chosen {
         Some(a) => {
             h.update([0x01]);
@@ -545,6 +566,82 @@ mod tests {
              AgentReport rationale — this is the rubber-duck CRITICAL \
              #7 gap; if this assertion fails, messages are not being \
              fed into the hash"
+        );
+    }
+
+    /// Regression for the `feed_agent_report` design choice: we hash
+    /// only the Action's discriminant inside AgentReport because the
+    /// PAYLOAD is captured elsewhere (events for `SetSpeed` via
+    /// `MoverSpeedChange`; final world state for `PlacePiece` /
+    /// `ConnectPieces` / `RemovePiece`). This test proves that two
+    /// runs whose agents emit different `SetSpeed` payloads (same
+    /// `ActionTag::SetSpeed`, different `speed` value) hash
+    /// differently because the resulting `MoverSpeedChange` event
+    /// payloads differ.
+    ///
+    /// If this test fails, the design comment in `feed_agent_report`
+    /// is wrong AND the hash is genuinely blind to action payload
+    /// changes — at which point we'd need to hash the full Action
+    /// payload inside `feed_agent_report` directly.
+    #[test]
+    fn hash_run_distinguishes_runs_that_differ_only_in_action_payload() {
+        use crate::agent::{Agent, AgentHost, Observation};
+        use crate::error::AgentError;
+        use crate::world::World;
+        use simetro_protocol::{Action, AgentReport};
+
+        fn make_speed_agent(speed: f32) -> Box<dyn Agent> {
+            struct SpeedAgent {
+                speed: f32,
+            }
+            impl Agent for SpeedAgent {
+                fn id(&self) -> &str {
+                    "speed-payload-test"
+                }
+                fn interval_ticks(&self) -> u32 {
+                    1
+                }
+                fn observe(&mut self, _w: &World) -> Observation {
+                    Observation::default()
+                }
+                fn act(&mut self, _o: &Observation) -> Result<AgentReport, AgentError> {
+                    Ok(AgentReport {
+                        tick: 0,
+                        agent_id: "speed-payload-test".into(),
+                        considered: vec![],
+                        chosen: Some(Action::SetSpeed {
+                            mover: 0,
+                            speed: self.speed,
+                        }),
+                        rationale: String::new(),
+                        confidence: 1.0,
+                    })
+                }
+            }
+            Box::new(SpeedAgent { speed })
+        }
+
+        // Two runs with same agent_id + same ActionTag::SetSpeed but
+        // different `speed` value in the Action payload.
+        let mut a = load_scene_str(SCENE, 42).unwrap();
+        let mut ra = TickRunner::new();
+        ra.register_agent(AgentHost::new(make_speed_agent(0.5)));
+        let hash_a = hash_run(&mut a.world, &mut ra, 50);
+
+        let mut b = load_scene_str(SCENE, 42).unwrap();
+        let mut rb = TickRunner::new();
+        rb.register_agent(AgentHost::new(make_speed_agent(2.0)));
+        let hash_b = hash_run(&mut b.world, &mut rb, 50);
+
+        assert_ne!(
+            hash_a, hash_b,
+            "hash_run must distinguish runs that differ only in \
+             Action payload (e.g. SetSpeed {{speed}} value). If this \
+             assertion fails, the `feed_agent_report` design comment \
+             is wrong and we MUST hash the full Action payload inside \
+             that function (currently we hash only the tag because the \
+             payload is captured via SimEvent::MoverSpeedChange / \
+             final world state)."
         );
     }
 }
