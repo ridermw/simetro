@@ -96,6 +96,17 @@ impl AgentHost {
         tick > 0 && tick % i == 0
     }
 
+    /// Observe only — does **not** call `act`. Used by the tick loop
+    /// to capture exactly what the agent saw so the same observation
+    /// can be hashed into the AgentLog. Wraps observe in
+    /// `catch_unwind`; on panic returns `Observation::default()`
+    /// (the subsequent `step()` will surface the same panic as a
+    /// proper `AgentError::Panicked`).
+    pub fn observe_only(&mut self, world: &World) -> Observation {
+        catch_unwind(AssertUnwindSafe(|| self.agent.observe(world)))
+            .unwrap_or_else(|_| Observation::default())
+    }
+
     /// Run one observe→act cycle. Panics inside the agent become
     /// `AgentError::Panicked`. Invalid output (oversized rationale or
     /// `considered`) is trimmed and a warning attached implicitly via

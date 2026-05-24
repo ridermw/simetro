@@ -20,6 +20,7 @@ use simetro_protocol::{ActionTag, SimEvent, SimMessage};
 
 use crate::actions::{apply_action, Outcome};
 use crate::agent::AgentHost;
+use crate::agent_log::{AgentLog, AgentLogEntry};
 use crate::events::agent_error_to_message;
 use crate::systems::{interaction, lifecycle, movement};
 use crate::world::{RunState, World};
@@ -47,6 +48,9 @@ pub struct TickRunner {
     route_scratch: Vec<interaction::RouteScratch>,
     /// Built-in / in-process agents driven by the engine.
     hosts: Vec<AgentHost>,
+    /// Optional append-only log of agent decisions (PLAN §15). When
+    /// present, every successful agent action is written here.
+    agent_log: Option<AgentLog>,
     last_arrivals: u32,
 }
 
@@ -81,6 +85,26 @@ impl TickRunner {
     /// [`AgentHost::should_fire`] schedule.
     pub fn register_agent(&mut self, host: AgentHost) {
         self.hosts.push(host);
+    }
+
+    /// Attach an AgentLog. All subsequent successful agent decisions
+    /// will be appended to it. A fallback warning (`AgentLogSlow`) is
+    /// emitted via `messages()` when the log first degrades to its
+    /// ring buffer.
+    pub fn attach_agent_log(&mut self, log: AgentLog) {
+        self.agent_log = Some(log);
+    }
+
+    /// Detach and return the AgentLog, if any. Useful for flushing
+    /// before shutdown or for inspecting ring contents in tests.
+    pub fn take_agent_log(&mut self) -> Option<AgentLog> {
+        self.agent_log.take()
+    }
+
+    /// Borrow the attached AgentLog (mostly for tests).
+    #[must_use]
+    pub fn agent_log(&self) -> Option<&AgentLog> {
+        self.agent_log.as_ref()
     }
 
     /// Borrow the per-tick event buffer. Valid until the next `tick_once`.
@@ -134,6 +158,16 @@ impl TickRunner {
                 continue;
             }
             let agent_id = host.id().to_string();
+            // We need the observation both to drive the agent and to
+            // log it. `AgentHost::step` already observes internally;
+            // we re-observe here for the log so we capture exactly
+            // what the agent saw. This is cheap and side-effect-free.
+            let obs_for_log = if self.agent_log.is_some() {
+                Some(host.observe_only(world))
+            } else {
+                None
+            };
+
             match host.step(world) {
                 Ok(report) => {
                     if let Some(action) = report.chosen.clone() {
@@ -150,6 +184,19 @@ impl TickRunner {
                             agent_id: 0,
                             action: ActionTag::NoOp,
                         });
+                    }
+                    if let (Some(log), Some(obs)) = (self.agent_log.as_mut(), obs_for_log) {
+                        let entry = AgentLogEntry::new(
+                            &obs,
+                            &agent_id,
+                            report.chosen.clone(),
+                            report.considered.len(),
+                            report.rationale.clone(),
+                            None,
+                        );
+                        if let Some(warn) = log.append(&entry) {
+                            self.messages.push(SimMessage::Warning(warn));
+                        }
                     }
                     self.messages.push(SimMessage::AgentReport(report));
                 }
@@ -326,5 +373,80 @@ mod tests {
         runner.tick_once(&mut loaded.world);
         assert_eq!(loaded.world.state, RunState::Running);
         assert!(runner.messages().is_empty());
+    }
+
+    // ---- Step 12: AgentLog wiring --------------------------------------
+
+    #[test]
+    fn agent_log_records_decisions_when_attached() {
+        use std::io;
+        struct CountSink {
+            lines: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        }
+        impl io::Write for CountSink {
+            fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+                if b == b"\n" {
+                    self.lines
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let log = AgentLog::new(Box::new(CountSink {
+            lines: counter.clone(),
+        }));
+
+        let mut loaded = load_scene_str(SCENE, 0).unwrap();
+        loaded.world.dt = 10.0;
+        let mut runner = TickRunner::new();
+        runner.attach_agent_log(log);
+        runner.register_agent(AgentHost::new(Box::new(SpeedTuner::new(1))));
+        for _ in 0..3 {
+            runner.tick_once(&mut loaded.world);
+        }
+        assert!(counter.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+    }
+
+    #[test]
+    fn agent_log_failure_emits_slow_warning_once() {
+        use std::io;
+        struct AlwaysErr;
+        impl io::Write for AlwaysErr {
+            fn write(&mut self, _b: &[u8]) -> io::Result<usize> {
+                Err(io::Error::other("no disk"))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let log = AgentLog::with_capacity(Box::new(AlwaysErr), 32);
+        let mut loaded = load_scene_str(SCENE, 0).unwrap();
+        loaded.world.dt = 10.0;
+        let mut runner = TickRunner::new();
+        runner.attach_agent_log(log);
+        runner.register_agent(AgentHost::new(Box::new(SpeedTuner::new(1))));
+
+        let mut total_slow = 0;
+        for _ in 0..5 {
+            runner.tick_once(&mut loaded.world);
+            total_slow += runner
+                .messages()
+                .iter()
+                .filter(|m| {
+                    matches!(
+                        m,
+                        SimMessage::Warning(simetro_protocol::WarningPayload::AgentLogSlow)
+                    )
+                })
+                .count();
+        }
+        assert_eq!(total_slow, 1, "AgentLogSlow should warn exactly once");
+        let log = runner.take_agent_log().unwrap();
+        assert!(log.is_degraded());
+        assert!(!log.ring_snapshot().is_empty());
     }
 }

@@ -14,6 +14,7 @@
 
 pub mod actions;
 pub mod agent;
+pub mod agent_log;
 pub mod components;
 pub mod error;
 pub mod events;
@@ -26,6 +27,7 @@ pub mod world;
 
 pub use actions::{apply_action, Outcome};
 pub use agent::{Agent, AgentHost, MoverObservation, Observation, SpeedTuner};
+pub use agent_log::{observation_hash, AgentLog, AgentLogEntry};
 pub use components::{Mover, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId};
 pub use error::{AgentError, EngineFault, LoadError};
 pub use events::{agent_error_to_message, engine_fault_to_payload, load_error_to_fault};
