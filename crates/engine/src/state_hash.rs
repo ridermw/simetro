@@ -20,7 +20,7 @@
 //! produce the same hex digest on every supported platform.
 
 use sha2::{Digest, Sha256};
-use simetro_protocol::{AgentReport, FaultPayload, SimEvent, SimMessage, WarningPayload};
+use simetro_protocol::{Action, AgentReport, FaultPayload, SimEvent, SimMessage, WarningPayload};
 
 use crate::components::{MoverState, NodeShape};
 use crate::tick::TickRunner;
@@ -293,43 +293,68 @@ fn feed_agent_report(h: &mut Sha256, r: &AgentReport) {
     h.update(r.agent_id.as_bytes());
     h.update((r.considered.len() as u64).to_le_bytes());
     for c in &r.considered {
-        h.update([c.action.tag() as u8]);
+        // Hash full action payload for considered alternatives too —
+        // two runs that consider different alternatives must hash
+        // differently even if `chosen` is the same.
+        feed_action(h, &c.action);
         h.update(c.confidence.to_le_bytes());
     }
-    // `chosen` presence byte + tag.
+    // `chosen` presence byte + FULL Action payload.
     //
-    // We hash only the discriminant here (not the full Action payload)
-    // because the action's PAYLOAD-LEVEL effects are captured elsewhere
-    // in the hash:
-    //   - `SetSpeed { mover, speed }` → emits
-    //     `SimEvent::MoverSpeedChange { mover, old, new }` per-tick,
-    //     fed by `feed_event` (`0x12` tag).
-    //   - `PlacePiece { piece_kind, pos }` → mutates `world.nodes`;
-    //     captured by the FINAL `feed_world` call at the end of
-    //     `hash_run` (node positions + shapes + colors).
-    //   - `ConnectPieces { from, to, kind }` → mutates `world.paths`;
-    //     captured by the final `feed_world` (path endpoints +
-    //     colors).
-    //   - `RemovePiece { piece_kind, id }` → mutates world topology;
-    //     captured by the final `feed_world`.
-    //   - `NoOp` → no payload to hash.
+    // We hash the full payload here (not just the discriminant) so
+    // that the determinism gate catches any difference in agent
+    // decisions, regardless of whether the downstream apply path
+    // would surface that difference (e.g. a rejected SetSpeed for a
+    // non-existent mover, two different rejected SetSpeed payloads
+    // that both emit identical `Warning::InvalidAction` reasons, an
+    // author action that fails before mutating world state). This
+    // makes the determinism gate independent of how each Action
+    // variant routes through events / messages / world mutation.
     //
-    // Hashing the full Action payload here would double-count for
-    // SetSpeed (since MoverSpeedChange already encodes both old and
-    // new) and would also leak per-tick payload changes that the
-    // final-world hash would catch anyway. Test
-    // `hash_run_distinguishes_runs_that_differ_only_in_action_payload`
-    // is the regression for this design choice.
+    // Test `hash_run_distinguishes_runs_that_differ_only_in_action_payload`
+    // covers the happy-path SetSpeed case; this stronger formulation
+    // also covers the rejection/no-op edge cases that would otherwise
+    // hash identically.
     match &r.chosen {
         Some(a) => {
             h.update([0x01]);
-            h.update([a.tag() as u8]);
+            feed_action(h, a);
         }
         None => h.update([0x00]),
     }
     h.update((r.rationale.len() as u64).to_le_bytes());
     h.update(r.rationale.as_bytes());
     h.update(r.confidence.to_le_bytes());
+}
+
+/// Hash a single `Action` into the running digest, including its
+/// full payload. Stable byte tags so future variant additions extend
+/// without disturbing existing baselines.
+fn feed_action(h: &mut Sha256, a: &Action) {
+    match a {
+        Action::NoOp => h.update([0x50]),
+        Action::SetSpeed { mover, speed } => {
+            h.update([0x51]);
+            h.update(mover.to_le_bytes());
+            h.update(speed.to_le_bytes());
+        }
+        Action::PlacePiece { piece_kind, pos } => {
+            h.update([0x52]);
+            h.update((piece_kind.len() as u64).to_le_bytes());
+            h.update(piece_kind.as_bytes());
+            h.update(pos[0].to_le_bytes());
+            h.update(pos[1].to_le_bytes());
+        }
+        Action::ConnectPieces { from, to } => {
+            h.update([0x53]);
+            h.update(from.to_le_bytes());
+            h.update(to.to_le_bytes());
+        }
+        Action::RemovePiece { id } => {
+            h.update([0x54]);
+            h.update(id.to_le_bytes());
+        }
+    }
 }
 
 fn feed_opt_u32(h: &mut Sha256, v: Option<u32>) {
@@ -642,6 +667,79 @@ mod tests {
              that function (currently we hash only the tag because the \
              payload is captured via SimEvent::MoverSpeedChange / \
              final world state)."
+        );
+    }
+
+    /// Closes the specific edge case the codex-connector reviewer
+    /// flagged on PR #5: two runs whose `chosen` action ends in a
+    /// rejection/no-op (so the apply pipeline produces identical
+    /// downstream events or warnings) but whose AgentReport.chosen
+    /// payloads differ must still hash differently. We hash the full
+    /// Action payload inside `feed_agent_report` precisely so this
+    /// edge case cannot leak past the determinism gate.
+    #[test]
+    fn hash_run_distinguishes_rejected_actions_with_different_payloads() {
+        use crate::agent::{Agent, AgentHost, Observation};
+        use crate::error::AgentError;
+        use crate::world::World;
+        use simetro_protocol::{Action, AgentReport};
+
+        fn make_rejected_agent(mover_id: u32) -> Box<dyn Agent> {
+            struct RejectedAgent {
+                mover_id: u32,
+            }
+            impl Agent for RejectedAgent {
+                fn id(&self) -> &str {
+                    "rejected-payload-test"
+                }
+                fn interval_ticks(&self) -> u32 {
+                    1
+                }
+                fn observe(&mut self, _w: &World) -> Observation {
+                    Observation::default()
+                }
+                fn act(&mut self, _o: &Observation) -> Result<AgentReport, AgentError> {
+                    Ok(AgentReport {
+                        tick: 0,
+                        agent_id: "rejected-payload-test".into(),
+                        considered: vec![],
+                        // Target a mover ID that does NOT exist in the
+                        // demo scene → the apply pipeline rejects this
+                        // with `Warning::InvalidAction`. The two runs
+                        // below use DIFFERENT non-existent IDs.
+                        chosen: Some(Action::SetSpeed {
+                            mover: self.mover_id,
+                            speed: 1.0,
+                        }),
+                        rationale: String::new(),
+                        confidence: 1.0,
+                    })
+                }
+            }
+            Box::new(RejectedAgent { mover_id })
+        }
+
+        // Two runs: same agent_id, same speed, same rationale, both
+        // chosen actions rejected by apply pipeline. Only difference
+        // is the `mover` value in the chosen Action payload.
+        let mut a = load_scene_str(SCENE, 42).unwrap();
+        let mut ra = TickRunner::new();
+        ra.register_agent(AgentHost::new(make_rejected_agent(9001)));
+        let hash_a = hash_run(&mut a.world, &mut ra, 20);
+
+        let mut b = load_scene_str(SCENE, 42).unwrap();
+        let mut rb = TickRunner::new();
+        rb.register_agent(AgentHost::new(make_rejected_agent(9002)));
+        let hash_b = hash_run(&mut b.world, &mut rb, 20);
+
+        assert_ne!(
+            hash_a, hash_b,
+            "hash_run must distinguish runs that differ only in the \
+             payload of a REJECTED action — even if both actions are \
+             rejected and downstream events are identical, the \
+             AgentReport.chosen payload must contribute to the hash. \
+             If this fails, `feed_agent_report` is hashing only the \
+             tag and the Codex-reviewer-identified edge case is back."
         );
     }
 }
