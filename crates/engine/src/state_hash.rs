@@ -126,7 +126,7 @@ fn feed_event(h: &mut Sha256, e: &SimEvent) {
         }
         SimEvent::AgentDecided { agent_id, action } => {
             h.update([0x15]);
-            h.update(agent_id.to_le_bytes());
+            h.update(agent_id.as_bytes());
             h.update([*action as u8]);
         }
         SimEvent::Tick { tick } => {

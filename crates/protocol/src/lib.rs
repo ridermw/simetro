@@ -167,7 +167,11 @@ pub enum SimEvent {
         path: u32,
     },
     AgentDecided {
-        agent_id: u32,
+        /// Stable agent identifier as registered with the engine
+        /// (matches [`AgentReport::agent_id`]). Was `u32` in v0; now a
+        /// `String` so multi-agent runs can distinguish decisions and
+        /// downstream consumers can correlate with [`AgentReport`].
+        agent_id: String,
         action: ActionTag,
     },
 }
@@ -373,7 +377,7 @@ mod tests {
     #[test]
     fn sim_event_agent_decided_uses_action_tag() {
         let e = SimEvent::AgentDecided {
-            agent_id: 1,
+            agent_id: "speed_tuner_0".into(),
             action: ActionTag::SetSpeed,
         };
         let s = serde_json::to_string(&e).expect("encode");

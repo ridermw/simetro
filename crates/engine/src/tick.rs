@@ -128,7 +128,22 @@ impl TickRunner {
 
     /// Advance the world by exactly one fixed timestep. Returns the
     /// number of mover arrivals this tick.
+    ///
+    /// **Early return when world is not runnable** (PLAN §13 / review):
+    /// if a prior tick or agent step left `world.state` in
+    /// [`RunState::Paused`] or [`RunState::Faulted`], the systems
+    /// pipeline is skipped and the tick counter is NOT advanced. This
+    /// prevents state from silently mutating after a fatal fault when
+    /// outer drivers (e.g. `cmd_run`) loop unconditionally.
     pub fn tick_once(&mut self, world: &mut World) -> u32 {
+        if matches!(world.state, RunState::Paused | RunState::Faulted) {
+            // Clear any messages/events from a prior call so callers
+            // that still drain them see an empty batch — no stale data.
+            self.events.clear();
+            self.messages.clear();
+            self.last_arrivals = 0;
+            return 0;
+        }
         if matches!(world.state, RunState::Idle | RunState::Loaded) {
             world.state = RunState::Running;
         }
@@ -176,12 +191,12 @@ impl TickRunner {
                             self.messages.push(SimMessage::Warning(w));
                         }
                         self.events.push(SimEvent::AgentDecided {
-                            agent_id: 0,
+                            agent_id: agent_id.clone(),
                             action: action.tag(),
                         });
                     } else {
                         self.events.push(SimEvent::AgentDecided {
-                            agent_id: 0,
+                            agent_id: agent_id.clone(),
                             action: ActionTag::NoOp,
                         });
                     }
@@ -333,6 +348,76 @@ mod tests {
             .messages()
             .iter()
             .any(|m| matches!(m, SimMessage::Fault(FaultPayload::AgentCrashed { .. }))));
+    }
+
+    /// Once an agent panics and the world is `Faulted`, subsequent
+    /// `tick_once` calls must NOT advance the tick counter or run
+    /// systems — otherwise outer drivers that loop unconditionally
+    /// (e.g. `cmd_run`) would silently keep mutating state after the
+    /// fault (review feedback on PR #1, codex).
+    #[test]
+    fn faulted_world_does_not_advance() {
+        let mut loaded = load_scene_str(SCENE, 0).unwrap();
+        let mut runner = TickRunner::new();
+        runner.register_agent(AgentHost::new(Box::new(PanickingAgent)));
+        runner.tick_once(&mut loaded.world);
+        assert_eq!(loaded.world.state, RunState::Faulted);
+        let tick_at_fault = loaded.world.tick;
+
+        // Drive 5 more ticks; the engine must hold.
+        for _ in 0..5 {
+            let arrivals = runner.tick_once(&mut loaded.world);
+            assert_eq!(arrivals, 0);
+            assert!(runner.events().is_empty());
+            assert!(runner.messages().is_empty());
+        }
+        assert_eq!(loaded.world.tick, tick_at_fault);
+        assert_eq!(loaded.world.state, RunState::Faulted);
+    }
+
+    /// Pausing the world likewise freezes the tick loop; resuming
+    /// (Running) lets it advance again.
+    #[test]
+    fn paused_world_holds_and_resumes() {
+        let mut loaded = load_scene_str(SCENE, 0).unwrap();
+        let mut runner = TickRunner::new();
+        runner.tick_once(&mut loaded.world);
+        assert_eq!(loaded.world.state, RunState::Running);
+        let tick_at_pause = loaded.world.tick;
+
+        loaded.world.state = RunState::Paused;
+        for _ in 0..3 {
+            runner.tick_once(&mut loaded.world);
+        }
+        assert_eq!(loaded.world.tick, tick_at_pause);
+        assert_eq!(loaded.world.state, RunState::Paused);
+
+        loaded.world.state = RunState::Running;
+        runner.tick_once(&mut loaded.world);
+        assert_eq!(loaded.world.tick, tick_at_pause + 1);
+    }
+
+    /// AgentDecided must carry the real agent_id, not a hardcoded 0
+    /// (review feedback on PR #1, codex).
+    #[test]
+    fn agent_decided_carries_real_agent_id() {
+        let mut loaded = load_scene_str(SCENE, 0).unwrap();
+        loaded.world.dt = 10.0;
+        let mut runner = TickRunner::new();
+        runner.register_agent(AgentHost::new(Box::new(SpeedTuner::new(1))));
+        runner.tick_once(&mut loaded.world);
+        runner.tick_once(&mut loaded.world);
+
+        let decided = runner
+            .events()
+            .iter()
+            .filter_map(|e| match e {
+                SimEvent::AgentDecided { agent_id, .. } => Some(agent_id.clone()),
+                _ => None,
+            })
+            .next()
+            .expect("expected at least one AgentDecided event");
+        assert_eq!(decided, "speed_tuner_0");
     }
 
     #[test]
