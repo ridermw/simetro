@@ -5,7 +5,7 @@
 //!   ┌──────────────────────────────────────────────────────────────┐
 //!   │                        EngineDriver                          │
 //!   │                                                              │
-//!   │  tokio task (60 Hz tick) ──▶ encode ──▶ app.emit("sim", …)  │
+//!   │  tokio task (speed-scaled tick) ──▶ app.emit("sim", …)      │
 //!   │       ▲                                                      │
 //!   │       │ DriverCommand (mpsc)                                 │
 //!   │       │                                                      │
@@ -54,6 +54,8 @@ pub struct DriverState {
 const INTERNAL_HZ: u64 = 60;
 const SNAPSHOT_HZ: u64 = 20;
 const TICKS_PER_SNAPSHOT: u64 = INTERNAL_HZ / SNAPSHOT_HZ; // 3
+const MIN_SPEED_FACTOR: f32 = 0.1;
+const MAX_SPEED_FACTOR: f32 = 10.0;
 
 /// Spawn the engine driver as a background task. Returns the command
 /// sender for Tauri commands to use.
@@ -74,7 +76,7 @@ async fn driver_loop(
         match rx.recv().await {
             Some(DriverCommand::Subscribe) => break,
             None => return, // channel closed
-            _ => {} // ignore commands before subscribe
+            _ => {}         // ignore commands before subscribe
         }
     }
 
@@ -83,9 +85,7 @@ async fn driver_loop(
         None => return,
     };
 
-    let tick_period = Duration::from_nanos(1_000_000_000 / INTERNAL_HZ);
-    let mut interval = time::interval(tick_period);
-    interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut interval = tick_interval(state.speed_factor);
     let mut ticks_since_snapshot: u64 = 0;
 
     loop {
@@ -98,7 +98,13 @@ async fn driver_loop(
             }
             cmd = rx.recv() => {
                 match cmd {
-                    Some(c) => handle_command(&app, &mut state, c, &scene_path, seed, &mut ticks_since_snapshot),
+                    Some(c) => {
+                        let is_set_speed = matches!(c, DriverCommand::SetSpeed(_));
+                        handle_command(&app, &mut state, c, &scene_path, seed, &mut ticks_since_snapshot);
+                        if is_set_speed {
+                            interval = tick_interval(state.speed_factor);
+                        }
+                    }
                     None => break, // channel closed
                 }
             }
@@ -132,7 +138,6 @@ struct SimState {
     last_static: simetro_protocol::StaticPayload,
     seq: u64,
     paused: bool,
-    #[allow(dead_code)]
     speed_factor: f32,
 }
 
@@ -240,11 +245,7 @@ fn tick_and_emit(app: &AppHandle, state: &mut SimState, ticks_since_snapshot: &m
     let events = state.runner.events();
     let has_semantic = events.iter().any(|e| !matches!(e, SimEvent::Tick { .. }));
     if has_semantic {
-        emit_sim(
-            app,
-            state.seq,
-            SimMessage::Events(events.to_vec()),
-        );
+        emit_sim(app, state.seq, SimMessage::Events(events.to_vec()));
         state.seq += 1;
     }
 
@@ -300,7 +301,7 @@ fn handle_command(
             }
         }
         DriverCommand::SetSpeed(factor) => {
-            state.speed_factor = factor.clamp(0.1, 10.0);
+            state.speed_factor = clamp_speed_factor(factor);
             tracing::info!("speed factor set to {}", state.speed_factor);
         }
         DriverCommand::Reload => {
@@ -350,15 +351,27 @@ fn handle_command(
             emit_sim(app, state.seq, SimMessage::Static(static_payload));
             state.seq += 1;
             encode_snapshot(&state.world, &mut state.snapshot_buf);
-            emit_sim(app, state.seq, SimMessage::Snapshot(state.snapshot_buf.clone()));
+            emit_sim(
+                app,
+                state.seq,
+                SimMessage::Snapshot(state.snapshot_buf.clone()),
+            );
             state.seq += 1;
         }
         DriverCommand::Subscribe => {
             // Late subscribe — re-emit current state.
-            emit_sim(app, state.seq, SimMessage::Static(state.last_static.clone()));
+            emit_sim(
+                app,
+                state.seq,
+                SimMessage::Static(state.last_static.clone()),
+            );
             state.seq += 1;
             encode_snapshot(&state.world, &mut state.snapshot_buf);
-            emit_sim(app, state.seq, SimMessage::Snapshot(state.snapshot_buf.clone()));
+            emit_sim(
+                app,
+                state.seq,
+                SimMessage::Snapshot(state.snapshot_buf.clone()),
+            );
             state.seq += 1;
         }
     }
@@ -367,6 +380,24 @@ fn handle_command(
 // -------------------------------------------------------------------------
 //  Helpers
 // -------------------------------------------------------------------------
+
+fn clamp_speed_factor(factor: f32) -> f32 {
+    if factor.is_finite() {
+        factor.clamp(MIN_SPEED_FACTOR, MAX_SPEED_FACTOR)
+    } else {
+        1.0
+    }
+}
+
+fn tick_period(speed_factor: f32) -> Duration {
+    Duration::from_secs_f64(1.0 / (INTERNAL_HZ as f64 * f64::from(speed_factor)))
+}
+
+fn tick_interval(speed_factor: f32) -> time::Interval {
+    let mut interval = time::interval(tick_period(speed_factor));
+    interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    interval
+}
 
 #[derive(Clone, Serialize)]
 struct SimEnvelope {
@@ -394,4 +425,24 @@ fn emit_fault(app: &AppHandle, seq: u64, message: &str) {
             message: message.to_string(),
         }),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn speed_factor_clamps_to_supported_range() {
+        assert_eq!(clamp_speed_factor(0.01), MIN_SPEED_FACTOR);
+        assert_eq!(clamp_speed_factor(20.0), MAX_SPEED_FACTOR);
+        assert_eq!(clamp_speed_factor(2.0), 2.0);
+        assert_eq!(clamp_speed_factor(f32::NAN), 1.0);
+    }
+
+    #[test]
+    fn tick_period_scales_with_speed_factor() {
+        assert_eq!(tick_period(1.0), Duration::from_secs_f64(1.0 / 60.0));
+        assert_eq!(tick_period(2.0), Duration::from_secs_f64(1.0 / 120.0));
+        assert_eq!(tick_period(0.5), Duration::from_secs_f64(1.0 / 30.0));
+    }
 }

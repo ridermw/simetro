@@ -52,8 +52,9 @@ TypeScript frontend.
    `cmd_subscribe`. The driver sends the cached `Static` payload
    followed by an initial `Snapshot`, then begins the tick loop.
 
-3. **Tick loop:** The driver runs at 60 Hz. Every 3rd tick (~20 Hz)
-   it encodes the world into a `Snapshot` message and emits it via
+3. **Tick loop:** The driver runs at 60 Hz at 1×, scaled by the
+   current speed factor. Every 3rd simulation tick (~20 Hz at 1×) it
+   encodes the world into a `Snapshot` message and emits it via
    `app.emit("sim", &envelope)`.
 
 4. **Events:** Non-empty event batches (mover_arrived, departed,
