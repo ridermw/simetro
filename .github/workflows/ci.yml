@@ -191,11 +191,11 @@ jobs:
       - name: Check for Tauri config (gates the job)
         id: gate
         run: |
-          if [ -f crates/tauri-app/tauri.conf.json ]; then
+          if [ -f src-tauri/tauri.conf.json ]; then
             echo "enabled=true"  >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::tauri job: skipped — tauri.conf.json not yet present (lands in Step 22)"
+            echo "::notice::tauri job: skipped — src-tauri/tauri.conf.json not yet present (lands in Step 22)"
           fi
 
       - name: Install system deps
@@ -211,6 +211,8 @@ jobs:
       - name: Cache cargo
         if: steps.gate.outputs.enabled == 'true'
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target\nsrc-tauri -> target"
 
       - name: Setup Node
         if: steps.gate.outputs.enabled == 'true'
@@ -225,9 +227,15 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: cargo build -p simetro-tauri-app
+      - name: Build frontend (Tauri reads frontend/dist)
         if: steps.gate.outputs.enabled == 'true'
-        run: cargo build -p simetro-tauri-app
+        working-directory: frontend
+        run: npm run build
+
+      - name: cargo build (src-tauri shell)
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: src-tauri
+        run: cargo build
 
   # -----------------------------------------------------------------
   # CI summary: this job is what branch protection should require.

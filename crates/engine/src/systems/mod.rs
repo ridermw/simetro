@@ -6,9 +6,10 @@
 //!                       ──▶ interaction::run (route arrived movers to next path)
 //! ```
 //!
-//! Systems mutate the `World` and append [`SimEvent`]s to a single
-//! per-tick output buffer owned by the caller — no per-system allocations
-//! after warmup (PLAN §14 zero-alloc target).
+//! Systems mutate the `World` and append `SimEvent`s (from
+//! [`simetro_protocol`]) to a single per-tick output buffer owned
+//! by the caller — no per-system allocations after warmup
+//! (PLAN §14 zero-alloc target).
 
 pub mod interaction;
 pub mod lifecycle;

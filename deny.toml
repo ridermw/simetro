@@ -9,6 +9,10 @@ ignore = []
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace internal path deps (e.g. simetro-engine = { path = ... })
+# resolve as `*` versions in cargo-deny; that's expected and benign
+# for workspace members. Allow only path-based wildcards.
+allow-wildcard-paths = true
 deny = []
 skip = []
 skip-tree = []

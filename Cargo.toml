@@ -19,9 +19,9 @@ rust-version = "1.80"
 
 [workspace.dependencies]
 # Internal
-simetro-engine = { path = "crates/engine" }
-simetro-protocol = { path = "crates/protocol" }
-simetro-agent-bridge = { path = "crates/agent-bridge" }
+simetro-engine = { path = "crates/engine", version = "0.1.0" }
+simetro-protocol = { path = "crates/protocol", version = "0.1.0" }
+simetro-agent-bridge = { path = "crates/agent-bridge", version = "0.1.0" }
 
 # External
 serde = { version = "1", features = ["derive"] }
