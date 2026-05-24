@@ -40,6 +40,8 @@ import { AudioEngine } from "./audio/engine";
 import { fallbackArrivalTone, toneForShape } from "./audio/mappings";
 import { InspectorPanel } from "./inspector/panel";
 import { HoverTooltip } from "./inspector/hover";
+import { ControlsBar, type ControlIntent } from "./ui/controls";
+import { FaultOverlay, HeartbeatBadge, PerfOverlay, WarningStrip } from "./ui/overlays";
 
 interface AppState {
   theme: ThemePayload;
@@ -49,6 +51,12 @@ interface AppState {
   audio: AudioEngine;
   inspector: InspectorPanel | null;
   hover: HoverTooltip | null;
+  controls: ControlsBar | null;
+  fault: FaultOverlay | null;
+  warnings: WarningStrip | null;
+  heartbeat: HeartbeatBadge | null;
+  perf: PerfOverlay | null;
+  paused: boolean;
   /** id_map from the last Static message, for hover labels. */
   idMap: Record<number, string>;
   lastSnapshotAt: number;
@@ -72,6 +80,12 @@ function createAppState(): AppState {
     audio: new AudioEngine(),
     inspector: null,
     hover: null,
+    controls: null,
+    fault: null,
+    warnings: null,
+    heartbeat: null,
+    perf: null,
+    paused: false,
     idMap: {},
     lastSnapshotAt: 0,
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
@@ -84,6 +98,27 @@ function createAppState(): AppState {
 function findArrivalNode(snap: SnapshotPayload, nodeId: number): NodeSnapshot | undefined {
   for (const n of snap.nodes) if (n.id === nodeId) return n;
   return undefined;
+}
+
+function handleControl(intent: ControlIntent, state: AppState): void {
+  switch (intent.kind) {
+    case "TogglePause":
+      state.paused = !state.paused;
+      break;
+    case "Step":
+      // P2: send to backend. P1 logs intent so the UI is exercised.
+      console.info("simetro: step requested (P1 stub)");
+      break;
+    case "Reload":
+      // Step 22 will route this through Tauri to re-read the JSON.
+      // For now, force a fault-overlay dismissal and clear snapshots.
+      if (state.fault !== null) state.fault.hide();
+      console.info("simetro: reload requested (P1 stub)");
+      break;
+    case "SetSpeed":
+      console.info(`simetro: speed ${intent.factor}× requested (P1 stub)`);
+      break;
+  }
 }
 
 function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): void {
@@ -132,16 +167,18 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       }
       return;
     case "Fault":
+      if (state.fault !== null) state.fault.show(msg.payload);
+      return;
     case "Warning":
-      // Wired in Step 21 (UI shell + overlays).
+      if (state.warnings !== null) state.warnings.push(msg.payload);
       return;
   }
 }
 
 function frame(state: AppState, renderer: Renderer): void {
   const cur = state.snapshots.current();
+  const now = nowMs();
   if (cur !== null) {
-    const now = nowMs();
     const elapsed = now - state.lastSnapshotAt;
     const alpha =
       state.snapshots.previous() === null
@@ -155,6 +192,9 @@ function frame(state: AppState, renderer: Renderer): void {
       overlay: (ctx) => state.animations.draw(ctx, now, state.theme, cur),
     });
   }
+  if (state.warnings !== null) state.warnings.tick(now);
+  if (state.heartbeat !== null) state.heartbeat.update(state.lastSnapshotAt, now);
+  if (state.perf !== null) state.perf.tick(now);
   state.rafHandle = requestAnimationFrame(() => frame(state, renderer));
 }
 
@@ -187,6 +227,24 @@ function boot(): void {
     state.inspector = new InspectorPanel(appRoot);
     state.hover = new HoverTooltip(appRoot);
     state.hover.attach(canvas);
+    state.fault = new FaultOverlay(appRoot);
+    state.warnings = new WarningStrip(appRoot);
+    state.heartbeat = new HeartbeatBadge(appRoot);
+    state.perf = new PerfOverlay(appRoot);
+    state.controls = new ControlsBar(appRoot, (intent: ControlIntent) => {
+      handleControl(intent, state);
+    });
+
+    // ?perf=1 turns on the perf overlay; 'P' key toggles.
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("perf") === "1") state.perf.setEnabled(true);
+      window.addEventListener("keydown", (ev) => {
+        if (ev.key === "p" || ev.key === "P") {
+          if (state.perf !== null) state.perf.toggle();
+        }
+      });
+    }
   }
 
   window.addEventListener("resize", () => resize(canvas));
