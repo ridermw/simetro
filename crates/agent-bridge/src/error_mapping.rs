@@ -47,6 +47,12 @@ use crate::error::LlmError;
 /// `lag_frames` is the engine-tick-count equivalent of the error's
 /// time field; computed by the caller from the engine's `world.dt`.
 /// Only consulted for `Timeout` and `RateLimited`; ignored otherwise.
+/// For `Timeout` and `RateLimited`, `lag_frames` is **clamped to a
+/// minimum of 1** because `Warning::Behind { lag_frames: 0 }` would
+/// semantically mean "on time" — which contradicts the error type.
+/// Callers should still pass the true elapsed value; the clamp
+/// catches edge cases where the timeout fires in less than one
+/// engine frame (`elapsed_ms < world_dt_ms`).
 #[must_use]
 pub fn llm_error_to_message(
     err: &LlmError,
@@ -85,7 +91,7 @@ pub fn llm_error_to_message(
             agent_id,
             elapsed_ms: _,
         } => SimMessage::Warning(WarningPayload::Behind {
-            lag_frames,
+            lag_frames: lag_frames.max(1),
             agent_id: Some(agent_id.clone()),
         }),
 
@@ -95,7 +101,7 @@ pub fn llm_error_to_message(
             // the caller-supplied identifier. The retry_after_ms is
             // already encoded in the lag_frames the caller computed.
             SimMessage::Warning(WarningPayload::Behind {
-                lag_frames,
+                lag_frames: lag_frames.max(1),
                 agent_id: Some(fallback_agent_id.to_string()),
             })
         }
@@ -405,6 +411,61 @@ mod tests {
                 matches!(msg, SimMessage::Warning(_)),
                 "variant {err:?} should produce a Warning, not {msg:?}"
             );
+        }
+    }
+
+    /// Closes PR #11 R1 MEDIUM: `Warning::Behind { lag_frames: 0 }`
+    /// semantically means "on time", which contradicts the error.
+    /// Verify the mapping clamps to a minimum of 1 for Timeout +
+    /// RateLimited so the resulting Warning is never self-contradictory.
+    #[test]
+    fn timeout_clamps_lag_frames_to_minimum_of_one() {
+        let err = LlmError::Timeout {
+            agent_id: "agent".into(),
+            elapsed_ms: 100,
+        };
+        let msg = llm_error_to_message(&err, "fallback", 0);
+        match msg {
+            SimMessage::Warning(WarningPayload::Behind { lag_frames, .. }) => {
+                assert!(
+                    lag_frames >= 1,
+                    "Timeout must produce Behind with lag_frames >= 1, got {lag_frames}"
+                );
+            }
+            other => panic!("expected Warning::Behind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rate_limited_clamps_lag_frames_to_minimum_of_one() {
+        let err = LlmError::RateLimited { retry_after_ms: 50 };
+        let msg = llm_error_to_message(&err, "agent", 0);
+        match msg {
+            SimMessage::Warning(WarningPayload::Behind { lag_frames, .. }) => {
+                assert!(
+                    lag_frames >= 1,
+                    "RateLimited must produce Behind with lag_frames >= 1, got {lag_frames}"
+                );
+            }
+            other => panic!("expected Warning::Behind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn timeout_preserves_lag_frames_when_already_nonzero() {
+        let err = LlmError::Timeout {
+            agent_id: "agent".into(),
+            elapsed_ms: 60_000,
+        };
+        let msg = llm_error_to_message(&err, "fallback", 42);
+        match msg {
+            SimMessage::Warning(WarningPayload::Behind { lag_frames, .. }) => {
+                assert_eq!(
+                    lag_frames, 42,
+                    "non-zero caller-supplied lag_frames must pass through unmodified"
+                );
+            }
+            other => panic!("expected Warning::Behind, got {other:?}"),
         }
     }
 }
