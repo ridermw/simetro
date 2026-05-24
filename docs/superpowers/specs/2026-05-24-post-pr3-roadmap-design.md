@@ -1,10 +1,9 @@
 # simetro — Post-PR-#3 Roadmap (Phase 2 + Phase 3) — Design Spec
 
 **Date:** 2026-05-24
-**Status:** Draft — awaiting user review (user is unavailable for ~6 hours)
+**Status:** Active (approved via PR P2.A0.1)
 **Authors:** Copilot CLI (Claude Opus 4.7), on behalf of @ridermw
-**Supersedes:** session draft at
-`/Users/mattheww/.copilot/session-state/664f56f2-47b6-44bf-8ed6-68f2180ac0f7/plan.md`
+**Supersedes:** session-state brainstorming draft (not checked in)
 
 ---
 
