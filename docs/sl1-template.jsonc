@@ -61,7 +61,11 @@
         "role": "source",                      // open string; conventional roles: source, compute_cluster, dashboard, operator
         "pos": [-200.0, 0.0],
         "capacity": { "events_per_tick": 100 },
-        "storage": {},
+        "storage": {
+          // Sources of source_multiplier pressure need a storage slot
+          // for the thing being injected.
+          "raw_event": { "capacity": 100, "initial": 0 }
+        },
         "accepts": [],
         "produces": ["raw_event"],
         "failure_domains": ["region-a"],
@@ -80,11 +84,12 @@
         "produces": ["processed_event"],
         "failure_domains": ["region-a"],
         "operating_states": {
-          // Typed predicates only. Supported forms:
-          //   "used_percent_gte:<bucket>:<percent 0..=100>"
-          //   "overloaded_ticks_gt:<n>"
-          //   "inventory_gte:<thing_id>:<count>"
-          "saturated": { "when": "used_percent_gte:compute_slots:90" }
+          // Predicates are a fixed template language, NOT an expression
+          // engine. Supported forms (PR 1):
+          //   "<capacity_bucket>.used_percent >= <0..=100>"
+          //   "overloaded_ticks > <ticks>"
+          // PRs 3 and 9 add `inventory >= N` and `metric >= N` templates.
+          "saturated": { "when": "compute_slots.used_percent >= 90" }
         }
       },
       {
@@ -101,20 +106,26 @@
     ],
 
     // LINKS (PR 2). Declarative edges between places. Required:
-    // id, type, from, to, direction, capacity, travel_ticks,
-    // backpressure. compatibility list is canonicalized.
+    // id, type, from, to, capacity, travel_ticks, queue_capacity,
+    // direction, backpressure. compatibility list is canonicalized.
+    //
+    // direction: "forward" | "bidirectional"
+    // backpressure (closed set): "block_upstream" | "drop_low_priority"
+    //                            | "spill_to_buffer" | "degrade_quality"
+    // type is an open string; conventional values include "data_stream",
+    // "control_bus", "physical".
     "links": [
       {
         "id": "src_to_proc",
-        "type": "data_flow",
+        "type": "data_stream",
         "from": "source",
         "to": "processor",
-        "direction": "forward",                // "forward" | "bidirectional"
+        "direction": "forward",
         "capacity": { "events_per_tick": 100 },
         "travel_ticks": 1,
         "compatibility": ["raw_event"],
         "queue_capacity": 200,
-        "backpressure": "drop_oldest"          // "block" | "drop_oldest" | "drop_newest"
+        "backpressure": "drop_low_priority"
       }
     ],
 
@@ -127,7 +138,8 @@
         "kind": "telemetry",
         "tags": ["raw"],
         "freshness_budget_ticks": 50,
-        "quality_contract": { "max_drop_percent": 5.0, "max_late_ticks": 10 }
+        // max_drop_percent is a fraction in [0.0, 1.0] (not %); 0.05 = 5%.
+        "quality_contract": { "max_drop_percent": 0.05, "max_late_ticks": 10 }
       },
       {
         "id": "processed_event",
@@ -155,26 +167,37 @@
     ],
 
     // DEMAND (PR 5). Drives the world. Score-bearing.
+    // Strict-schema: `type` discriminator (rename = "type"), and
+    // target uses `{ "type": "place", "id": "..." }`. Only target
+    // kind `"place"` is runtime-implemented in PR 8.
     "demand": [
       {
         "id": "deliver_events",
-        "kind": "queries",
-        "target": { "kind": "place", "id": "sink" },
+        "type": "queries",
+        "target": { "type": "place", "id": "sink" },
         "requires": ["processed_event"],
-        "spawn_schedule": { "type": "fixed", "every_ticks": 30, "start_tick": 0 },
+        "spawn_schedule": { "type": "fixed", "every_ticks": 30, "start_tick": 30 },
         "deadline_ticks": 60,
-        "priority": "normal",                  // "low" | "normal" | "high"
+        "priority": "normal",                  // "low" | "normal" | "high" | "critical"
         "value": 10,
         "penalty": { "score": -5, "warning": "deliver_events_dropped" }
       }
     ],
 
-    // PRESSURE (PR 7). Scheduled disturbances. Typed discriminator;
-    // every variant carries its own parameter shape. Supported in
-    // this build: source_multiplier, demand_growth, quota_reduction,
-    // path_outage. Variants like schema_drift, dashboard_storm,
-    // spot_eviction_wave, storage_metadata_storm, cooling_degradation
-    // load fine but emit `Sl1Warning::PressureUnsupportedInThisPr`.
+    // PRESSURE (PR 7). Scheduled disturbances. `type` discriminator;
+    // every variant carries its own parameter shape. Runtime-active
+    // in this build: source_multiplier, demand_growth, quota_reduction,
+    // path_outage. Recognized-but-unsupported (load fine, emit
+    // `Sl1Warning::PressureUnsupportedInThisPr` at activation):
+    // schema_drift, dashboard_storm, spot_eviction_wave,
+    // storage_metadata_storm, cooling_degradation.
+    //
+    // source_multiplier requires: target (place), thing (id),
+    //   multiplier (f64; 2.0 = double).
+    // demand_growth requires: target (demand id), spawn_multiplier (u32; 1 = double).
+    // quota_reduction requires: target (place), capacity (bucket key),
+    //   reduction_percent (1..=100).
+    // path_outage requires: target (link id).
     "pressure": [
       {
         "id": "rush_hour",
@@ -182,66 +205,90 @@
         "at_tick": 100,
         "duration_ticks": 60,
         "target": "source",
-        "multiplier": 200                      // basis points; 200 = +2x
+        "thing": "raw_event",
+        "multiplier": 2.0
       }
     ],
 
     // OBJECTIVES (PR 8). Win/loss progress signals. Each carries a
-    // weight in [0, MAX_OBJECTIVE_WEIGHT]. Supported runtime kinds:
+    // weight in `1..=MAX_OBJECTIVE_WEIGHT`. Runtime-evaluated kinds:
     // keep_fresh, complete_jobs_before_deadline, maintain_utilization.
-    // Recognized but not-yet-evaluated kinds emit
-    // `Sl1Warning::ObjectiveUnsupportedInThisPr`.
+    // Recognized-but-unsupported kinds (cost_budget, data_quality,
+    // query_latency) load fine but emit
+    // `Sl1Warning::ObjectiveUnsupportedInThisPr` on first eval; their
+    // progress stays `Unsupported` for the rest of the run.
+    //
+    // keep_fresh requires: place, thing, max_stale_ticks.
+    // complete_jobs_before_deadline requires: demand, max_missed.
+    // maintain_utilization requires: place, capacity, min_percent, max_percent.
     "objectives": [
       {
         "id": "events_fresh",
         "type": "keep_fresh",
-        "target": { "kind": "place", "id": "sink" },
+        "place": "sink",
         "thing": "processed_event",
-        "max_age_ticks": 30,
+        "max_stale_ticks": 30,
         "weight": 1
       }
     ],
 
     // FAILURE_CONDITIONS (PR 8). Fire → GameOutcome::Lost.
+    //
+    // stale_target requires: place, thing, threshold_ticks, grace_ticks (optional).
+    // place_state requires: place, state (must match a key in places[].operating_states).
+    // objective_breach_count requires: objective_id, max_count.
     "failure_conditions": [
       {
         "id": "no_events_for_too_long",
         "type": "stale_target",
-        "target": { "kind": "place", "id": "sink" },
+        "place": "sink",
         "thing": "processed_event",
-        "max_age_ticks": 120,
+        "threshold_ticks": 120,
         "grace_ticks": 0
       }
     ],
 
     // VICTORY_CONDITIONS (PR 8). Fire → GameOutcome::Won.
+    // Only `survive_until` is runtime-evaluated in this build.
     "victory_conditions": [
-      { "id": "survive_500", "type": "survive_ticks", "at_tick": 500 }
+      { "id": "survive_500", "type": "survive_until", "at_tick": 500 }
     ],
 
     // OBSERVABILITY (PR 9). Metrics + dashboards + alerts.
+    //
+    // Metric `source` is a string discriminator with flat optional fields:
+    //   "place_inventory_count"        requires: place, thing
+    //   "place_capacity_used_percent"  requires: place, capacity
+    //   "dashboard_freshness"          requires: dashboard
+    //
+    // Alert `predicate` is a `#[serde(tag = "type")]` enum:
+    //   { "type": "gt", "threshold": N }
+    //   { "type": "lt", "threshold": N }
+    //   { "type": "out_of_range", "min": A, "max": B }  // fires when value < min or value > max
+    //
+    // Dashboard `type` is "report" | "live" | "ad_hoc".
     "observability": {
       "metrics": [
         {
           "id": "sink_inventory",
-          "source": { "kind": "inventory", "place": "sink", "thing": "processed_event" },
-          "window_ticks": 10
+          "source": "place_inventory_count",
+          "place": "sink",
+          "thing": "processed_event"
         }
       ],
       "dashboards": [
         {
           "id": "ops",
-          "type": "telemetry",
+          "type": "live",
           "depends_on": ["processed_event"],
-          "freshness_slo_ticks": 60,
-          "query_cost": {}
+          "freshness_slo_ticks": 60
         }
       ],
       "alerts": [
         {
           "id": "sink_empty",
           "metric": "sink_inventory",
-          "predicate": { "kind": "lt", "value": 1 },
+          "predicate": { "type": "lt", "threshold": 1 },
           "severity": "warning"                // "info" | "warning" | "critical"
         }
       ]
@@ -249,31 +296,52 @@
 
     // AGENTS (PR 10). Scoped action surface. Each agent declares the
     // small set of typed actions it is allowed to take.
+    //
+    // `budgets` is a required object with BOTH `max_cost_per_decision`
+    // and `cooldown_ticks` (under deny_unknown_fields, cooldown_ticks
+    // must NOT be a top-level field on the agent).
+    //
+    // Allowed action kinds (closed set): set_job_priority,
+    // throttle_demand, scale_place_capacity, warm_cache,
+    // prioritize_transform, pause_report_refresh.
     "agents": [
       {
         "id": "throttler",
         "kind": "builtin",                     // "mock" | "builtin" | "llm" (feature-gated)
         "role": "throttle source events",
         "interval_ticks": 60,
-        "observation_scope": ["sink_inventory"],
+        "observation_scope": ["metric:sink_inventory"],
         "allowed_actions": ["throttle_demand"],
-        "budgets": { "max_cost_per_decision": 10 },
-        "cooldown_ticks": 120,
-        "objective_weights": { "events_fresh": 1 }
+        "budgets": {
+          "max_cost_per_decision": 10,
+          "cooldown_ticks": 120
+        },
+        "objective_weights": { "events_fresh": 1.0 }
       }
     ],
 
     // MILESTONES (PR 11). Narrative chips in the HUD; DecisionTimeline.
+    //
+    // Trigger is a `#[serde(tag = "type")]` enum:
+    //   { "type": "pressure_activated", "pressure": "<id>" }
+    //   { "type": "pressure_deactivated", "pressure": "<id>" }
+    //   { "type": "metric_threshold", "metric": "<id>", "predicate": "gte"|"lte"|"gt"|"lt", "value": N }
+    //   { "type": "dashboard_state", "dashboard": "<id>", "state": "ok"|"stale"|"no_data" }
     "milestones": [
       {
         "id": "first_event",
         "label": "First event delivered",
-        "trigger": { "kind": "metric_threshold", "metric": "sink_inventory", "predicate": { "kind": "gte", "value": 1 } }
+        "trigger": {
+          "type": "metric_threshold",
+          "metric": "sink_inventory",
+          "predicate": "gte",
+          "value": 1
+        }
       },
       {
         "id": "pressure_arrives",
         "label": "Rush hour",
-        "trigger": { "kind": "pressure_start", "pressure": "rush_hour" }
+        "trigger": { "type": "pressure_activated", "pressure": "rush_hour" }
       }
     ]
   }
