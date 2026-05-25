@@ -19,247 +19,221 @@
     "title": "Seed Bank Vault",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A cryogenic seed vault network linking accession rooms, drying chambers, and cold-store vaults.",
+    "description": "A global seed bank with mirrored left and right cold-storage arms branching from a central vault and intake/drying gateway.",
     "tags": [
       "seed_bank",
+      "easy",
       "legacy",
       "transit_loop",
-      "easy",
       "draft"
     ],
-    "palette_note": "Transit palette for easy: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Seed Bank Vault colour theme.",
+    "layout_note": "11 nodes forming a seed_bank topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting seed_bank roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.60\u20131.20.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "vault",
         "pos": [
-          200,
+          0,
           0
         ],
-        "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
+        "shape": "hexagon",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "corr-l",
         "pos": [
-          61,
-          190
+          -160,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "square",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "cold-l1",
         "pos": [
-          -61,
-          190
+          -300,
+          120
         ],
         "shape": "diamond",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "cold-l2",
         "pos": [
-          -161,
-          117
+          -300,
+          -120
         ],
-        "shape": "triangle",
-        "color": 5
+        "shape": "diamond",
+        "color": 4
       },
       {
-        "id": "n5",
+        "id": "lab-l",
         "pos": [
-          -200,
+          -420,
           0
         ],
         "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "corr-r",
+        "pos": [
+          160,
+          0
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "cold-r1",
+        "pos": [
+          300,
+          120
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "cold-r2",
+        "pos": [
+          300,
+          -120
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "lab-r",
+        "pos": [
+          420,
+          0
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "intake",
+        "pos": [
+          0,
+          200
+        ],
+        "shape": "triangle",
         "color": 6
       },
       {
-        "id": "n6",
+        "id": "drying",
         "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
-        "color": 2
-      },
-      {
-        "id": "n8",
-        "pos": [
-          61,
-          -190
-        ],
-        "shape": "diamond",
-        "color": 3
-      },
-      {
-        "id": "n9",
-        "pos": [
-          161,
-          -117
+          0,
+          -200
         ],
         "shape": "triangle",
-        "color": 4
-      },
-      {
-        "id": "hub-a",
-        "pos": [
-          -80,
-          -40
-        ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "hub-b",
-        "pos": [
-          80,
-          40
-        ],
-        "shape": "diamond",
-        "color": 5
+        "color": 6
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
-        "color": 2
-      },
-      {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "vault-cl",
+        "from": "vault",
+        "to": "corr-l",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "vault-cr",
+        "from": "vault",
+        "to": "corr-r",
+        "color": 3
+      },
+      {
+        "id": "cl-l1",
+        "from": "corr-l",
+        "to": "cold-l1",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "cl-l2",
+        "from": "corr-l",
+        "to": "cold-l2",
+        "color": 4
+      },
+      {
+        "id": "l1-lab",
+        "from": "cold-l1",
+        "to": "lab-l",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
-        "color": 6
+        "id": "l2-lab",
+        "from": "cold-l2",
+        "to": "lab-l",
+        "color": 5
       },
       {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
-        "color": 3
-      },
-      {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
+        "id": "cr-r1",
+        "from": "corr-r",
+        "to": "cold-r1",
         "color": 4
       },
       {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
-      },
-      {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
+        "id": "cr-r2",
+        "from": "corr-r",
+        "to": "cold-r2",
         "color": 4
       },
       {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
-        "color": 3
+        "id": "r1-lab",
+        "from": "cold-r1",
+        "to": "lab-r",
+        "color": 5
       },
       {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
+        "id": "r2-lab",
+        "from": "cold-r2",
+        "to": "lab-r",
+        "color": 5
+      },
+      {
+        "id": "intake-vault",
+        "from": "intake",
+        "to": "vault",
+        "color": 2
+      },
+      {
+        "id": "vault-drying",
+        "from": "vault",
+        "to": "drying",
         "color": 6
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
-        "speed": 1.5
+        "id": "tray-1",
+        "on_path": "vault-cl",
+        "speed": 0.6
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "tray-2",
+        "on_path": "vault-cr",
+        "speed": 0.6
       },
       {
-        "id": "m2",
-        "on_path": "p4",
+        "id": "tray-3",
+        "on_path": "cl-l1",
+        "speed": 0.9
+      },
+      {
+        "id": "tray-4",
+        "on_path": "cr-r2",
+        "speed": 0.9
+      },
+      {
+        "id": "tray-5",
+        "on_path": "intake-vault",
         "speed": 1.2
-      },
-      {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
-      },
-      {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
-      },
-      {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
       }
     ]
   },

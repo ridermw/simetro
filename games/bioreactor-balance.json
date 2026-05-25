@@ -19,247 +19,256 @@
     "title": "Bioreactor Balance",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A bioprocess plant where inoculation stations, bioreactors, centrifuges, and formulation tanks form a batch-production ring.",
+    "description": "A bioprocess plant with dual top/bottom pipelines (inoculation\u2192harvest and media\u2192formulation) bridged by three cross-connectors.",
     "tags": [
       "bioreactor",
+      "medium",
       "legacy",
       "transit_loop",
-      "medium",
       "draft"
     ],
-    "palette_note": "Transit palette for medium: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Bioreactor Balance colour theme.",
+    "layout_note": "13 nodes forming a bioreactor topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting bioreactor roles.",
+    "mover_path_note": "6 movers on distinct paths at speeds 0.70\u20131.40.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "inoc",
         "pos": [
-          200,
-          0
+          -320,
+          140
         ],
         "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "seed-tank",
         "pos": [
-          61,
-          190
+          -160,
+          140
         ],
         "shape": "hexagon",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "bioreactor",
         "pos": [
-          -61,
-          190
+          0,
+          140
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "centrifuge",
         "pos": [
-          -161,
-          117
+          160,
+          140
         ],
-        "shape": "triangle",
+        "shape": "square",
         "color": 5
       },
       {
-        "id": "n5",
+        "id": "harvest",
         "pos": [
-          -200,
-          0
+          320,
+          140
         ],
-        "shape": "circle",
+        "shape": "diamond",
         "color": 6
       },
       {
-        "id": "n6",
+        "id": "media",
         "pos": [
-          -161,
-          -117
+          -320,
+          -140
         ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
+        "shape": "circle",
         "color": 2
       },
       {
-        "id": "n8",
+        "id": "buffer-tank",
         "pos": [
-          61,
-          -190
+          -160,
+          -140
         ],
-        "shape": "diamond",
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "fermenter",
+        "pos": [
+          0,
+          -140
+        ],
+        "shape": "hexagon",
         "color": 3
       },
       {
-        "id": "n9",
+        "id": "filter",
         "pos": [
-          161,
-          -117
+          160,
+          -140
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "formulate",
+        "pos": [
+          320,
+          -140
+        ],
+        "shape": "triangle",
+        "color": 6
+      },
+      {
+        "id": "bridge-left",
+        "pos": [
+          -160,
+          0
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "bridge-mid",
+        "pos": [
+          80,
+          0
         ],
         "shape": "triangle",
         "color": 4
       },
       {
-        "id": "hub-a",
+        "id": "bridge-right",
         "pos": [
-          -80,
-          -40
+          320,
+          0
         ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "hub-b",
-        "pos": [
-          80,
-          40
-        ],
-        "shape": "diamond",
+        "shape": "triangle",
         "color": 5
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
+        "id": "tp-0",
+        "from": "inoc",
+        "to": "seed-tank",
         "color": 2
       },
       {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "tp-1",
+        "from": "seed-tank",
+        "to": "bioreactor",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "tp-2",
+        "from": "bioreactor",
+        "to": "centrifuge",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "tp-3",
+        "from": "centrifuge",
+        "to": "harvest",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
-        "color": 6
-      },
-      {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
+        "id": "bp-0",
+        "from": "media",
+        "to": "buffer-tank",
         "color": 2
       },
       {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
-        "color": 3
-      },
-      {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
+        "id": "bp-1",
+        "from": "buffer-tank",
+        "to": "fermenter",
         "color": 4
       },
       {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
-      },
-      {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
+        "id": "bp-2",
+        "from": "fermenter",
+        "to": "filter",
         "color": 3
       },
       {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
-        "color": 6
+        "id": "bp-3",
+        "from": "filter",
+        "to": "formulate",
+        "color": 5
+      },
+      {
+        "id": "xb-l-top",
+        "from": "inoc",
+        "to": "bridge-left",
+        "color": 3
+      },
+      {
+        "id": "xb-l-bot",
+        "from": "bridge-left",
+        "to": "buffer-tank",
+        "color": 3
+      },
+      {
+        "id": "xb-m-top",
+        "from": "bioreactor",
+        "to": "bridge-mid",
+        "color": 4
+      },
+      {
+        "id": "xb-m-bot",
+        "from": "bridge-mid",
+        "to": "fermenter",
+        "color": 4
+      },
+      {
+        "id": "xb-r-top",
+        "from": "harvest",
+        "to": "bridge-right",
+        "color": 5
+      },
+      {
+        "id": "xb-r-bot",
+        "from": "bridge-right",
+        "to": "formulate",
+        "color": 5
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
-        "speed": 1.5
+        "id": "culture-a",
+        "on_path": "tp-0",
+        "speed": 0.7
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "culture-b",
+        "on_path": "bp-2",
+        "speed": 0.9
       },
       {
-        "id": "m2",
-        "on_path": "p4",
+        "id": "culture-c",
+        "on_path": "xb-l-top",
         "speed": 1.2
       },
       {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
+        "id": "culture-d",
+        "on_path": "xb-m-bot",
+        "speed": 1.0
       },
       {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
+        "id": "culture-e",
+        "on_path": "tp-3",
+        "speed": 1.4
       },
       {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
+        "id": "culture-f",
+        "on_path": "bp-0",
+        "speed": 0.8
       }
     ]
   },

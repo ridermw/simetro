@@ -19,247 +19,369 @@
     "title": "Autonomous Farm Season",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "An autonomous farm where planting robots, soil sensors, harvest drones, and grain-store nodes form a seasonal production loop.",
+    "description": "An autonomous farm laid out as a 5\u00d73 seasonal grid (spring\u2013harvest rows, west\u2013east columns) with horizontal irrigation lanes, vertical growth channels, and diagonal crop-routing shortcuts.",
     "tags": [
       "farm",
+      "hard",
       "legacy",
       "transit_loop",
-      "hard",
       "draft"
     ],
-    "palette_note": "Transit palette for hard: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Autonomous Farm Season colour theme.",
+    "layout_note": "15 nodes forming a farm topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting farm roles.",
+    "mover_path_note": "7 movers on distinct paths at speeds 0.80\u20131.60.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "field-spring-west",
         "pos": [
-          200,
-          0
+          -260,
+          240
         ],
-        "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
+        "shape": "triangle",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "field-spring-mid",
         "pos": [
-          61,
-          190
+          0,
+          240
         ],
-        "shape": "hexagon",
+        "shape": "circle",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "field-spring-east",
         "pos": [
-          -61,
-          190
+          260,
+          240
         ],
-        "shape": "diamond",
+        "shape": "triangle",
+        "color": 2
+      },
+      {
+        "id": "field-early-west",
+        "pos": [
+          -260,
+          120
+        ],
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "field-early-mid",
+        "pos": [
+          0,
+          120
+        ],
+        "shape": "hexagon",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "field-early-east",
         "pos": [
-          -161,
-          117
+          260,
+          120
         ],
-        "shape": "triangle",
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "field-peak-west",
+        "pos": [
+          -260,
+          0
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "field-peak-mid",
+        "pos": [
+          0,
+          0
+        ],
+        "shape": "diamond",
         "color": 5
       },
       {
-        "id": "n5",
+        "id": "field-peak-east",
         "pos": [
-          -200,
+          260,
           0
         ],
-        "shape": "circle",
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "field-late-west",
+        "pos": [
+          -260,
+          -120
+        ],
+        "shape": "hexagon",
+        "color": 5
+      },
+      {
+        "id": "field-late-mid",
+        "pos": [
+          0,
+          -120
+        ],
+        "shape": "square",
         "color": 6
       },
       {
-        "id": "n6",
+        "id": "field-late-east",
         "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
+          260,
+          -120
         ],
         "shape": "hexagon",
-        "color": 2
+        "color": 5
       },
       {
-        "id": "n8",
+        "id": "field-harvest-west",
         "pos": [
-          61,
-          -190
+          -260,
+          -240
         ],
         "shape": "diamond",
-        "color": 3
+        "color": 6
       },
       {
-        "id": "n9",
+        "id": "field-harvest-mid",
         "pos": [
-          161,
-          -117
+          0,
+          -240
         ],
         "shape": "triangle",
         "color": 4
       },
       {
-        "id": "hub-a",
+        "id": "field-harvest-east",
         "pos": [
-          -80,
-          -40
-        ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "hub-b",
-        "pos": [
-          80,
-          40
+          260,
+          -240
         ],
         "shape": "diamond",
-        "color": 5
+        "color": 6
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
+        "id": "h-spring-0",
+        "from": "field-spring-west",
+        "to": "field-spring-mid",
         "color": 2
       },
       {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "h-spring-1",
+        "from": "field-spring-mid",
+        "to": "field-spring-east",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "h-early-0",
+        "from": "field-early-west",
+        "to": "field-early-mid",
+        "color": 3
+      },
+      {
+        "id": "h-early-1",
+        "from": "field-early-mid",
+        "to": "field-early-east",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "h-peak-0",
+        "from": "field-peak-west",
+        "to": "field-peak-mid",
+        "color": 4
+      },
+      {
+        "id": "h-peak-1",
+        "from": "field-peak-mid",
+        "to": "field-peak-east",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
+        "id": "h-late-0",
+        "from": "field-late-west",
+        "to": "field-late-mid",
+        "color": 5
+      },
+      {
+        "id": "h-late-1",
+        "from": "field-late-mid",
+        "to": "field-late-east",
         "color": 6
       },
       {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
-        "color": 3
-      },
-      {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
-        "color": 4
-      },
-      {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
-      },
-      {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
-        "color": 3
-      },
-      {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
+        "id": "h-harvest-0",
+        "from": "field-harvest-west",
+        "to": "field-harvest-mid",
         "color": 6
+      },
+      {
+        "id": "h-harvest-1",
+        "from": "field-harvest-mid",
+        "to": "field-harvest-east",
+        "color": 4
+      },
+      {
+        "id": "v-west-0",
+        "from": "field-spring-west",
+        "to": "field-early-west",
+        "color": 2
+      },
+      {
+        "id": "v-west-1",
+        "from": "field-early-west",
+        "to": "field-peak-west",
+        "color": 3
+      },
+      {
+        "id": "v-west-2",
+        "from": "field-peak-west",
+        "to": "field-late-west",
+        "color": 4
+      },
+      {
+        "id": "v-west-3",
+        "from": "field-late-west",
+        "to": "field-harvest-west",
+        "color": 5
+      },
+      {
+        "id": "v-mid-0",
+        "from": "field-spring-mid",
+        "to": "field-early-mid",
+        "color": 3
+      },
+      {
+        "id": "v-mid-1",
+        "from": "field-early-mid",
+        "to": "field-peak-mid",
+        "color": 4
+      },
+      {
+        "id": "v-mid-2",
+        "from": "field-peak-mid",
+        "to": "field-late-mid",
+        "color": 5
+      },
+      {
+        "id": "v-mid-3",
+        "from": "field-late-mid",
+        "to": "field-harvest-mid",
+        "color": 6
+      },
+      {
+        "id": "v-east-0",
+        "from": "field-spring-east",
+        "to": "field-early-east",
+        "color": 2
+      },
+      {
+        "id": "v-east-1",
+        "from": "field-early-east",
+        "to": "field-peak-east",
+        "color": 3
+      },
+      {
+        "id": "v-east-2",
+        "from": "field-peak-east",
+        "to": "field-late-east",
+        "color": 4
+      },
+      {
+        "id": "v-east-3",
+        "from": "field-late-east",
+        "to": "field-harvest-east",
+        "color": 5
+      },
+      {
+        "id": "d-spring-west-early-mid",
+        "from": "field-spring-west",
+        "to": "field-early-mid",
+        "color": 2
+      },
+      {
+        "id": "d-spring-mid-early-east",
+        "from": "field-spring-mid",
+        "to": "field-early-east",
+        "color": 3
+      },
+      {
+        "id": "d-early-mid-peak-east",
+        "from": "field-early-mid",
+        "to": "field-peak-east",
+        "color": 4
+      },
+      {
+        "id": "d-peak-west-late-mid",
+        "from": "field-peak-west",
+        "to": "field-late-mid",
+        "color": 4
+      },
+      {
+        "id": "d-late-mid-harvest-east",
+        "from": "field-late-mid",
+        "to": "field-harvest-east",
+        "color": 6
+      },
+      {
+        "id": "d-early-west-peak-mid",
+        "from": "field-early-west",
+        "to": "field-peak-mid",
+        "color": 3
+      },
+      {
+        "id": "d-peak-mid-harvest-west",
+        "from": "field-peak-mid",
+        "to": "field-harvest-west",
+        "color": 5
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
+        "id": "planter",
+        "on_path": "h-spring-0",
+        "speed": 0.8
+      },
+      {
+        "id": "irrigator",
+        "on_path": "v-mid-1",
+        "speed": 0.9
+      },
+      {
+        "id": "scout-drone",
+        "on_path": "d-spring-west-early-mid",
         "speed": 1.5
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "pesticide",
+        "on_path": "d-early-mid-peak-east",
+        "speed": 1.3
       },
       {
-        "id": "m2",
-        "on_path": "p4",
+        "id": "combine",
+        "on_path": "h-harvest-0",
+        "speed": 1.1
+      },
+      {
+        "id": "silo-truck",
+        "on_path": "v-east-3",
         "speed": 1.2
       },
       {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
-      },
-      {
-        "id": "m4",
-        "on_path": "p8",
+        "id": "soil-probe",
+        "on_path": "d-peak-mid-harvest-west",
         "speed": 1.6
-      },
-      {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
       }
     ]
   },

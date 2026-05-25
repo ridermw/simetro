@@ -3,13 +3,13 @@
   "name": "recycling-sort-floor",
   "theme": {
     "palette": [
-      "#1a1423",
-      "#fff7ed",
-      "#06d6a0",
-      "#ef476f",
-      "#118ab2",
-      "#ffd166",
-      "#c77dff"
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
     ],
     "background_index": 0,
     "font": "system-ui"
@@ -19,21 +19,19 @@
     "title": "Recycling Sort Floor",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A materials recovery facility where conveyor belts, sort robots, and balers must convert mixed waste into clean commodity streams before downstream markets close.",
+    "description": "A recycling sort floor where mixed waste streams are sorted, quarantined for contaminants, and baled for commodity markets under surge pressure.",
     "tags": [
       "recycling",
-      "sorting",
-      "materials",
+      "easy",
       "sl1",
       "scenario_language_v1",
-      "easy",
       "draft"
     ],
-    "palette_note": "Domain palette for recycling: dark background, distinct hues across the six places. High contrast for status visibility.",
-    "layout_note": "Six SL1 places form a source-to-output pipeline in the recycling domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
-    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
-    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
-    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
   },
   "pieces": {
     "nodes": [],
@@ -50,21 +48,21 @@
     "schema_version": 1,
     "places": [
       {
-        "id": "source-node",
+        "id": "intake-conveyor",
         "role": "source",
         "pos": [
           -360,
-          -80
+          -70
         ],
         "shape": "triangle",
         "color": 2,
         "capacity": {
-          "cap_a": 80
+          "conveyor_load": 80
         },
         "storage": {
           "mixed_waste": {
-            "capacity": 400,
-            "initial": 40
+            "capacity": 300,
+            "initial": 30
           }
         },
         "accepts": [],
@@ -73,35 +71,35 @@
         ],
         "failure_domains": [
           "recycling",
-          "input"
+          "intake"
         ],
         "operating_states": {
-          "saturated": {
-            "when": "cap_a.used_percent >= 80",
-            "grace_ticks": 5
+          "overloaded": {
+            "when": "conveyor_load.used_percent >= 85",
+            "grace_ticks": 3
           }
         }
       },
       {
-        "id": "stage-one",
+        "id": "sort-station",
         "role": "processor",
         "pos": [
-          -100,
+          -130,
           20
         ],
         "shape": "hexagon",
         "color": 3,
         "capacity": {
-          "cap_b": 24
+          "sort_bins": 60
         },
         "storage": {
           "mixed_waste": {
-            "capacity": 120,
-            "initial": 12
+            "capacity": 300,
+            "initial": 20
           },
           "sorted_fraction": {
-            "capacity": 80,
-            "initial": 8
+            "capacity": 200,
+            "initial": 15
           }
         },
         "accepts": [
@@ -112,137 +110,137 @@
         ],
         "failure_domains": [
           "recycling",
-          "stage1"
+          "sorting"
         ],
         "operating_states": {
-          "overloaded": {
-            "when": "cap_b.used_percent >= 85",
+          "congested": {
+            "when": "sort_bins.used_percent >= 80",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "buffer-node",
-        "role": "buffer",
+        "id": "quarantine-bin",
+        "role": "processor",
         "pos": [
-          120,
-          -80
+          70,
+          80
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4,
         "capacity": {
-          "cap_c": 60
+          "quarantine_slots": 20
         },
         "storage": {
           "sorted_fraction": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 100,
+            "initial": 5
           },
-          "baled_material": {
+          "quarantine_item": {
             "capacity": 60,
-            "initial": 6
+            "initial": 3
           }
         },
         "accepts": [
           "sorted_fraction"
         ],
         "produces": [
-          "baled_material"
+          "quarantine_item"
         ],
         "failure_domains": [
           "recycling",
-          "buffer"
+          "quarantine"
         ],
         "operating_states": {
           "full": {
-            "when": "cap_c.used_percent >= 85",
-            "grace_ticks": 8
+            "when": "quarantine_slots.used_percent >= 90",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-two",
-        "role": "processor",
+        "id": "baling-press",
+        "role": "buffer",
         "pos": [
-          320,
-          60
+          290,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "diamond",
         "color": 5,
         "capacity": {
-          "cap_d": 40
+          "press_throughput": 40
         },
         "storage": {
-          "baled_material": {
-            "capacity": 60,
-            "initial": 6
+          "sorted_fraction": {
+            "capacity": 150,
+            "initial": 10
           },
-          "commodity_unit": {
-            "capacity": 40,
-            "initial": 4
+          "baled_unit": {
+            "capacity": 100,
+            "initial": 8
           }
         },
         "accepts": [
-          "baled_material"
+          "sorted_fraction"
         ],
         "produces": [
-          "commodity_unit"
+          "baled_unit"
         ],
         "failure_domains": [
           "recycling",
-          "stage2"
+          "baling"
         ],
         "operating_states": {
-          "bottleneck": {
-            "when": "cap_d.used_percent >= 85",
+          "jammed": {
+            "when": "press_throughput.used_percent >= 88",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "output-node",
+        "id": "commodity-store",
         "role": "dashboard",
         "pos": [
-          520,
-          -60
+          510,
+          -50
         ],
         "shape": "square",
         "color": 6,
         "capacity": {
-          "cap_e": 50
+          "store_bays": 120
         },
         "storage": {
-          "commodity_unit": {
-            "capacity": 30,
-            "initial": 3
+          "baled_unit": {
+            "capacity": 100,
+            "initial": 6
           },
-          "manifest": {
-            "capacity": 30,
+          "commodity_manifest": {
+            "capacity": 60,
             "initial": 3
           }
         },
         "accepts": [
-          "commodity_unit"
+          "baled_unit"
         ],
         "produces": [
-          "manifest"
+          "commodity_manifest"
         ],
         "failure_domains": [
           "recycling",
-          "output"
+          "store"
         ],
         "operating_states": {
-          "report_lag": {
-            "when": "cap_e.used_percent >= 80",
-            "grace_ticks": 10
+          "near_full": {
+            "when": "store_bays.used_percent >= 90",
+            "grace_ticks": 6
           }
         }
       },
       {
-        "id": "operator-node",
+        "id": "floor-supervisor",
         "role": "operator",
         "pos": [
-          120,
+          70,
           -220
         ],
         "shape": "circle",
@@ -259,19 +257,19 @@
     ],
     "links": [
       {
-        "id": "link-src-s1",
-        "type": "recycling_feed",
-        "from": "source-node",
-        "to": "stage-one",
+        "id": "intake-sort",
+        "type": "waste_conveyor",
+        "from": "intake-conveyor",
+        "to": "sort-station",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 10
+          "volume_per_tick": 60
         },
         "travel_ticks": 1,
         "compatibility": [
           "mixed_waste"
         ],
-        "queue_capacity": 200,
+        "queue_capacity": 400,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -279,19 +277,19 @@
         }
       },
       {
-        "id": "link-s1-buf",
-        "type": "recycling_transfer",
-        "from": "stage-one",
-        "to": "buffer-node",
+        "id": "sort-quar",
+        "type": "reject_feed",
+        "from": "sort-station",
+        "to": "quarantine-bin",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 20
         },
         "travel_ticks": 2,
         "compatibility": [
           "sorted_fraction"
         ],
-        "queue_capacity": 60,
+        "queue_capacity": 100,
         "backpressure": "spill_to_buffer",
         "render": {
           "style": "flow",
@@ -299,19 +297,19 @@
         }
       },
       {
-        "id": "link-buf-s2",
-        "type": "recycling_relay",
-        "from": "buffer-node",
-        "to": "stage-two",
+        "id": "sort-bale",
+        "type": "bale_feed",
+        "from": "sort-station",
+        "to": "baling-press",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 40
         },
         "travel_ticks": 2,
         "compatibility": [
-          "baled_material"
+          "sorted_fraction"
         ],
-        "queue_capacity": 40,
+        "queue_capacity": 200,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -319,19 +317,19 @@
         }
       },
       {
-        "id": "link-s2-out",
-        "type": "recycling_delivery",
-        "from": "stage-two",
-        "to": "output-node",
+        "id": "bale-store",
+        "type": "store_feed",
+        "from": "baling-press",
+        "to": "commodity-store",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 8
+          "volume_per_tick": 30
         },
         "travel_ticks": 2,
         "compatibility": [
-          "commodity_unit"
+          "baled_unit"
         ],
-        "queue_capacity": 30,
+        "queue_capacity": 150,
         "backpressure": "drop_low_priority",
         "render": {
           "style": "flow",
@@ -339,10 +337,10 @@
         }
       },
       {
-        "id": "link-op-s1",
+        "id": "super-intake",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-one",
+        "from": "floor-supervisor",
+        "to": "intake-conveyor",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -355,10 +353,10 @@
         }
       },
       {
-        "id": "link-op-s2",
+        "id": "super-sort",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-two",
+        "from": "floor-supervisor",
+        "to": "sort-station",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -374,144 +372,144 @@
     "things": [
       {
         "id": "mixed_waste",
-        "kind": "bulk_material",
+        "kind": "material_unit",
         "tags": [
           "waste",
           "mixed",
-          "input"
+          "unsorted"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "sorted_fraction",
+        "kind": "material_unit",
+        "tags": [
+          "sorted",
+          "clean",
+          "recyclable"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "quarantine_item",
+        "kind": "audit_record",
+        "tags": [
+          "contaminated",
+          "quarantined",
+          "reject"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "baled_unit",
+        "kind": "material_unit",
+        "tags": [
+          "baled",
+          "compressed",
+          "ready"
         ],
         "freshness_budget_ticks": 300
       },
       {
-        "id": "sorted_fraction",
-        "kind": "separated_material",
-        "tags": [
-          "sorted",
-          "fraction",
-          "material"
-        ],
-        "freshness_budget_ticks": 400
-      },
-      {
-        "id": "baled_material",
-        "kind": "processed_material",
-        "tags": [
-          "baled",
-          "compressed",
-          "recycling"
-        ],
-        "freshness_budget_ticks": 600
-      },
-      {
-        "id": "commodity_unit",
-        "kind": "finished_good",
-        "tags": [
-          "commodity",
-          "sell",
-          "recycled"
-        ],
-        "freshness_budget_ticks": 1200
-      },
-      {
-        "id": "manifest",
-        "kind": "shipment_document",
+        "id": "commodity_manifest",
+        "kind": "compliance_record",
         "tags": [
           "manifest",
-          "shipment",
-          "compliance"
+          "commodity",
+          "sold"
         ],
-        "freshness_budget_ticks": 1800
+        "freshness_budget_ticks": 600
       }
     ],
     "transforms": [
       {
-        "id": "transform-s1",
-        "type": "recycling_process_a",
-        "runs_on": "stage-one",
+        "id": "sort-waste",
+        "type": "optical_sorting",
+        "runs_on": "sort-station",
         "inputs": [
           {
             "thing": "mixed_waste",
-            "amount": 2
+            "amount": 5
           }
         ],
         "outputs": [
           {
             "thing": "sorted_fraction",
-            "amount": 1
+            "amount": 3
           }
         ],
-        "cadence_ticks": 5,
-        "duration_ticks": 3,
-        "deadline_ticks": 10,
+        "cadence_ticks": 4,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
         "capacity_cost": {
-          "cap_b": 3
+          "sort_bins": 6
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-buf",
-        "type": "recycling_buffer_op",
-        "runs_on": "buffer-node",
+        "id": "quarantine-reject",
+        "type": "contamination_check",
+        "runs_on": "quarantine-bin",
         "inputs": [
           {
             "thing": "sorted_fraction",
-            "amount": 1
+            "amount": 2
           }
         ],
         "outputs": [
           {
-            "thing": "baled_material",
+            "thing": "quarantine_item",
             "amount": 1
           }
         ],
         "cadence_ticks": 8,
-        "duration_ticks": 4,
+        "duration_ticks": 3,
         "deadline_ticks": 15,
         "capacity_cost": {
-          "cap_c": 4
+          "quarantine_slots": 3
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-s2",
-        "type": "recycling_process_b",
-        "runs_on": "stage-two",
+        "id": "press-bale",
+        "type": "hydraulic_baling",
+        "runs_on": "baling-press",
         "inputs": [
           {
-            "thing": "baled_material",
-            "amount": 2
+            "thing": "sorted_fraction",
+            "amount": 4
           }
         ],
         "outputs": [
           {
-            "thing": "commodity_unit",
+            "thing": "baled_unit",
             "amount": 1
           }
         ],
         "cadence_ticks": 12,
-        "duration_ticks": 6,
-        "deadline_ticks": 22,
+        "duration_ticks": 5,
+        "deadline_ticks": 24,
         "capacity_cost": {
-          "cap_d": 5
+          "press_throughput": 5
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-out",
-        "type": "recycling_rollup",
-        "runs_on": "output-node",
+        "id": "log-manifest",
+        "type": "commodity_logging",
+        "runs_on": "commodity-store",
         "inputs": [
           {
-            "thing": "commodity_unit",
-            "amount": 2
+            "thing": "baled_unit",
+            "amount": 3
           }
         ],
         "outputs": [
           {
-            "thing": "manifest",
+            "thing": "commodity_manifest",
             "amount": 1
           }
         ],
@@ -519,7 +517,7 @@
         "duration_ticks": 10,
         "deadline_ticks": 90,
         "capacity_cost": {
-          "cap_e": 3
+          "store_bays": 8
         },
         "failure_policy": "drop",
         "max_attempts": 1
@@ -527,126 +525,126 @@
     ],
     "demand": [
       {
-        "id": "primary-demand",
-        "type": "recycling_primary",
+        "id": "bale-demand",
+        "type": "commodity_delivery",
         "target": {
           "type": "place",
-          "id": "stage-two"
+          "id": "commodity-store"
         },
         "requires": [
-          "commodity_unit"
+          "baled_unit"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 60,
-          "start_tick": 60
+          "every_ticks": 180,
+          "start_tick": 120
         },
-        "deadline_ticks": 90,
+        "deadline_ticks": 250,
         "priority": "high",
         "value": 80,
         "penalty": {
           "score": -400,
-          "warning": "recycling_primary_miss"
+          "warning": "commodity_delivery_missed"
         }
       },
       {
-        "id": "secondary-demand",
-        "type": "recycling_secondary",
+        "id": "manifest-demand",
+        "type": "compliance_audit",
         "target": {
           "type": "place",
-          "id": "output-node"
+          "id": "commodity-store"
         },
         "requires": [
-          "manifest"
+          "commodity_manifest"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 300,
-          "start_tick": 200
+          "every_ticks": 600,
+          "start_tick": 400
         },
-        "deadline_ticks": 400,
+        "deadline_ticks": 700,
         "priority": "normal",
         "value": 50,
         "penalty": {
           "score": -150,
-          "warning": "recycling_secondary_miss"
+          "warning": "manifest_overdue"
         }
       }
     ],
     "pressure": [
       {
-        "id": "pressure-surge",
+        "id": "waste-surge",
         "type": "source_multiplier",
-        "at_tick": 600,
-        "duration_ticks": 400,
-        "target": "source-node",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "intake-conveyor",
         "thing": "mixed_waste",
-        "multiplier": 3.0
+        "multiplier": 4.0
       },
       {
-        "id": "pressure-quota",
+        "id": "press-jam",
         "type": "quota_reduction",
         "at_tick": 1400,
-        "duration_ticks": 300,
-        "target": "stage-two",
-        "capacity": "cap_d",
+        "duration_ticks": 400,
+        "target": "baling-press",
+        "capacity": "press_throughput",
         "reduction_percent": 40
       },
       {
-        "id": "pressure-demand",
+        "id": "bale-rush",
         "type": "demand_growth",
-        "at_tick": 1000,
-        "duration_ticks": 400,
-        "target": "primary-demand",
+        "at_tick": 800,
+        "duration_ticks": 300,
+        "target": "bale-demand",
         "spawn_multiplier": 2
       }
     ],
     "objectives": [
       {
-        "id": "keep-output-fresh",
+        "id": "intake-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "intake-conveyor",
+        "capacity": "conveyor_load",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "bales-fresh",
         "type": "keep_fresh",
         "weight": 2,
-        "place": "output-node",
-        "thing": "manifest",
-        "max_stale_ticks": 800
+        "place": "commodity-store",
+        "thing": "baled_unit",
+        "max_stale_ticks": 700
       },
       {
-        "id": "complete-primary",
+        "id": "deliveries-on-time",
         "type": "complete_jobs_before_deadline",
         "weight": 3,
-        "demand": "primary-demand",
+        "demand": "bale-demand",
         "max_missed": 3
-      },
-      {
-        "id": "maintain-stage2-util",
-        "type": "maintain_utilization",
-        "weight": 1,
-        "place": "stage-two",
-        "capacity": "cap_d",
-        "min_percent": 10,
-        "max_percent": 85
       }
     ],
     "failure_conditions": [
       {
-        "id": "stage2-bottleneck-fail",
+        "id": "intake-flood",
         "type": "place_state",
-        "place": "stage-two",
-        "state": "bottleneck",
-        "grace_ticks": 90
+        "place": "intake-conveyor",
+        "state": "overloaded",
+        "grace_ticks": 60
       },
       {
-        "id": "output-stale-fail",
+        "id": "bale-stale",
         "type": "stale_target",
-        "place": "output-node",
-        "thing": "manifest",
-        "threshold_ticks": 1000,
-        "grace_ticks": 60
+        "place": "commodity-store",
+        "thing": "baled_unit",
+        "threshold_ticks": 800,
+        "grace_ticks": 30
       }
     ],
     "victory_conditions": [
       {
-        "id": "full-run",
+        "id": "recycling-sort-floor-survived",
         "type": "survive_until",
         "at_tick": 4800
       }
@@ -656,51 +654,57 @@
     "observability": {
       "metrics": [
         {
-          "id": "s1-load",
+          "id": "intake-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-one",
-          "capacity": "cap_b"
+          "place": "intake-conveyor",
+          "capacity": "conveyor_load"
         },
         {
-          "id": "s2-load",
+          "id": "press-load",
           "source": "place_capacity_used_percent",
-          "place": "stage-two",
-          "capacity": "cap_d"
+          "place": "baling-press",
+          "capacity": "press_throughput"
         },
         {
-          "id": "out-inv",
+          "id": "store-level",
+          "source": "place_capacity_used_percent",
+          "place": "commodity-store",
+          "capacity": "store_bays"
+        },
+        {
+          "id": "bale-inv",
           "source": "place_inventory_count",
-          "place": "output-node",
-          "thing": "manifest"
+          "place": "commodity-store",
+          "thing": "baled_unit"
         }
       ],
       "dashboards": [
         {
-          "id": "recycling-dash",
+          "id": "sort-dash",
           "type": "live",
           "depends_on": [
-            "manifest",
-            "commodity_unit"
+            "baled_unit",
+            "commodity_manifest"
           ],
-          "freshness_slo_ticks": 600
+          "freshness_slo_ticks": 450
         }
       ],
       "alerts": [
         {
-          "id": "s2-critical",
-          "metric": "s2-load",
+          "id": "intake-high",
+          "metric": "intake-util",
           "predicate": {
             "type": "gt",
-            "threshold": 85
+            "threshold": 83
           },
           "severity": "critical"
         },
         {
-          "id": "out-low",
-          "metric": "out-inv",
+          "id": "press-strained",
+          "metric": "press-load",
           "predicate": {
-            "type": "lt",
-            "threshold": 2
+            "type": "gt",
+            "threshold": 86
           },
           "severity": "warning"
         }

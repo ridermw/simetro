@@ -3,13 +3,13 @@
   "name": "warehouse-cold-chain",
   "theme": {
     "palette": [
-      "#15120f",
-      "#f5ead6",
-      "#2ec4b6",
-      "#e71d36",
-      "#ff9f1c",
-      "#a8dadc",
-      "#b56576"
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
     ],
     "background_index": 0,
     "font": "system-ui"
@@ -19,21 +19,19 @@
     "title": "Warehouse Cold Chain",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A refrigerated distribution warehouse where temperature sensors, chill zones, and pick operations must keep cold-chain integrity through equipment faults and demand spikes.",
+    "description": "A cold-chain warehouse where temperature-controlled pallets flow from inbound dock through chilling, pick floor, and QC to certified dispatch under surge pressure.",
     "tags": [
-      "warehouse",
-      "cold-chain",
-      "logistics",
+      "cold_chain",
+      "easy",
       "sl1",
       "scenario_language_v1",
-      "easy",
       "draft"
     ],
-    "palette_note": "Domain palette for cold_chain: dark background, distinct hues across the six places. High contrast for status visibility.",
-    "layout_note": "Six SL1 places form a source-to-output pipeline in the cold_chain domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
-    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
-    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
-    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
   },
   "pieces": {
     "nodes": [],
@@ -50,199 +48,199 @@
     "schema_version": 1,
     "places": [
       {
-        "id": "source-node",
+        "id": "cold-dock",
         "role": "source",
         "pos": [
           -360,
-          -80
+          -60
         ],
         "shape": "triangle",
         "color": 2,
         "capacity": {
-          "cap_a": 80
+          "dock_bays": 80
         },
         "storage": {
-          "temp_reading": {
-            "capacity": 400,
-            "initial": 40
+          "inbound_pallet": {
+            "capacity": 200,
+            "initial": 20
           }
         },
         "accepts": [],
         "produces": [
-          "temp_reading"
+          "inbound_pallet"
         ],
         "failure_domains": [
-          "cold_chain",
-          "input"
+          "cold-chain",
+          "intake"
         ],
         "operating_states": {
-          "saturated": {
-            "when": "cap_a.used_percent >= 80",
-            "grace_ticks": 5
+          "congested": {
+            "when": "dock_bays.used_percent >= 85",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-one",
+        "id": "chill-zone",
         "role": "processor",
         "pos": [
-          -100,
+          -140,
           20
         ],
         "shape": "hexagon",
         "color": 3,
         "capacity": {
-          "cap_b": 24
+          "chill_slots": 40
         },
         "storage": {
-          "temp_reading": {
-            "capacity": 120,
-            "initial": 12
+          "inbound_pallet": {
+            "capacity": 200,
+            "initial": 15
           },
           "chill_ticket": {
+            "capacity": 120,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "inbound_pallet"
+        ],
+        "produces": [
+          "chill_ticket"
+        ],
+        "failure_domains": [
+          "cold-chain",
+          "chilling"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "chill_slots.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "pick-floor",
+        "role": "processor",
+        "pos": [
+          60,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "pick_lanes": 50
+        },
+        "storage": {
+          "chill_ticket": {
+            "capacity": 120,
+            "initial": 10
+          },
+          "pick_order": {
             "capacity": 80,
             "initial": 8
           }
         },
         "accepts": [
-          "temp_reading"
-        ],
-        "produces": [
           "chill_ticket"
-        ],
-        "failure_domains": [
-          "cold_chain",
-          "stage1"
-        ],
-        "operating_states": {
-          "overloaded": {
-            "when": "cap_b.used_percent >= 85",
-            "grace_ticks": 5
-          }
-        }
-      },
-      {
-        "id": "buffer-node",
-        "role": "buffer",
-        "pos": [
-          120,
-          -80
-        ],
-        "shape": "diamond",
-        "color": 4,
-        "capacity": {
-          "cap_c": 60
-        },
-        "storage": {
-          "chill_ticket": {
-            "capacity": 60,
-            "initial": 6
-          },
-          "storage_slot": {
-            "capacity": 60,
-            "initial": 6
-          }
-        },
-        "accepts": [
-          "chill_ticket"
-        ],
-        "produces": [
-          "storage_slot"
-        ],
-        "failure_domains": [
-          "cold_chain",
-          "buffer"
-        ],
-        "operating_states": {
-          "full": {
-            "when": "cap_c.used_percent >= 85",
-            "grace_ticks": 8
-          }
-        }
-      },
-      {
-        "id": "stage-two",
-        "role": "processor",
-        "pos": [
-          320,
-          60
-        ],
-        "shape": "hexagon",
-        "color": 5,
-        "capacity": {
-          "cap_d": 40
-        },
-        "storage": {
-          "storage_slot": {
-            "capacity": 60,
-            "initial": 6
-          },
-          "pick_order": {
-            "capacity": 40,
-            "initial": 4
-          }
-        },
-        "accepts": [
-          "storage_slot"
         ],
         "produces": [
           "pick_order"
         ],
         "failure_domains": [
-          "cold_chain",
-          "stage2"
+          "cold-chain",
+          "picking"
         ],
         "operating_states": {
-          "bottleneck": {
-            "when": "cap_d.used_percent >= 85",
+          "strained": {
+            "when": "pick_lanes.used_percent >= 80",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "output-node",
+        "id": "quality-check",
+        "role": "buffer",
+        "pos": [
+          280,
+          -10
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "bench_slots": 30
+        },
+        "storage": {
+          "pick_order": {
+            "capacity": 80,
+            "initial": 5
+          },
+          "cold_cert": {
+            "capacity": 60,
+            "initial": 5
+          }
+        },
+        "accepts": [
+          "pick_order"
+        ],
+        "produces": [
+          "cold_cert"
+        ],
+        "failure_domains": [
+          "cold-chain",
+          "qc"
+        ],
+        "operating_states": {
+          "backed_up": {
+            "when": "bench_slots.used_percent >= 88",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "dispatch-hub",
         "role": "dashboard",
         "pos": [
-          520,
-          -60
+          500,
+          -50
         ],
         "shape": "square",
         "color": 6,
         "capacity": {
-          "cap_e": 50
+          "dispatch_slots": 60
         },
         "storage": {
-          "pick_order": {
-            "capacity": 30,
-            "initial": 3
+          "cold_cert": {
+            "capacity": 60,
+            "initial": 4
           },
-          "cold_chain_cert": {
-            "capacity": 30,
-            "initial": 3
+          "dispatch_record": {
+            "capacity": 40,
+            "initial": 2
           }
         },
         "accepts": [
-          "pick_order"
+          "cold_cert"
         ],
         "produces": [
-          "cold_chain_cert"
+          "dispatch_record"
         ],
         "failure_domains": [
-          "cold_chain",
-          "output"
+          "cold-chain",
+          "dispatch"
         ],
         "operating_states": {
-          "report_lag": {
-            "when": "cap_e.used_percent >= 80",
-            "grace_ticks": 10
+          "stalled": {
+            "when": "dispatch_slots.used_percent >= 90",
+            "grace_ticks": 5
           }
         }
       },
       {
-        "id": "operator-node",
+        "id": "cold-coordinator",
         "role": "operator",
         "pos": [
-          120,
+          60,
           -220
         ],
         "shape": "circle",
@@ -252,26 +250,26 @@
         "accepts": [],
         "produces": [],
         "failure_domains": [
-          "cold_chain"
+          "cold-chain"
         ],
         "operating_states": {}
       }
     ],
     "links": [
       {
-        "id": "link-src-s1",
-        "type": "cold_chain_feed",
-        "from": "source-node",
-        "to": "stage-one",
+        "id": "dock-chill",
+        "type": "cold_conveyor",
+        "from": "cold-dock",
+        "to": "chill-zone",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 10
+          "volume_per_tick": 50
         },
         "travel_ticks": 1,
         "compatibility": [
-          "temp_reading"
+          "inbound_pallet"
         ],
-        "queue_capacity": 200,
+        "queue_capacity": 300,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -279,19 +277,19 @@
         }
       },
       {
-        "id": "link-s1-buf",
-        "type": "cold_chain_transfer",
-        "from": "stage-one",
-        "to": "buffer-node",
+        "id": "chill-pick",
+        "type": "chill_feed",
+        "from": "chill-zone",
+        "to": "pick-floor",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 40
         },
         "travel_ticks": 2,
         "compatibility": [
           "chill_ticket"
         ],
-        "queue_capacity": 60,
+        "queue_capacity": 200,
         "backpressure": "spill_to_buffer",
         "render": {
           "style": "flow",
@@ -299,19 +297,19 @@
         }
       },
       {
-        "id": "link-buf-s2",
-        "type": "cold_chain_relay",
-        "from": "buffer-node",
-        "to": "stage-two",
+        "id": "pick-qc",
+        "type": "quality_feed",
+        "from": "pick-floor",
+        "to": "quality-check",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 30
         },
         "travel_ticks": 2,
         "compatibility": [
-          "storage_slot"
+          "pick_order"
         ],
-        "queue_capacity": 40,
+        "queue_capacity": 150,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -319,19 +317,19 @@
         }
       },
       {
-        "id": "link-s2-out",
-        "type": "cold_chain_delivery",
-        "from": "stage-two",
-        "to": "output-node",
+        "id": "qc-dispatch",
+        "type": "dispatch_feed",
+        "from": "quality-check",
+        "to": "dispatch-hub",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 8
+          "volume_per_tick": 25
         },
         "travel_ticks": 2,
         "compatibility": [
-          "pick_order"
+          "cold_cert"
         ],
-        "queue_capacity": 30,
+        "queue_capacity": 100,
         "backpressure": "drop_low_priority",
         "render": {
           "style": "flow",
@@ -339,10 +337,10 @@
         }
       },
       {
-        "id": "link-op-s1",
+        "id": "coord-chill",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-one",
+        "from": "cold-coordinator",
+        "to": "chill-zone",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -355,10 +353,10 @@
         }
       },
       {
-        "id": "link-op-s2",
+        "id": "coord-pick",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-two",
+        "from": "cold-coordinator",
+        "to": "pick-floor",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -373,51 +371,50 @@
     ],
     "things": [
       {
-        "id": "temp_reading",
-        "kind": "sensor_reading",
+        "id": "inbound_pallet",
+        "kind": "material_unit",
         "tags": [
-          "temperature",
           "cold",
-          "iot"
+          "inbound",
+          "freight"
         ],
-        "freshness_budget_ticks": 90
+        "freshness_budget_ticks": 60
       },
       {
         "id": "chill_ticket",
         "kind": "work_order",
         "tags": [
-          "chill",
-          "zone",
-          "pallet"
+          "chilled",
+          "temp_controlled"
         ],
-        "freshness_budget_ticks": 120
-      },
-      {
-        "id": "storage_slot",
-        "kind": "reservation",
-        "tags": [
-          "storage",
-          "cold",
-          "allocated"
-        ],
-        "freshness_budget_ticks": 180
+        "freshness_budget_ticks": 90
       },
       {
         "id": "pick_order",
-        "kind": "fulfillment_order",
+        "kind": "work_order",
         "tags": [
           "pick",
-          "dispatch",
-          "cold"
+          "warehouse",
+          "fulfill"
         ],
         "freshness_budget_ticks": 120
       },
       {
-        "id": "cold_chain_cert",
+        "id": "cold_cert",
         "kind": "compliance_record",
         "tags": [
-          "compliance",
           "cert",
+          "cold_chain",
+          "compliant"
+        ],
+        "freshness_budget_ticks": 400
+      },
+      {
+        "id": "dispatch_record",
+        "kind": "audit_record",
+        "tags": [
+          "dispatch",
+          "fulfilled",
           "cold"
         ],
         "freshness_budget_ticks": 600
@@ -425,62 +422,37 @@
     ],
     "transforms": [
       {
-        "id": "transform-s1",
-        "type": "cold_chain_process_a",
-        "runs_on": "stage-one",
+        "id": "temp-scan",
+        "type": "temperature_verification",
+        "runs_on": "chill-zone",
         "inputs": [
           {
-            "thing": "temp_reading",
-            "amount": 2
+            "thing": "inbound_pallet",
+            "amount": 3
           }
         ],
         "outputs": [
           {
             "thing": "chill_ticket",
-            "amount": 1
+            "amount": 2
           }
         ],
         "cadence_ticks": 5,
-        "duration_ticks": 3,
+        "duration_ticks": 2,
         "deadline_ticks": 10,
         "capacity_cost": {
-          "cap_b": 3
+          "chill_slots": 4
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-buf",
-        "type": "cold_chain_buffer_op",
-        "runs_on": "buffer-node",
+        "id": "fill-pick",
+        "type": "pick_assignment",
+        "runs_on": "pick-floor",
         "inputs": [
           {
             "thing": "chill_ticket",
-            "amount": 1
-          }
-        ],
-        "outputs": [
-          {
-            "thing": "storage_slot",
-            "amount": 1
-          }
-        ],
-        "cadence_ticks": 8,
-        "duration_ticks": 4,
-        "deadline_ticks": 15,
-        "capacity_cost": {
-          "cap_c": 4
-        },
-        "failure_policy": "retry_then_warn",
-        "max_attempts": 2
-      },
-      {
-        "id": "transform-s2",
-        "type": "cold_chain_process_b",
-        "runs_on": "stage-two",
-        "inputs": [
-          {
-            "thing": "storage_slot",
             "amount": 2
           }
         ],
@@ -490,28 +462,53 @@
             "amount": 1
           }
         ],
-        "cadence_ticks": 12,
+        "cadence_ticks": 6,
+        "duration_ticks": 3,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "pick_lanes": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "qc-certify",
+        "type": "cold_chain_audit",
+        "runs_on": "quality-check",
+        "inputs": [
+          {
+            "thing": "pick_order",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "cold_cert",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 15,
         "duration_ticks": 6,
-        "deadline_ticks": 22,
+        "deadline_ticks": 30,
         "capacity_cost": {
-          "cap_d": 5
+          "bench_slots": 4
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-out",
-        "type": "cold_chain_rollup",
-        "runs_on": "output-node",
+        "id": "log-dispatch",
+        "type": "dispatch_logging",
+        "runs_on": "dispatch-hub",
         "inputs": [
           {
-            "thing": "pick_order",
+            "thing": "cold_cert",
             "amount": 2
           }
         ],
         "outputs": [
           {
-            "thing": "cold_chain_cert",
+            "thing": "dispatch_record",
             "amount": 1
           }
         ],
@@ -519,7 +516,7 @@
         "duration_ticks": 10,
         "deadline_ticks": 90,
         "capacity_cost": {
-          "cap_e": 3
+          "dispatch_slots": 5
         },
         "failure_policy": "drop",
         "max_attempts": 1
@@ -527,126 +524,126 @@
     ],
     "demand": [
       {
-        "id": "primary-demand",
-        "type": "cold_chain_primary",
+        "id": "cert-demand",
+        "type": "cold_cert_request",
         "target": {
           "type": "place",
-          "id": "stage-two"
+          "id": "dispatch-hub"
         },
         "requires": [
-          "pick_order"
+          "cold_cert"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 60,
-          "start_tick": 60
+          "every_ticks": 180,
+          "start_tick": 120
         },
-        "deadline_ticks": 90,
+        "deadline_ticks": 240,
         "priority": "high",
-        "value": 80,
+        "value": 100,
         "penalty": {
-          "score": -400,
-          "warning": "cold_chain_primary_miss"
+          "score": -500,
+          "warning": "cold_chain_breach"
         }
       },
       {
-        "id": "secondary-demand",
-        "type": "cold_chain_secondary",
+        "id": "record-demand",
+        "type": "dispatch_audit",
         "target": {
           "type": "place",
-          "id": "output-node"
+          "id": "dispatch-hub"
         },
         "requires": [
-          "cold_chain_cert"
+          "dispatch_record"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 300,
-          "start_tick": 200
+          "every_ticks": 600,
+          "start_tick": 400
         },
-        "deadline_ticks": 400,
+        "deadline_ticks": 700,
         "priority": "normal",
         "value": 50,
         "penalty": {
           "score": -150,
-          "warning": "cold_chain_secondary_miss"
+          "warning": "dispatch_record_missed"
         }
       }
     ],
     "pressure": [
       {
-        "id": "pressure-surge",
+        "id": "pallet-surge",
         "type": "source_multiplier",
         "at_tick": 600,
-        "duration_ticks": 400,
-        "target": "source-node",
-        "thing": "temp_reading",
-        "multiplier": 3.0
+        "duration_ticks": 600,
+        "target": "cold-dock",
+        "thing": "inbound_pallet",
+        "multiplier": 4.0
       },
       {
-        "id": "pressure-quota",
+        "id": "chill-fault",
         "type": "quota_reduction",
-        "at_tick": 1400,
-        "duration_ticks": 300,
-        "target": "stage-two",
-        "capacity": "cap_d",
-        "reduction_percent": 40
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "chill-zone",
+        "capacity": "chill_slots",
+        "reduction_percent": 35
       },
       {
-        "id": "pressure-demand",
+        "id": "cert-rush",
         "type": "demand_growth",
-        "at_tick": 1000,
-        "duration_ticks": 400,
-        "target": "primary-demand",
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "cert-demand",
         "spawn_multiplier": 2
       }
     ],
     "objectives": [
       {
-        "id": "keep-output-fresh",
+        "id": "dock-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "cold-dock",
+        "capacity": "dock_bays",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "certs-fresh",
         "type": "keep_fresh",
         "weight": 2,
-        "place": "output-node",
-        "thing": "cold_chain_cert",
+        "place": "dispatch-hub",
+        "thing": "cold_cert",
         "max_stale_ticks": 800
       },
       {
-        "id": "complete-primary",
+        "id": "certs-on-time",
         "type": "complete_jobs_before_deadline",
         "weight": 3,
-        "demand": "primary-demand",
-        "max_missed": 3
-      },
-      {
-        "id": "maintain-stage2-util",
-        "type": "maintain_utilization",
-        "weight": 1,
-        "place": "stage-two",
-        "capacity": "cap_d",
-        "min_percent": 10,
-        "max_percent": 85
+        "demand": "cert-demand",
+        "max_missed": 2
       }
     ],
     "failure_conditions": [
       {
-        "id": "stage2-bottleneck-fail",
+        "id": "chill-overload",
         "type": "place_state",
-        "place": "stage-two",
-        "state": "bottleneck",
-        "grace_ticks": 90
+        "place": "chill-zone",
+        "state": "overloaded",
+        "grace_ticks": 60
       },
       {
-        "id": "output-stale-fail",
+        "id": "cert-stale",
         "type": "stale_target",
-        "place": "output-node",
-        "thing": "cold_chain_cert",
-        "threshold_ticks": 1000,
-        "grace_ticks": 60
+        "place": "dispatch-hub",
+        "thing": "cold_cert",
+        "threshold_ticks": 900,
+        "grace_ticks": 30
       }
     ],
     "victory_conditions": [
       {
-        "id": "full-run",
+        "id": "warehouse-cold-chain-survived",
         "type": "survive_until",
         "at_tick": 4800
       }
@@ -656,51 +653,57 @@
     "observability": {
       "metrics": [
         {
-          "id": "s1-load",
+          "id": "dock-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-one",
-          "capacity": "cap_b"
+          "place": "cold-dock",
+          "capacity": "dock_bays"
         },
         {
-          "id": "s2-load",
+          "id": "chill-load",
           "source": "place_capacity_used_percent",
-          "place": "stage-two",
-          "capacity": "cap_d"
+          "place": "chill-zone",
+          "capacity": "chill_slots"
         },
         {
-          "id": "out-inv",
+          "id": "qc-load",
+          "source": "place_capacity_used_percent",
+          "place": "quality-check",
+          "capacity": "bench_slots"
+        },
+        {
+          "id": "cert-inv",
           "source": "place_inventory_count",
-          "place": "output-node",
-          "thing": "cold_chain_cert"
+          "place": "dispatch-hub",
+          "thing": "cold_cert"
         }
       ],
       "dashboards": [
         {
-          "id": "cold_chain-dash",
+          "id": "cold-chain-dash",
           "type": "live",
           "depends_on": [
-            "cold_chain_cert",
-            "pick_order"
+            "cold_cert",
+            "dispatch_record"
           ],
-          "freshness_slo_ticks": 600
+          "freshness_slo_ticks": 400
         }
       ],
       "alerts": [
         {
-          "id": "s2-critical",
-          "metric": "s2-load",
+          "id": "dock-surge",
+          "metric": "dock-util",
           "predicate": {
             "type": "gt",
-            "threshold": 85
+            "threshold": 83
           },
           "severity": "critical"
         },
         {
-          "id": "out-low",
-          "metric": "out-inv",
+          "id": "chill-strained",
+          "metric": "chill-load",
           "predicate": {
-            "type": "lt",
-            "threshold": 2
+            "type": "gt",
+            "threshold": 83
           },
           "severity": "warning"
         }

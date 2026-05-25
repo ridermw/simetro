@@ -19,247 +19,206 @@
     "title": "Drone Repair Bay",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A UAV maintenance bay where inspection bays, parts stores, and test-flight pads form a repair-and-return circuit.",
+    "description": "A UAV maintenance bay with a figure-8 layout: one repair loop (inspect/disassemble/reassemble) and one certification loop (test/flash/calibrate).",
     "tags": [
       "drone",
+      "easy",
       "legacy",
       "transit_loop",
-      "easy",
       "draft"
     ],
-    "palette_note": "Transit palette for easy: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Drone Repair Bay colour theme.",
+    "layout_note": "10 nodes forming a drone topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting drone roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.90\u20131.50.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "dock",
         "pos": [
-          200,
+          0,
           0
         ],
-        "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
+        "shape": "hexagon",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "inspect",
         "pos": [
-          61,
-          190
+          -180,
+          130
         ],
-        "shape": "hexagon",
+        "shape": "circle",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "disassemble",
         "pos": [
-          -61,
-          190
+          -320,
+          0
         ],
-        "shape": "diamond",
+        "shape": "square",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "parts",
         "pos": [
-          -161,
-          117
+          -180,
+          -130
+        ],
+        "shape": "diamond",
+        "color": 3
+      },
+      {
+        "id": "reassemble",
+        "pos": [
+          -80,
+          -60
         ],
         "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "test-pad",
+        "pos": [
+          180,
+          130
+        ],
+        "shape": "circle",
         "color": 5
       },
       {
-        "id": "n5",
+        "id": "flash",
         "pos": [
-          -200,
+          320,
           0
         ],
-        "shape": "circle",
+        "shape": "square",
         "color": 6
       },
       {
-        "id": "n6",
+        "id": "calibrate",
         "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
-        "color": 2
-      },
-      {
-        "id": "n8",
-        "pos": [
-          61,
-          -190
-        ],
-        "shape": "diamond",
-        "color": 3
-      },
-      {
-        "id": "n9",
-        "pos": [
-          161,
-          -117
-        ],
-        "shape": "triangle",
-        "color": 4
-      },
-      {
-        "id": "hub-a",
-        "pos": [
-          -80,
-          -40
-        ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "hub-b",
-        "pos": [
-          80,
-          40
+          180,
+          -130
         ],
         "shape": "diamond",
         "color": 5
+      },
+      {
+        "id": "certify",
+        "pos": [
+          80,
+          -60
+        ],
+        "shape": "triangle",
+        "color": 6
+      },
+      {
+        "id": "intake",
+        "pos": [
+          0,
+          200
+        ],
+        "shape": "triangle",
+        "color": 2
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
-        "color": 2
-      },
-      {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "dock-inspect",
+        "from": "dock",
+        "to": "inspect",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "inspect-dis",
+        "from": "inspect",
+        "to": "disassemble",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "dis-parts",
+        "from": "disassemble",
+        "to": "parts",
+        "color": 3
+      },
+      {
+        "id": "parts-reassemble",
+        "from": "parts",
+        "to": "reassemble",
+        "color": 4
+      },
+      {
+        "id": "reassemble-dock",
+        "from": "reassemble",
+        "to": "dock",
+        "color": 2
+      },
+      {
+        "id": "dock-test",
+        "from": "dock",
+        "to": "test-pad",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
+        "id": "test-flash",
+        "from": "test-pad",
+        "to": "flash",
         "color": 6
       },
       {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
+        "id": "flash-cal",
+        "from": "flash",
+        "to": "calibrate",
+        "color": 5
       },
       {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
-        "color": 3
-      },
-      {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
-        "color": 4
-      },
-      {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
-      },
-      {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
-        "color": 3
-      },
-      {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
+        "id": "cal-certify",
+        "from": "calibrate",
+        "to": "certify",
         "color": 6
+      },
+      {
+        "id": "certify-dock",
+        "from": "certify",
+        "to": "dock",
+        "color": 2
+      },
+      {
+        "id": "intake-dock",
+        "from": "intake",
+        "to": "dock",
+        "color": 2
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
+        "id": "drone-a",
+        "on_path": "dock-inspect",
+        "speed": 0.9
+      },
+      {
+        "id": "drone-b",
+        "on_path": "dock-test",
+        "speed": 1.0
+      },
+      {
+        "id": "drone-c",
+        "on_path": "inspect-dis",
+        "speed": 1.3
+      },
+      {
+        "id": "drone-d",
+        "on_path": "test-flash",
+        "speed": 1.1
+      },
+      {
+        "id": "drone-e",
+        "on_path": "intake-dock",
         "speed": 1.5
-      },
-      {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
-      },
-      {
-        "id": "m2",
-        "on_path": "p4",
-        "speed": 1.2
-      },
-      {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
-      },
-      {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
-      },
-      {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
       }
     ]
   },

@@ -19,247 +19,253 @@
     "title": "Fabric Dye Lab",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A textile laboratory where fabric rolls loop through dye baths, fixation chambers, rinse tanks, and drying racks.",
+    "description": "A textile dye laboratory with three parallel dye chains (acid, reactive, vat) whose intake and fix ends are cross-linked for batch routing.",
     "tags": [
       "dye_lab",
+      "medium",
       "legacy",
       "transit_loop",
-      "medium",
       "draft"
     ],
-    "palette_note": "Transit palette for medium: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Fabric Dye Lab colour theme.",
+    "layout_note": "12 nodes forming a dye_lab topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting dye_lab roles.",
+    "mover_path_note": "6 movers on distinct paths at speeds 0.80\u20131.50.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "acid-intake",
         "pos": [
-          200,
-          0
+          -300,
+          200
         ],
         "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "mordant",
         "pos": [
-          61,
-          190
+          -100,
+          200
         ],
         "shape": "hexagon",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "dye-vat-a",
         "pos": [
-          -61,
-          190
+          100,
+          200
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "fix-a",
         "pos": [
-          -161,
-          117
+          300,
+          200
         ],
-        "shape": "triangle",
+        "shape": "square",
         "color": 5
       },
       {
-        "id": "n5",
+        "id": "react-intake",
         "pos": [
-          -200,
+          -300,
           0
         ],
         "shape": "circle",
-        "color": 6
-      },
-      {
-        "id": "n6",
-        "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
         "color": 2
       },
       {
-        "id": "n8",
+        "id": "pre-treat",
         "pos": [
-          61,
-          -190
+          -100,
+          0
         ],
         "shape": "diamond",
         "color": 3
       },
       {
-        "id": "n9",
+        "id": "dye-vat-b",
         "pos": [
-          161,
-          -117
+          100,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 6
+      },
+      {
+        "id": "fix-b",
+        "pos": [
+          300,
+          0
+        ],
+        "shape": "square",
+        "color": 5
+      },
+      {
+        "id": "vat-intake",
+        "pos": [
+          -300,
+          -200
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "reduce",
+        "pos": [
+          -100,
+          -200
         ],
         "shape": "triangle",
         "color": 4
       },
       {
-        "id": "hub-a",
+        "id": "dye-vat-c",
         "pos": [
-          -80,
-          -40
+          100,
+          -200
         ],
         "shape": "hexagon",
-        "color": 3
+        "color": 6
       },
       {
-        "id": "hub-b",
+        "id": "fix-c",
         "pos": [
-          80,
-          40
+          300,
+          -200
         ],
-        "shape": "diamond",
+        "shape": "square",
         "color": 5
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
+        "id": "cp-0-0",
+        "from": "acid-intake",
+        "to": "mordant",
         "color": 2
       },
       {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "cp-0-1",
+        "from": "mordant",
+        "to": "dye-vat-a",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "cp-0-2",
+        "from": "dye-vat-a",
+        "to": "fix-a",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "cp-1-0",
+        "from": "react-intake",
+        "to": "pre-treat",
+        "color": 2
+      },
+      {
+        "id": "cp-1-1",
+        "from": "pre-treat",
+        "to": "dye-vat-b",
+        "color": 3
+      },
+      {
+        "id": "cp-1-2",
+        "from": "dye-vat-b",
+        "to": "fix-b",
+        "color": 6
+      },
+      {
+        "id": "cp-2-0",
+        "from": "vat-intake",
+        "to": "reduce",
+        "color": 2
+      },
+      {
+        "id": "cp-2-1",
+        "from": "reduce",
+        "to": "dye-vat-c",
+        "color": 4
+      },
+      {
+        "id": "cp-2-2",
+        "from": "dye-vat-c",
+        "to": "fix-c",
+        "color": 6
+      },
+      {
+        "id": "cx-intake-01",
+        "from": "acid-intake",
+        "to": "react-intake",
+        "color": 2
+      },
+      {
+        "id": "cx-intake-12",
+        "from": "react-intake",
+        "to": "vat-intake",
+        "color": 2
+      },
+      {
+        "id": "cx-fix-01",
+        "from": "fix-a",
+        "to": "fix-b",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
-        "color": 6
+        "id": "cx-fix-12",
+        "from": "fix-b",
+        "to": "fix-c",
+        "color": 5
       },
       {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
+        "id": "rinse-top",
+        "from": "fix-a",
+        "to": "acid-intake",
         "color": 3
       },
       {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
+        "id": "rinse-bot",
+        "from": "fix-c",
+        "to": "vat-intake",
         "color": 4
-      },
-      {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
-      },
-      {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
-        "color": 3
-      },
-      {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
-        "color": 6
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
-        "speed": 1.5
+        "id": "bolt-a",
+        "on_path": "cp-0-0",
+        "speed": 0.8
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "bolt-b",
+        "on_path": "cp-1-1",
+        "speed": 1.0
       },
       {
-        "id": "m2",
-        "on_path": "p4",
+        "id": "bolt-c",
+        "on_path": "cp-2-2",
         "speed": 1.2
       },
       {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
+        "id": "bolt-d",
+        "on_path": "cx-intake-01",
+        "speed": 1.5
       },
       {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
+        "id": "bolt-e",
+        "on_path": "cx-fix-12",
+        "speed": 1.3
       },
       {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
+        "id": "bolt-f",
+        "on_path": "rinse-top",
+        "speed": 0.9
       }
     ]
   },

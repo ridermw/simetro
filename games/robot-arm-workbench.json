@@ -19,247 +19,176 @@
     "title": "Robot Arm Workbench",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "An assembly workbench where robot arms, part feeders, and inspection stations form a cellular manufacturing loop.",
+    "description": "An assembly workbench where a central workcell dispatches robot arms to seven tool stations in a spoke layout.",
     "tags": [
       "robotics",
+      "intro",
       "legacy",
       "transit_loop",
-      "intro",
       "draft"
     ],
-    "palette_note": "Transit palette for intro: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Robot Arm Workbench colour theme.",
+    "layout_note": "8 nodes forming a robotics topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting robotics roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.90\u20131.60.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "workcell",
         "pos": [
-          200,
+          0,
           0
-        ],
-        "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
-        "color": 2
-      },
-      {
-        "id": "n2",
-        "pos": [
-          61,
-          190
-        ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "n3",
-        "pos": [
-          -61,
-          190
-        ],
-        "shape": "diamond",
-        "color": 4
-      },
-      {
-        "id": "n4",
-        "pos": [
-          -161,
-          117
-        ],
-        "shape": "triangle",
-        "color": 5
-      },
-      {
-        "id": "n5",
-        "pos": [
-          -200,
-          0
-        ],
-        "shape": "circle",
-        "color": 6
-      },
-      {
-        "id": "n6",
-        "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
         ],
         "shape": "hexagon",
         "color": 2
       },
       {
-        "id": "n8",
+        "id": "tool-0",
         "pos": [
-          61,
-          -190
+          0,
+          -200
         ],
-        "shape": "diamond",
+        "shape": "circle",
         "color": 3
       },
       {
-        "id": "n9",
+        "id": "tool-1",
         "pos": [
-          161,
-          -117
+          203,
+          -124
         ],
-        "shape": "triangle",
+        "shape": "square",
         "color": 4
       },
       {
-        "id": "hub-a",
+        "id": "tool-2",
         "pos": [
-          -80,
-          -40
-        ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "hub-b",
-        "pos": [
-          80,
-          40
+          253,
+          44
         ],
         "shape": "diamond",
         "color": 5
+      },
+      {
+        "id": "tool-3",
+        "pos": [
+          112,
+          180
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "tool-4",
+        "pos": [
+          -112,
+          180
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "tool-5",
+        "pos": [
+          -253,
+          44
+        ],
+        "shape": "square",
+        "color": 5
+      },
+      {
+        "id": "tool-6",
+        "pos": [
+          -203,
+          -124
+        ],
+        "shape": "diamond",
+        "color": 3
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
-        "color": 2
-      },
-      {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "arm-0",
+        "from": "workcell",
+        "to": "tool-0",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "arm-1",
+        "from": "workcell",
+        "to": "tool-1",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "arm-2",
+        "from": "workcell",
+        "to": "tool-2",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
-        "color": 6
-      },
-      {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
+        "id": "arm-3",
+        "from": "workcell",
+        "to": "tool-3",
         "color": 3
       },
       {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
+        "id": "arm-4",
+        "from": "workcell",
+        "to": "tool-4",
         "color": 4
       },
       {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
+        "id": "arm-5",
+        "from": "workcell",
+        "to": "tool-5",
+        "color": 5
       },
       {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
+        "id": "arm-6",
+        "from": "workcell",
+        "to": "tool-6",
         "color": 3
       },
       {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
-        "color": 6
+        "id": "cross-01",
+        "from": "tool-0",
+        "to": "tool-1",
+        "color": 3
+      },
+      {
+        "id": "cross-34",
+        "from": "tool-3",
+        "to": "tool-4",
+        "color": 4
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
-        "speed": 1.5
+        "id": "robot-a",
+        "on_path": "arm-0",
+        "speed": 1.4
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "robot-b",
+        "on_path": "arm-2",
+        "speed": 1.0
       },
       {
-        "id": "m2",
-        "on_path": "p4",
+        "id": "robot-c",
+        "on_path": "arm-4",
         "speed": 1.2
       },
       {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
+        "id": "robot-d",
+        "on_path": "arm-6",
+        "speed": 0.9
       },
       {
-        "id": "m4",
-        "on_path": "p8",
+        "id": "robot-e",
+        "on_path": "cross-01",
         "speed": 1.6
-      },
-      {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
       }
     ]
   },

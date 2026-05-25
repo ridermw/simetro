@@ -3,13 +3,13 @@
   "name": "observatory-night-queue",
   "theme": {
     "palette": [
-      "#061826",
-      "#f8f9fa",
-      "#4cc9f0",
-      "#f72585",
-      "#80ed99",
-      "#f9c74f",
-      "#b5179e"
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
     ],
     "background_index": 0,
     "font": "system-ui"
@@ -19,21 +19,19 @@
     "title": "Observatory Night Queue",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A hilltop observatory where telescopes, mount controllers, CCD cameras, and image pipelines must complete a full night queue before twilight, despite gusts and instrument faults.",
+    "description": "A robotic telescope where target requests flow through mount scheduling, CCD exposure, and reduction pipeline to a science archive across a single observing night.",
     "tags": [
       "observatory",
-      "astronomy",
-      "imaging",
+      "easy",
       "sl1",
       "scenario_language_v1",
-      "easy",
       "draft"
     ],
-    "palette_note": "Domain palette for observatory: dark background, distinct hues across the six places. High contrast for status visibility.",
-    "layout_note": "Six SL1 places form a source-to-output pipeline in the observatory domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
-    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
-    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
-    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
   },
   "pieces": {
     "nodes": [],
@@ -50,7 +48,7 @@
     "schema_version": 1,
     "places": [
       {
-        "id": "source-node",
+        "id": "target-queue",
         "role": "source",
         "pos": [
           -360,
@@ -59,12 +57,12 @@
         "shape": "triangle",
         "color": 2,
         "capacity": {
-          "cap_a": 80
+          "queue_depth": 60
         },
         "storage": {
           "target_request": {
-            "capacity": 400,
-            "initial": 40
+            "capacity": 200,
+            "initial": 20
           }
         },
         "accepts": [],
@@ -73,31 +71,31 @@
         ],
         "failure_domains": [
           "observatory",
-          "input"
+          "scheduling"
         ],
         "operating_states": {
-          "saturated": {
-            "when": "cap_a.used_percent >= 80",
-            "grace_ticks": 5
+          "flooded": {
+            "when": "queue_depth.used_percent >= 85",
+            "grace_ticks": 3
           }
         }
       },
       {
-        "id": "stage-one",
+        "id": "mount-control",
         "role": "processor",
         "pos": [
-          -100,
+          -130,
           20
         ],
         "shape": "hexagon",
         "color": 3,
         "capacity": {
-          "cap_b": 24
+          "mount_slots": 20
         },
         "storage": {
           "target_request": {
             "capacity": 120,
-            "initial": 12
+            "initial": 10
           },
           "pointing_solution": {
             "capacity": 80,
@@ -112,35 +110,35 @@
         ],
         "failure_domains": [
           "observatory",
-          "stage1"
+          "mount"
         ],
         "operating_states": {
-          "overloaded": {
-            "when": "cap_b.used_percent >= 85",
+          "busy": {
+            "when": "mount_slots.used_percent >= 80",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "buffer-node",
-        "role": "buffer",
+        "id": "ccd-camera",
+        "role": "processor",
         "pos": [
-          120,
-          -80
+          70,
+          80
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4,
         "capacity": {
-          "cap_c": 60
+          "frame_buffer": 80
         },
         "storage": {
           "pointing_solution": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 80,
+            "initial": 8
           },
           "raw_frame": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 150,
+            "initial": 10
           }
         },
         "accepts": [
@@ -151,98 +149,98 @@
         ],
         "failure_domains": [
           "observatory",
-          "buffer"
+          "camera"
         ],
         "operating_states": {
-          "full": {
-            "when": "cap_c.used_percent >= 85",
-            "grace_ticks": 8
+          "saturated": {
+            "when": "frame_buffer.used_percent >= 88",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-two",
-        "role": "processor",
+        "id": "pipeline",
+        "role": "buffer",
         "pos": [
-          320,
-          60
+          290,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "diamond",
         "color": 5,
         "capacity": {
-          "cap_d": 40
+          "pipeline_jobs": 40
         },
         "storage": {
           "raw_frame": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 150,
+            "initial": 10
           },
-          "calibrated_frame": {
-            "capacity": 40,
-            "initial": 4
+          "cal_frame": {
+            "capacity": 100,
+            "initial": 8
           }
         },
         "accepts": [
           "raw_frame"
         ],
         "produces": [
-          "calibrated_frame"
+          "cal_frame"
         ],
         "failure_domains": [
           "observatory",
-          "stage2"
+          "reduction"
         ],
         "operating_states": {
-          "bottleneck": {
-            "when": "cap_d.used_percent >= 85",
+          "backlogged": {
+            "when": "pipeline_jobs.used_percent >= 80",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "science-archive",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "archive_slots": 80
+        },
+        "storage": {
+          "cal_frame": {
+            "capacity": 100,
+            "initial": 6
+          },
+          "obs_report": {
+            "capacity": 60,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "cal_frame"
+        ],
+        "produces": [
+          "obs_report"
+        ],
+        "failure_domains": [
+          "observatory",
+          "archive"
+        ],
+        "operating_states": {
+          "near_full": {
+            "when": "archive_slots.used_percent >= 90",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "output-node",
-        "role": "dashboard",
-        "pos": [
-          520,
-          -60
-        ],
-        "shape": "square",
-        "color": 6,
-        "capacity": {
-          "cap_e": 50
-        },
-        "storage": {
-          "calibrated_frame": {
-            "capacity": 30,
-            "initial": 3
-          },
-          "observation_report": {
-            "capacity": 30,
-            "initial": 3
-          }
-        },
-        "accepts": [
-          "calibrated_frame"
-        ],
-        "produces": [
-          "observation_report"
-        ],
-        "failure_domains": [
-          "observatory",
-          "output"
-        ],
-        "operating_states": {
-          "report_lag": {
-            "when": "cap_e.used_percent >= 80",
-            "grace_ticks": 10
-          }
-        }
-      },
-      {
-        "id": "operator-node",
+        "id": "night-astronomer",
         "role": "operator",
         "pos": [
-          120,
+          70,
           -220
         ],
         "shape": "circle",
@@ -259,13 +257,13 @@
     ],
     "links": [
       {
-        "id": "link-src-s1",
-        "type": "observatory_feed",
-        "from": "source-node",
-        "to": "stage-one",
+        "id": "queue-mount",
+        "type": "schedule_feed",
+        "from": "target-queue",
+        "to": "mount-control",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 10
+          "volume_per_tick": 30
         },
         "travel_ticks": 1,
         "compatibility": [
@@ -279,19 +277,19 @@
         }
       },
       {
-        "id": "link-s1-buf",
-        "type": "observatory_transfer",
-        "from": "stage-one",
-        "to": "buffer-node",
+        "id": "mount-ccd",
+        "type": "telescope_feed",
+        "from": "mount-control",
+        "to": "ccd-camera",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 20
         },
         "travel_ticks": 2,
         "compatibility": [
           "pointing_solution"
         ],
-        "queue_capacity": 60,
+        "queue_capacity": 100,
         "backpressure": "spill_to_buffer",
         "render": {
           "style": "flow",
@@ -299,19 +297,19 @@
         }
       },
       {
-        "id": "link-buf-s2",
-        "type": "observatory_relay",
-        "from": "buffer-node",
-        "to": "stage-two",
+        "id": "ccd-pipe",
+        "type": "data_pipe",
+        "from": "ccd-camera",
+        "to": "pipeline",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 40
         },
         "travel_ticks": 2,
         "compatibility": [
           "raw_frame"
         ],
-        "queue_capacity": 40,
+        "queue_capacity": 200,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -319,19 +317,19 @@
         }
       },
       {
-        "id": "link-s2-out",
-        "type": "observatory_delivery",
-        "from": "stage-two",
-        "to": "output-node",
+        "id": "pipe-arch",
+        "type": "archive_feed",
+        "from": "pipeline",
+        "to": "science-archive",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 8
+          "volume_per_tick": 30
         },
         "travel_ticks": 2,
         "compatibility": [
-          "calibrated_frame"
+          "cal_frame"
         ],
-        "queue_capacity": 30,
+        "queue_capacity": 120,
         "backpressure": "drop_low_priority",
         "render": {
           "style": "flow",
@@ -339,10 +337,10 @@
         }
       },
       {
-        "id": "link-op-s1",
+        "id": "astro-mount",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-one",
+        "from": "night-astronomer",
+        "to": "mount-control",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -355,10 +353,10 @@
         }
       },
       {
-        "id": "link-op-s2",
+        "id": "astro-queue",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-two",
+        "from": "night-astronomer",
+        "to": "target-queue",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -374,60 +372,60 @@
     "things": [
       {
         "id": "target_request",
-        "kind": "observation_request",
+        "kind": "work_order",
         "tags": [
           "target",
-          "queue",
-          "telescope"
+          "sky",
+          "observation"
         ],
-        "freshness_budget_ticks": 600
+        "freshness_budget_ticks": 60
       },
       {
         "id": "pointing_solution",
-        "kind": "control_plan",
+        "kind": "data_record",
         "tags": [
           "pointing",
-          "mount",
-          "slew"
-        ],
-        "freshness_budget_ticks": 120
-      },
-      {
-        "id": "raw_frame",
-        "kind": "image_frame",
-        "tags": [
-          "raw",
-          "ccd",
-          "photons"
+          "coordinate",
+          "mount"
         ],
         "freshness_budget_ticks": 90
       },
       {
-        "id": "calibrated_frame",
-        "kind": "processed_image",
+        "id": "raw_frame",
+        "kind": "data_frame",
         "tags": [
-          "calibrated",
-          "pipeline",
-          "astro"
+          "raw",
+          "ccd",
+          "exposure"
         ],
-        "freshness_budget_ticks": 200
+        "freshness_budget_ticks": 120
       },
       {
-        "id": "observation_report",
-        "kind": "report",
+        "id": "cal_frame",
+        "kind": "data_frame",
+        "tags": [
+          "calibrated",
+          "science",
+          "reduced"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "obs_report",
+        "kind": "compliance_record",
         "tags": [
           "report",
-          "night",
-          "astronomy"
+          "archive",
+          "publication"
         ],
-        "freshness_budget_ticks": 1200
+        "freshness_budget_ticks": 800
       }
     ],
     "transforms": [
       {
-        "id": "transform-s1",
-        "type": "observatory_process_a",
-        "runs_on": "stage-one",
+        "id": "schedule-obs",
+        "type": "observation_scheduling",
+        "runs_on": "mount-control",
         "inputs": [
           {
             "thing": "target_request",
@@ -441,18 +439,18 @@
           }
         ],
         "cadence_ticks": 5,
-        "duration_ticks": 3,
+        "duration_ticks": 2,
         "deadline_ticks": 10,
         "capacity_cost": {
-          "cap_b": 3
+          "mount_slots": 3
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-buf",
-        "type": "observatory_buffer_op",
-        "runs_on": "buffer-node",
+        "id": "expose-frame",
+        "type": "ccd_exposure",
+        "runs_on": "ccd-camera",
         "inputs": [
           {
             "thing": "pointing_solution",
@@ -462,56 +460,56 @@
         "outputs": [
           {
             "thing": "raw_frame",
-            "amount": 1
+            "amount": 3
           }
         ],
         "cadence_ticks": 8,
         "duration_ticks": 4,
-        "deadline_ticks": 15,
+        "deadline_ticks": 16,
         "capacity_cost": {
-          "cap_c": 4
+          "frame_buffer": 8
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-s2",
-        "type": "observatory_process_b",
-        "runs_on": "stage-two",
+        "id": "reduce-frame",
+        "type": "data_reduction",
+        "runs_on": "pipeline",
         "inputs": [
           {
             "thing": "raw_frame",
-            "amount": 2
+            "amount": 3
           }
         ],
         "outputs": [
           {
-            "thing": "calibrated_frame",
-            "amount": 1
+            "thing": "cal_frame",
+            "amount": 2
           }
         ],
-        "cadence_ticks": 12,
+        "cadence_ticks": 15,
         "duration_ticks": 6,
-        "deadline_ticks": 22,
+        "deadline_ticks": 30,
         "capacity_cost": {
-          "cap_d": 5
+          "pipeline_jobs": 5
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-out",
-        "type": "observatory_rollup",
-        "runs_on": "output-node",
+        "id": "archive-obs",
+        "type": "archive_ingest",
+        "runs_on": "science-archive",
         "inputs": [
           {
-            "thing": "calibrated_frame",
-            "amount": 2
+            "thing": "cal_frame",
+            "amount": 4
           }
         ],
         "outputs": [
           {
-            "thing": "observation_report",
+            "thing": "obs_report",
             "amount": 1
           }
         ],
@@ -519,7 +517,7 @@
         "duration_ticks": 10,
         "deadline_ticks": 90,
         "capacity_cost": {
-          "cap_e": 3
+          "archive_slots": 6
         },
         "failure_policy": "drop",
         "max_attempts": 1
@@ -527,126 +525,126 @@
     ],
     "demand": [
       {
-        "id": "primary-demand",
-        "type": "observatory_primary",
+        "id": "science-demand",
+        "type": "science_observation",
         "target": {
           "type": "place",
-          "id": "stage-two"
+          "id": "science-archive"
         },
         "requires": [
-          "calibrated_frame"
+          "obs_report"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 60,
-          "start_tick": 60
+          "every_ticks": 200,
+          "start_tick": 150
         },
-        "deadline_ticks": 90,
+        "deadline_ticks": 280,
         "priority": "high",
-        "value": 80,
+        "value": 100,
         "penalty": {
-          "score": -400,
-          "warning": "observatory_primary_miss"
+          "score": -500,
+          "warning": "science_opportunity_lost"
         }
       },
       {
-        "id": "secondary-demand",
-        "type": "observatory_secondary",
+        "id": "calibration-run",
+        "type": "calibration_audit",
         "target": {
           "type": "place",
-          "id": "output-node"
+          "id": "science-archive"
         },
         "requires": [
-          "observation_report"
+          "cal_frame"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 300,
-          "start_tick": 200
+          "every_ticks": 600,
+          "start_tick": 400
         },
-        "deadline_ticks": 400,
+        "deadline_ticks": 700,
         "priority": "normal",
-        "value": 50,
+        "value": 40,
         "penalty": {
-          "score": -150,
-          "warning": "observatory_secondary_miss"
+          "score": -120,
+          "warning": "calibration_missed"
         }
       }
     ],
     "pressure": [
       {
-        "id": "pressure-surge",
+        "id": "target-burst",
         "type": "source_multiplier",
         "at_tick": 600,
         "duration_ticks": 400,
-        "target": "source-node",
+        "target": "target-queue",
         "thing": "target_request",
-        "multiplier": 3.0
+        "multiplier": 4.0
       },
       {
-        "id": "pressure-quota",
+        "id": "ccd-fault",
         "type": "quota_reduction",
         "at_tick": 1400,
-        "duration_ticks": 300,
-        "target": "stage-two",
-        "capacity": "cap_d",
+        "duration_ticks": 400,
+        "target": "ccd-camera",
+        "capacity": "frame_buffer",
         "reduction_percent": 40
       },
       {
-        "id": "pressure-demand",
+        "id": "science-rush",
         "type": "demand_growth",
-        "at_tick": 1000,
-        "duration_ticks": 400,
-        "target": "primary-demand",
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "science-demand",
         "spawn_multiplier": 2
       }
     ],
     "objectives": [
       {
-        "id": "keep-output-fresh",
+        "id": "queue-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "target-queue",
+        "capacity": "queue_depth",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "reports-fresh",
         "type": "keep_fresh",
         "weight": 2,
-        "place": "output-node",
-        "thing": "observation_report",
+        "place": "science-archive",
+        "thing": "obs_report",
         "max_stale_ticks": 800
       },
       {
-        "id": "complete-primary",
+        "id": "science-on-time",
         "type": "complete_jobs_before_deadline",
         "weight": 3,
-        "demand": "primary-demand",
-        "max_missed": 3
-      },
-      {
-        "id": "maintain-stage2-util",
-        "type": "maintain_utilization",
-        "weight": 1,
-        "place": "stage-two",
-        "capacity": "cap_d",
-        "min_percent": 10,
-        "max_percent": 85
+        "demand": "science-demand",
+        "max_missed": 2
       }
     ],
     "failure_conditions": [
       {
-        "id": "stage2-bottleneck-fail",
+        "id": "ccd-saturate",
         "type": "place_state",
-        "place": "stage-two",
-        "state": "bottleneck",
-        "grace_ticks": 90
+        "place": "ccd-camera",
+        "state": "saturated",
+        "grace_ticks": 60
       },
       {
-        "id": "output-stale-fail",
+        "id": "report-stale",
         "type": "stale_target",
-        "place": "output-node",
-        "thing": "observation_report",
-        "threshold_ticks": 1000,
-        "grace_ticks": 60
+        "place": "science-archive",
+        "thing": "obs_report",
+        "threshold_ticks": 900,
+        "grace_ticks": 30
       }
     ],
     "victory_conditions": [
       {
-        "id": "full-run",
+        "id": "observatory-night-queue-survived",
         "type": "survive_until",
         "at_tick": 4800
       }
@@ -656,51 +654,57 @@
     "observability": {
       "metrics": [
         {
-          "id": "s1-load",
+          "id": "queue-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-one",
-          "capacity": "cap_b"
+          "place": "target-queue",
+          "capacity": "queue_depth"
         },
         {
-          "id": "s2-load",
+          "id": "ccd-load",
           "source": "place_capacity_used_percent",
-          "place": "stage-two",
-          "capacity": "cap_d"
+          "place": "ccd-camera",
+          "capacity": "frame_buffer"
         },
         {
-          "id": "out-inv",
+          "id": "pipe-load",
+          "source": "place_capacity_used_percent",
+          "place": "pipeline",
+          "capacity": "pipeline_jobs"
+        },
+        {
+          "id": "report-inv",
           "source": "place_inventory_count",
-          "place": "output-node",
-          "thing": "observation_report"
+          "place": "science-archive",
+          "thing": "obs_report"
         }
       ],
       "dashboards": [
         {
-          "id": "observatory-dash",
+          "id": "obs-dash",
           "type": "live",
           "depends_on": [
-            "observation_report",
-            "calibrated_frame"
+            "obs_report",
+            "cal_frame"
           ],
-          "freshness_slo_ticks": 600
+          "freshness_slo_ticks": 500
         }
       ],
       "alerts": [
         {
-          "id": "s2-critical",
-          "metric": "s2-load",
+          "id": "queue-flood",
+          "metric": "queue-util",
           "predicate": {
             "type": "gt",
-            "threshold": 85
+            "threshold": 83
           },
           "severity": "critical"
         },
         {
-          "id": "out-low",
-          "metric": "out-inv",
+          "id": "ccd-high",
+          "metric": "ccd-load",
           "predicate": {
-            "type": "lt",
-            "threshold": 2
+            "type": "gt",
+            "threshold": 85
           },
           "severity": "warning"
         }

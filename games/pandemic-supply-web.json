@@ -3,13 +3,13 @@
   "name": "pandemic-supply-web",
   "theme": {
     "palette": [
-      "#061826",
-      "#f8f9fa",
-      "#4cc9f0",
-      "#f72585",
-      "#80ed99",
-      "#f9c74f",
-      "#b5179e"
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
     ],
     "background_index": 0,
     "font": "system-ui"
@@ -19,23 +19,19 @@
     "title": "Pandemic Supply Web",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A pharmaceutical emergency supply network coordinating API sourcing, bulk formulation, fill-and-finish, cold-chain packaging, and national allocation during a pandemic response.",
+    "description": "A pandemic vaccine supply network where the AI director must manage API shortages, formulation surges, fill-finish bottlenecks, and cold-chain disruptions to hit allocation targets.",
     "tags": [
       "pandemic",
-      "pharma",
-      "supply-chain",
-      "public-health",
       "hard",
       "sl1",
       "scenario_language_v1",
-      "hard",
       "draft"
     ],
-    "palette_note": "Domain palette for pandemic_supply: dark background, distinct hues across the six places. High contrast for status visibility.",
-    "layout_note": "Six SL1 places form a source-to-output pipeline in the pandemic_supply domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
-    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
-    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
-    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
   },
   "pieces": {
     "nodes": [],
@@ -52,97 +48,97 @@
     "schema_version": 1,
     "places": [
       {
-        "id": "source-node",
+        "id": "api-sourcing",
         "role": "source",
         "pos": [
           -360,
-          -80
+          -70
         ],
         "shape": "triangle",
         "color": 2,
         "capacity": {
-          "cap_a": 80
+          "api_stock": 40
         },
         "storage": {
-          "raw_material": {
-            "capacity": 400,
-            "initial": 40
+          "raw_api": {
+            "capacity": 150,
+            "initial": 15
           }
         },
         "accepts": [],
         "produces": [
-          "raw_material"
+          "raw_api"
         ],
         "failure_domains": [
-          "pandemic_supply",
-          "input"
+          "pharma",
+          "api"
         ],
         "operating_states": {
-          "saturated": {
-            "when": "cap_a.used_percent >= 80",
-            "grace_ticks": 5
+          "shortage": {
+            "when": "api_stock.used_percent >= 85",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-one",
+        "id": "formulation-plant",
         "role": "processor",
         "pos": [
-          -100,
+          -130,
           20
         ],
         "shape": "hexagon",
         "color": 3,
         "capacity": {
-          "cap_b": 24
+          "batch_slots": 30
         },
         "storage": {
-          "raw_material": {
-            "capacity": 120,
+          "raw_api": {
+            "capacity": 150,
             "initial": 12
           },
           "formulation_batch": {
-            "capacity": 80,
+            "capacity": 100,
             "initial": 8
           }
         },
         "accepts": [
-          "raw_material"
+          "raw_api"
         ],
         "produces": [
           "formulation_batch"
         ],
         "failure_domains": [
-          "pandemic_supply",
-          "stage1"
+          "pharma",
+          "formulation"
         ],
         "operating_states": {
-          "overloaded": {
-            "when": "cap_b.used_percent >= 85",
-            "grace_ticks": 5
+          "saturated": {
+            "when": "batch_slots.used_percent >= 88",
+            "grace_ticks": 3
           }
         }
       },
       {
-        "id": "buffer-node",
-        "role": "buffer",
+        "id": "fill-finish",
+        "role": "processor",
         "pos": [
-          120,
-          -80
+          70,
+          80
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4,
         "capacity": {
-          "cap_c": 60
+          "vial_capacity": 60
         },
         "storage": {
           "formulation_batch": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 100,
+            "initial": 8
           },
           "fill_unit": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 150,
+            "initial": 12
           }
         },
         "accepts": [
@@ -152,36 +148,36 @@
           "fill_unit"
         ],
         "failure_domains": [
-          "pandemic_supply",
-          "buffer"
+          "pharma",
+          "fill"
         ],
         "operating_states": {
-          "full": {
-            "when": "cap_c.used_percent >= 85",
-            "grace_ticks": 8
+          "congested": {
+            "when": "vial_capacity.used_percent >= 80",
+            "grace_ticks": 5
           }
         }
       },
       {
-        "id": "stage-two",
-        "role": "processor",
+        "id": "cold-packager",
+        "role": "buffer",
         "pos": [
-          320,
-          60
+          290,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "diamond",
         "color": 5,
         "capacity": {
-          "cap_d": 40
+          "pack_cases": 40
         },
         "storage": {
           "fill_unit": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 150,
+            "initial": 10
           },
           "cold_pack": {
-            "capacity": 40,
-            "initial": 4
+            "capacity": 120,
+            "initial": 8
           }
         },
         "accepts": [
@@ -191,60 +187,60 @@
           "cold_pack"
         ],
         "failure_domains": [
-          "pandemic_supply",
-          "stage2"
+          "pharma",
+          "packaging"
         ],
         "operating_states": {
-          "bottleneck": {
-            "when": "cap_d.used_percent >= 85",
-            "grace_ticks": 5
+          "jammed": {
+            "when": "pack_cases.used_percent >= 85",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "output-node",
+        "id": "alloc-dashboard",
         "role": "dashboard",
         "pos": [
-          520,
-          -60
+          510,
+          -50
         ],
         "shape": "square",
         "color": 6,
         "capacity": {
-          "cap_e": 50
+          "alloc_slots": 100
         },
         "storage": {
           "cold_pack": {
-            "capacity": 30,
-            "initial": 3
+            "capacity": 120,
+            "initial": 8
           },
-          "allocation_record": {
-            "capacity": 30,
-            "initial": 3
+          "alloc_record": {
+            "capacity": 60,
+            "initial": 4
           }
         },
         "accepts": [
           "cold_pack"
         ],
         "produces": [
-          "allocation_record"
+          "alloc_record"
         ],
         "failure_domains": [
-          "pandemic_supply",
-          "output"
+          "pharma",
+          "allocation"
         ],
         "operating_states": {
-          "report_lag": {
-            "when": "cap_e.used_percent >= 80",
-            "grace_ticks": 10
+          "stale": {
+            "when": "alloc_slots.used_percent >= 90",
+            "grace_ticks": 5
           }
         }
       },
       {
-        "id": "operator-node",
+        "id": "supply-director",
         "role": "operator",
         "pos": [
-          120,
+          70,
           -220
         ],
         "shape": "circle",
@@ -254,24 +250,24 @@
         "accepts": [],
         "produces": [],
         "failure_domains": [
-          "pandemic_supply"
+          "pharma"
         ],
         "operating_states": {}
       }
     ],
     "links": [
       {
-        "id": "link-src-s1",
-        "type": "pandemic_supply_feed",
-        "from": "source-node",
-        "to": "stage-one",
+        "id": "api-form",
+        "type": "supply_chain",
+        "from": "api-sourcing",
+        "to": "formulation-plant",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 10
+          "volume_per_tick": 30
         },
         "travel_ticks": 1,
         "compatibility": [
-          "raw_material"
+          "raw_api"
         ],
         "queue_capacity": 200,
         "backpressure": "block_upstream",
@@ -281,19 +277,19 @@
         }
       },
       {
-        "id": "link-s1-buf",
-        "type": "pandemic_supply_transfer",
-        "from": "stage-one",
-        "to": "buffer-node",
+        "id": "form-fill",
+        "type": "process_feed",
+        "from": "formulation-plant",
+        "to": "fill-finish",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 40
         },
         "travel_ticks": 2,
         "compatibility": [
           "formulation_batch"
         ],
-        "queue_capacity": 60,
+        "queue_capacity": 200,
         "backpressure": "spill_to_buffer",
         "render": {
           "style": "flow",
@@ -301,19 +297,19 @@
         }
       },
       {
-        "id": "link-buf-s2",
-        "type": "pandemic_supply_relay",
-        "from": "buffer-node",
-        "to": "stage-two",
+        "id": "fill-cold",
+        "type": "cold_feed",
+        "from": "fill-finish",
+        "to": "cold-packager",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 35
         },
         "travel_ticks": 2,
         "compatibility": [
           "fill_unit"
         ],
-        "queue_capacity": 40,
+        "queue_capacity": 150,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -321,19 +317,19 @@
         }
       },
       {
-        "id": "link-s2-out",
-        "type": "pandemic_supply_delivery",
-        "from": "stage-two",
-        "to": "output-node",
+        "id": "cold-alloc",
+        "type": "alloc_feed",
+        "from": "cold-packager",
+        "to": "alloc-dashboard",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 8
+          "volume_per_tick": 25
         },
         "travel_ticks": 2,
         "compatibility": [
           "cold_pack"
         ],
-        "queue_capacity": 30,
+        "queue_capacity": 120,
         "backpressure": "drop_low_priority",
         "render": {
           "style": "flow",
@@ -341,10 +337,10 @@
         }
       },
       {
-        "id": "link-op-s1",
+        "id": "dir-api",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-one",
+        "from": "supply-director",
+        "to": "api-sourcing",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -357,10 +353,10 @@
         }
       },
       {
-        "id": "link-op-s2",
+        "id": "dir-form",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-two",
+        "from": "supply-director",
+        "to": "formulation-plant",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -375,65 +371,65 @@
     ],
     "things": [
       {
-        "id": "raw_material",
-        "kind": "bulk_material",
+        "id": "raw_api",
+        "kind": "material_unit",
         "tags": [
-          "raw",
           "api",
-          "pharmaceutical"
+          "active",
+          "pharma"
         ],
-        "freshness_budget_ticks": 1800
+        "freshness_budget_ticks": 60
       },
       {
         "id": "formulation_batch",
-        "kind": "work_in_progress",
+        "kind": "material_unit",
         "tags": [
-          "formulation",
+          "formulated",
           "batch",
           "drug"
         ],
-        "freshness_budget_ticks": 600
+        "freshness_budget_ticks": 90
       },
       {
         "id": "fill_unit",
-        "kind": "finished_good",
+        "kind": "material_unit",
         "tags": [
-          "fill",
+          "filled",
           "vial",
-          "dose"
+          "unit"
         ],
-        "freshness_budget_ticks": 400
+        "freshness_budget_ticks": 120
       },
       {
         "id": "cold_pack",
-        "kind": "packaged_good",
+        "kind": "material_unit",
         "tags": [
           "cold",
           "packed",
-          "shipped"
+          "vaccine"
         ],
         "freshness_budget_ticks": 300
       },
       {
-        "id": "allocation_record",
+        "id": "alloc_record",
         "kind": "compliance_record",
         "tags": [
           "allocation",
-          "national",
-          "equity"
+          "record",
+          "supply"
         ],
-        "freshness_budget_ticks": 1200
+        "freshness_budget_ticks": 600
       }
     ],
     "transforms": [
       {
-        "id": "transform-s1",
-        "type": "pandemic_supply_process_a",
-        "runs_on": "stage-one",
+        "id": "formulate",
+        "type": "drug_formulation",
+        "runs_on": "formulation-plant",
         "inputs": [
           {
-            "thing": "raw_material",
-            "amount": 2
+            "thing": "raw_api",
+            "amount": 3
           }
         ],
         "outputs": [
@@ -442,19 +438,19 @@
             "amount": 1
           }
         ],
-        "cadence_ticks": 5,
-        "duration_ticks": 3,
-        "deadline_ticks": 10,
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
         "capacity_cost": {
-          "cap_b": 3
+          "batch_slots": 5
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-buf",
-        "type": "pandemic_supply_buffer_op",
-        "runs_on": "buffer-node",
+        "id": "fill-vials",
+        "type": "fill_finish",
+        "runs_on": "fill-finish",
         "inputs": [
           {
             "thing": "formulation_batch",
@@ -464,26 +460,26 @@
         "outputs": [
           {
             "thing": "fill_unit",
-            "amount": 1
+            "amount": 4
           }
         ],
         "cadence_ticks": 8,
-        "duration_ticks": 4,
-        "deadline_ticks": 15,
+        "duration_ticks": 3,
+        "deadline_ticks": 16,
         "capacity_cost": {
-          "cap_c": 4
+          "vial_capacity": 8
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-s2",
-        "type": "pandemic_supply_process_b",
-        "runs_on": "stage-two",
+        "id": "pack-cold",
+        "type": "cold_packaging",
+        "runs_on": "cold-packager",
         "inputs": [
           {
             "thing": "fill_unit",
-            "amount": 2
+            "amount": 4
           }
         ],
         "outputs": [
@@ -493,27 +489,27 @@
           }
         ],
         "cadence_ticks": 12,
-        "duration_ticks": 6,
-        "deadline_ticks": 22,
+        "duration_ticks": 5,
+        "deadline_ticks": 24,
         "capacity_cost": {
-          "cap_d": 5
+          "pack_cases": 5
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-out",
-        "type": "pandemic_supply_rollup",
-        "runs_on": "output-node",
+        "id": "record-alloc",
+        "type": "allocation_logging",
+        "runs_on": "alloc-dashboard",
         "inputs": [
           {
             "thing": "cold_pack",
-            "amount": 2
+            "amount": 3
           }
         ],
         "outputs": [
           {
-            "thing": "allocation_record",
+            "thing": "alloc_record",
             "amount": 1
           }
         ],
@@ -521,7 +517,7 @@
         "duration_ticks": 10,
         "deadline_ticks": 90,
         "capacity_cost": {
-          "cap_e": 3
+          "alloc_slots": 8
         },
         "failure_policy": "drop",
         "max_attempts": 1
@@ -529,128 +525,128 @@
     ],
     "demand": [
       {
-        "id": "primary-demand",
-        "type": "pandemic_supply_primary",
+        "id": "alloc-demand",
+        "type": "vaccine_allocation",
         "target": {
           "type": "place",
-          "id": "stage-two"
+          "id": "alloc-dashboard"
         },
         "requires": [
-          "cold_pack"
+          "alloc_record"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 60,
-          "start_tick": 60
+          "every_ticks": 160,
+          "start_tick": 120
         },
-        "deadline_ticks": 90,
+        "deadline_ticks": 240,
         "priority": "high",
-        "value": 80,
+        "value": 150,
         "penalty": {
-          "score": -400,
-          "warning": "pandemic_supply_primary_miss"
+          "score": -700,
+          "warning": "allocation_crisis"
         }
       },
       {
-        "id": "secondary-demand",
-        "type": "pandemic_supply_secondary",
+        "id": "supply-audit",
+        "type": "supply_review",
         "target": {
           "type": "place",
-          "id": "output-node"
+          "id": "alloc-dashboard"
         },
         "requires": [
-          "allocation_record"
+          "alloc_record"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 300,
-          "start_tick": 200
+          "every_ticks": 600,
+          "start_tick": 400
         },
-        "deadline_ticks": 400,
+        "deadline_ticks": 700,
         "priority": "normal",
         "value": 50,
         "penalty": {
           "score": -150,
-          "warning": "pandemic_supply_secondary_miss"
+          "warning": "supply_audit_missed"
         }
       }
     ],
     "pressure": [
       {
-        "id": "pressure-surge",
+        "id": "demand-surge",
         "type": "source_multiplier",
-        "at_tick": 600,
-        "duration_ticks": 400,
-        "target": "source-node",
-        "thing": "raw_material",
-        "multiplier": 3.0
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "api-sourcing",
+        "thing": "raw_api",
+        "multiplier": 5.0
       },
       {
-        "id": "pressure-quota",
+        "id": "api-shortage",
         "type": "quota_reduction",
         "at_tick": 1400,
-        "duration_ticks": 300,
-        "target": "stage-two",
-        "capacity": "cap_d",
-        "reduction_percent": 40
+        "duration_ticks": 500,
+        "target": "formulation-plant",
+        "capacity": "batch_slots",
+        "reduction_percent": 50
       },
       {
-        "id": "pressure-demand",
+        "id": "alloc-rush",
         "type": "demand_growth",
-        "at_tick": 1000,
+        "at_tick": 900,
         "duration_ticks": 400,
-        "target": "primary-demand",
-        "spawn_multiplier": 2
+        "target": "alloc-demand",
+        "spawn_multiplier": 3
       }
     ],
     "objectives": [
       {
-        "id": "keep-output-fresh",
+        "id": "form-safe",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "formulation-plant",
+        "capacity": "batch_slots",
+        "min_percent": 0,
+        "max_percent": 82
+      },
+      {
+        "id": "alloc-fresh",
         "type": "keep_fresh",
         "weight": 2,
-        "place": "output-node",
-        "thing": "allocation_record",
-        "max_stale_ticks": 800
+        "place": "alloc-dashboard",
+        "thing": "alloc_record",
+        "max_stale_ticks": 700
       },
       {
-        "id": "complete-primary",
+        "id": "allocs-on-time",
         "type": "complete_jobs_before_deadline",
         "weight": 3,
-        "demand": "primary-demand",
-        "max_missed": 3
-      },
-      {
-        "id": "maintain-stage2-util",
-        "type": "maintain_utilization",
-        "weight": 1,
-        "place": "stage-two",
-        "capacity": "cap_d",
-        "min_percent": 10,
-        "max_percent": 85
+        "demand": "alloc-demand",
+        "max_missed": 2
       }
     ],
     "failure_conditions": [
       {
-        "id": "stage2-bottleneck-fail",
+        "id": "form-saturate",
         "type": "place_state",
-        "place": "stage-two",
-        "state": "bottleneck",
-        "grace_ticks": 90
+        "place": "formulation-plant",
+        "state": "saturated",
+        "grace_ticks": 45
       },
       {
-        "id": "output-stale-fail",
+        "id": "alloc-stale",
         "type": "stale_target",
-        "place": "output-node",
-        "thing": "allocation_record",
-        "threshold_ticks": 1000,
-        "grace_ticks": 60
+        "place": "alloc-dashboard",
+        "thing": "alloc_record",
+        "threshold_ticks": 850,
+        "grace_ticks": 30
       }
     ],
     "victory_conditions": [
       {
-        "id": "full-run",
+        "id": "pandemic-supply-web-survived",
         "type": "survive_until",
-        "at_tick": 4800
+        "at_tick": 6400
       }
     ],
     "agents": [],
@@ -658,39 +654,45 @@
     "observability": {
       "metrics": [
         {
-          "id": "s1-load",
+          "id": "form-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-one",
-          "capacity": "cap_b"
+          "place": "formulation-plant",
+          "capacity": "batch_slots"
         },
         {
-          "id": "s2-load",
+          "id": "fill-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-two",
-          "capacity": "cap_d"
+          "place": "fill-finish",
+          "capacity": "vial_capacity"
         },
         {
-          "id": "out-inv",
+          "id": "pack-util",
+          "source": "place_capacity_used_percent",
+          "place": "cold-packager",
+          "capacity": "pack_cases"
+        },
+        {
+          "id": "alloc-inv",
           "source": "place_inventory_count",
-          "place": "output-node",
-          "thing": "allocation_record"
+          "place": "alloc-dashboard",
+          "thing": "alloc_record"
         }
       ],
       "dashboards": [
         {
-          "id": "pandemic_supply-dash",
+          "id": "supply-dash",
           "type": "live",
           "depends_on": [
-            "allocation_record",
+            "alloc_record",
             "cold_pack"
           ],
-          "freshness_slo_ticks": 600
+          "freshness_slo_ticks": 400
         }
       ],
       "alerts": [
         {
-          "id": "s2-critical",
-          "metric": "s2-load",
+          "id": "form-high",
+          "metric": "form-util",
           "predicate": {
             "type": "gt",
             "threshold": 85
@@ -698,11 +700,11 @@
           "severity": "critical"
         },
         {
-          "id": "out-low",
-          "metric": "out-inv",
+          "id": "pack-strained",
+          "metric": "pack-util",
           "predicate": {
-            "type": "lt",
-            "threshold": 2
+            "type": "gt",
+            "threshold": 83
           },
           "severity": "warning"
         }

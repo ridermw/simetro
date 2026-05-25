@@ -19,247 +19,178 @@
     "title": "Circuit Garden",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A printed-circuit-board garden where logic-gate nodes route signals through copper-trace paths.",
+    "description": "A printed-circuit-board garden where logic-gate nodes route digital signals through copper-trace paths in a compact grid.",
     "tags": [
       "circuit",
+      "intro",
       "legacy",
       "transit_loop",
-      "intro",
       "draft"
     ],
-    "palette_note": "Transit palette for intro: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Circuit Garden colour theme.",
+    "layout_note": "8 nodes forming a circuit topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 3 distinct colors reflecting circuit roles.",
+    "mover_path_note": "3 movers on distinct paths at speeds 0.80\u20131.30.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "r0c0",
         "pos": [
-          200,
-          0
-        ],
-        "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
+          -240,
+          160
         ],
         "shape": "square",
         "color": 2
       },
       {
-        "id": "n2",
-        "pos": [
-          61,
-          190
-        ],
-        "shape": "hexagon",
-        "color": 3
-      },
-      {
-        "id": "n3",
-        "pos": [
-          -61,
-          190
-        ],
-        "shape": "diamond",
-        "color": 4
-      },
-      {
-        "id": "n4",
-        "pos": [
-          -161,
-          117
-        ],
-        "shape": "triangle",
-        "color": 5
-      },
-      {
-        "id": "n5",
-        "pos": [
-          -200,
-          0
-        ],
-        "shape": "circle",
-        "color": 6
-      },
-      {
-        "id": "n6",
-        "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
-        "color": 2
-      },
-      {
-        "id": "n8",
-        "pos": [
-          61,
-          -190
-        ],
-        "shape": "diamond",
-        "color": 3
-      },
-      {
-        "id": "n9",
-        "pos": [
-          161,
-          -117
-        ],
-        "shape": "triangle",
-        "color": 4
-      },
-      {
-        "id": "hub-a",
+        "id": "r0c1",
         "pos": [
           -80,
-          -40
+          160
         ],
-        "shape": "hexagon",
+        "shape": "circle",
         "color": 3
       },
       {
-        "id": "hub-b",
+        "id": "r0c2",
         "pos": [
           80,
-          40
+          160
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "r1c0",
+        "pos": [
+          -240,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "r1c1",
+        "pos": [
+          -80,
+          0
         ],
         "shape": "diamond",
-        "color": 5
+        "color": 3
+      },
+      {
+        "id": "r1c2",
+        "pos": [
+          80,
+          0
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "r2c0",
+        "pos": [
+          -240,
+          -160
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "r2c1",
+        "pos": [
+          -80,
+          -160
+        ],
+        "shape": "triangle",
+        "color": 3
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
-        "color": 2
-      },
-      {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "p-r0c0-r0c1",
+        "from": "r0c0",
+        "to": "r0c1",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "p-r0c1-r0c2",
+        "from": "r0c1",
+        "to": "r0c2",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
-        "color": 5
-      },
-      {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
-        "color": 6
-      },
-      {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
+        "id": "p-r1c0-r1c1",
+        "from": "r1c0",
+        "to": "r1c1",
         "color": 3
       },
       {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
+        "id": "p-r1c1-r1c2",
+        "from": "r1c1",
+        "to": "r1c2",
         "color": 4
       },
       {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
+        "id": "p-r0c0-r1c0",
+        "from": "r0c0",
+        "to": "r1c0",
         "color": 2
       },
       {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
+        "id": "p-r0c1-r1c1",
+        "from": "r0c1",
+        "to": "r1c1",
         "color": 3
       },
       {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
-        "color": 6
+        "id": "p-r0c2-r1c2",
+        "from": "r0c2",
+        "to": "r1c2",
+        "color": 4
+      },
+      {
+        "id": "p-r1c0-r2c0",
+        "from": "r1c0",
+        "to": "r2c0",
+        "color": 2
+      },
+      {
+        "id": "p-r1c1-r2c1",
+        "from": "r1c1",
+        "to": "r2c1",
+        "color": 3
+      },
+      {
+        "id": "p-r2c0-r2c1",
+        "from": "r2c0",
+        "to": "r2c1",
+        "color": 2
+      },
+      {
+        "id": "p-r2c1-r1c2",
+        "from": "r2c1",
+        "to": "r1c2",
+        "color": 4
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
-        "speed": 1.5
+        "id": "sig-a",
+        "on_path": "p-r0c0-r0c1",
+        "speed": 1.0
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "sig-b",
+        "on_path": "p-r1c0-r1c1",
+        "speed": 1.3
       },
       {
-        "id": "m2",
-        "on_path": "p4",
-        "speed": 1.2
-      },
-      {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
-      },
-      {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
-      },
-      {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
+        "id": "sig-c",
+        "on_path": "p-r0c0-r1c0",
+        "speed": 0.8
       }
     ]
   },

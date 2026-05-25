@@ -3,13 +3,13 @@
   "name": "hospital-bed-command",
   "theme": {
     "palette": [
-      "#101820",
-      "#f2f7f5",
-      "#00a8e8",
-      "#ff6b6b",
-      "#84dcc6",
-      "#ffd166",
-      "#9b5de5"
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
     ],
     "background_index": 0,
     "font": "system-ui"
@@ -19,22 +19,19 @@
     "title": "Hospital Bed Command",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A hospital command center that coordinates admissions, bed assignments, transfers, and discharges to prevent overcrowding across wards during a multi-casualty event.",
+    "description": "A hospital bed command centre where admission requests flow through ward assignment, transfer orders, and discharge planning to maintain live capacity dashboards under surge.",
     "tags": [
       "hospital",
-      "beds",
-      "command-center",
-      "healthcare",
+      "medium",
       "sl1",
       "scenario_language_v1",
-      "medium",
       "draft"
     ],
-    "palette_note": "Domain palette for hospital_bed: dark background, distinct hues across the six places. High contrast for status visibility.",
-    "layout_note": "Six SL1 places form a source-to-output pipeline in the hospital_bed domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
-    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
-    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
-    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
   },
   "pieces": {
     "nodes": [],
@@ -51,21 +48,21 @@
     "schema_version": 1,
     "places": [
       {
-        "id": "source-node",
+        "id": "admissions-desk",
         "role": "source",
         "pos": [
           -360,
-          -80
+          -70
         ],
         "shape": "triangle",
         "color": 2,
         "capacity": {
-          "cap_a": 80
+          "admit_queue": 60
         },
         "storage": {
           "admission_request": {
-            "capacity": 400,
-            "initial": 40
+            "capacity": 250,
+            "initial": 20
           }
         },
         "accepts": [],
@@ -73,35 +70,35 @@
           "admission_request"
         ],
         "failure_domains": [
-          "hospital_bed",
-          "input"
+          "hospital",
+          "admissions"
         ],
         "operating_states": {
-          "saturated": {
-            "when": "cap_a.used_percent >= 80",
-            "grace_ticks": 5
+          "overcrowded": {
+            "when": "admit_queue.used_percent >= 85",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-one",
+        "id": "ward-coordinator",
         "role": "processor",
         "pos": [
-          -100,
+          -130,
           20
         ],
         "shape": "hexagon",
         "color": 3,
         "capacity": {
-          "cap_b": 24
+          "assign_slots": 30
         },
         "storage": {
           "admission_request": {
-            "capacity": 120,
+            "capacity": 150,
             "initial": 12
           },
           "bed_assignment": {
-            "capacity": 80,
+            "capacity": 100,
             "initial": 8
           }
         },
@@ -112,35 +109,35 @@
           "bed_assignment"
         ],
         "failure_domains": [
-          "hospital_bed",
-          "stage1"
+          "hospital",
+          "ward"
         ],
         "operating_states": {
           "overloaded": {
-            "when": "cap_b.used_percent >= 85",
+            "when": "assign_slots.used_percent >= 80",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "buffer-node",
-        "role": "buffer",
+        "id": "transfer-hub",
+        "role": "processor",
         "pos": [
-          120,
-          -80
+          70,
+          80
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4,
         "capacity": {
-          "cap_c": 60
+          "transfer_slots": 25
         },
         "storage": {
           "bed_assignment": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 100,
+            "initial": 8
           },
           "transfer_order": {
-            "capacity": 60,
+            "capacity": 80,
             "initial": 6
           }
         },
@@ -151,35 +148,35 @@
           "transfer_order"
         ],
         "failure_domains": [
-          "hospital_bed",
-          "buffer"
+          "hospital",
+          "transfer"
         ],
         "operating_states": {
-          "full": {
-            "when": "cap_c.used_percent >= 85",
-            "grace_ticks": 8
+          "congested": {
+            "when": "transfer_slots.used_percent >= 85",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-two",
-        "role": "processor",
+        "id": "discharge-planner",
+        "role": "buffer",
         "pos": [
-          320,
-          60
+          290,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "diamond",
         "color": 5,
         "capacity": {
-          "cap_d": 40
+          "plan_slots": 20
         },
         "storage": {
           "transfer_order": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 80,
+            "initial": 5
           },
           "discharge_clearance": {
-            "capacity": 40,
+            "capacity": 60,
             "initial": 4
           }
         },
@@ -190,35 +187,35 @@
           "discharge_clearance"
         ],
         "failure_domains": [
-          "hospital_bed",
-          "stage2"
+          "hospital",
+          "discharge"
         ],
         "operating_states": {
-          "bottleneck": {
-            "when": "cap_d.used_percent >= 85",
+          "at_limit": {
+            "when": "plan_slots.used_percent >= 90",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "output-node",
+        "id": "bed-dashboard",
         "role": "dashboard",
         "pos": [
-          520,
-          -60
+          510,
+          -50
         ],
         "shape": "square",
         "color": 6,
         "capacity": {
-          "cap_e": 50
+          "snapshot_slots": 80
         },
         "storage": {
           "discharge_clearance": {
-            "capacity": 30,
-            "initial": 3
+            "capacity": 60,
+            "initial": 4
           },
           "capacity_snapshot": {
-            "capacity": 30,
+            "capacity": 50,
             "initial": 3
           }
         },
@@ -229,21 +226,21 @@
           "capacity_snapshot"
         ],
         "failure_domains": [
-          "hospital_bed",
-          "output"
+          "hospital",
+          "dashboard"
         ],
         "operating_states": {
-          "report_lag": {
-            "when": "cap_e.used_percent >= 80",
-            "grace_ticks": 10
+          "stale": {
+            "when": "snapshot_slots.used_percent >= 90",
+            "grace_ticks": 6
           }
         }
       },
       {
-        "id": "operator-node",
+        "id": "hospital-director",
         "role": "operator",
         "pos": [
-          120,
+          70,
           -220
         ],
         "shape": "circle",
@@ -253,26 +250,26 @@
         "accepts": [],
         "produces": [],
         "failure_domains": [
-          "hospital_bed"
+          "hospital"
         ],
         "operating_states": {}
       }
     ],
     "links": [
       {
-        "id": "link-src-s1",
-        "type": "hospital_bed_feed",
-        "from": "source-node",
-        "to": "stage-one",
+        "id": "admit-ward",
+        "type": "patient_flow",
+        "from": "admissions-desk",
+        "to": "ward-coordinator",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 10
+          "volume_per_tick": 40
         },
         "travel_ticks": 1,
         "compatibility": [
           "admission_request"
         ],
-        "queue_capacity": 200,
+        "queue_capacity": 300,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -280,19 +277,19 @@
         }
       },
       {
-        "id": "link-s1-buf",
-        "type": "hospital_bed_transfer",
-        "from": "stage-one",
-        "to": "buffer-node",
+        "id": "ward-transfer",
+        "type": "bed_handoff",
+        "from": "ward-coordinator",
+        "to": "transfer-hub",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 30
         },
         "travel_ticks": 2,
         "compatibility": [
           "bed_assignment"
         ],
-        "queue_capacity": 60,
+        "queue_capacity": 150,
         "backpressure": "spill_to_buffer",
         "render": {
           "style": "flow",
@@ -300,19 +297,19 @@
         }
       },
       {
-        "id": "link-buf-s2",
-        "type": "hospital_bed_relay",
-        "from": "buffer-node",
-        "to": "stage-two",
+        "id": "transfer-discharge",
+        "type": "discharge_feed",
+        "from": "transfer-hub",
+        "to": "discharge-planner",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 25
         },
         "travel_ticks": 2,
         "compatibility": [
           "transfer_order"
         ],
-        "queue_capacity": 40,
+        "queue_capacity": 120,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -320,19 +317,19 @@
         }
       },
       {
-        "id": "link-s2-out",
-        "type": "hospital_bed_delivery",
-        "from": "stage-two",
-        "to": "output-node",
+        "id": "discharge-dash",
+        "type": "dashboard_feed",
+        "from": "discharge-planner",
+        "to": "bed-dashboard",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 8
+          "volume_per_tick": 20
         },
         "travel_ticks": 2,
         "compatibility": [
           "discharge_clearance"
         ],
-        "queue_capacity": 30,
+        "queue_capacity": 100,
         "backpressure": "drop_low_priority",
         "render": {
           "style": "flow",
@@ -340,10 +337,10 @@
         }
       },
       {
-        "id": "link-op-s1",
+        "id": "dir-admit",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-one",
+        "from": "hospital-director",
+        "to": "admissions-desk",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -356,10 +353,10 @@
         }
       },
       {
-        "id": "link-op-s2",
+        "id": "dir-ward",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-two",
+        "from": "hospital-director",
+        "to": "ward-coordinator",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -375,60 +372,60 @@
     "things": [
       {
         "id": "admission_request",
-        "kind": "intake_document",
+        "kind": "work_order",
         "tags": [
+          "patient",
           "admission",
-          "bed",
-          "ehr"
+          "ed"
         ],
-        "freshness_budget_ticks": 300
+        "freshness_budget_ticks": 60
       },
       {
         "id": "bed_assignment",
         "kind": "work_order",
         "tags": [
           "bed",
-          "assignment",
-          "ward"
+          "ward",
+          "assignment"
         ],
-        "freshness_budget_ticks": 200
+        "freshness_budget_ticks": 90
       },
       {
         "id": "transfer_order",
-        "kind": "order",
+        "kind": "work_order",
         "tags": [
           "transfer",
-          "patient",
-          "ward"
+          "movement",
+          "internal"
         ],
-        "freshness_budget_ticks": 150
+        "freshness_budget_ticks": 120
       },
       {
         "id": "discharge_clearance",
-        "kind": "clearance",
+        "kind": "compliance_record",
         "tags": [
           "discharge",
           "clearance",
-          "admin"
+          "ready"
         ],
-        "freshness_budget_ticks": 400
+        "freshness_budget_ticks": 300
       },
       {
         "id": "capacity_snapshot",
-        "kind": "report",
+        "kind": "audit_record",
         "tags": [
           "capacity",
-          "beds",
-          "ops"
+          "bed",
+          "snapshot"
         ],
         "freshness_budget_ticks": 600
       }
     ],
     "transforms": [
       {
-        "id": "transform-s1",
-        "type": "hospital_bed_process_a",
-        "runs_on": "stage-one",
+        "id": "assign-bed",
+        "type": "bed_assignment",
+        "runs_on": "ward-coordinator",
         "inputs": [
           {
             "thing": "admission_request",
@@ -441,23 +438,23 @@
             "amount": 1
           }
         ],
-        "cadence_ticks": 5,
+        "cadence_ticks": 6,
         "duration_ticks": 3,
-        "deadline_ticks": 10,
+        "deadline_ticks": 12,
         "capacity_cost": {
-          "cap_b": 3
+          "assign_slots": 4
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-buf",
-        "type": "hospital_bed_buffer_op",
-        "runs_on": "buffer-node",
+        "id": "issue-transfer",
+        "type": "transfer_coordination",
+        "runs_on": "transfer-hub",
         "inputs": [
           {
             "thing": "bed_assignment",
-            "amount": 1
+            "amount": 2
           }
         ],
         "outputs": [
@@ -467,18 +464,18 @@
           }
         ],
         "cadence_ticks": 8,
-        "duration_ticks": 4,
-        "deadline_ticks": 15,
+        "duration_ticks": 3,
+        "deadline_ticks": 16,
         "capacity_cost": {
-          "cap_c": 4
+          "transfer_slots": 3
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-s2",
-        "type": "hospital_bed_process_b",
-        "runs_on": "stage-two",
+        "id": "clear-discharge",
+        "type": "discharge_planning",
+        "runs_on": "discharge-planner",
         "inputs": [
           {
             "thing": "transfer_order",
@@ -491,23 +488,23 @@
             "amount": 1
           }
         ],
-        "cadence_ticks": 12,
+        "cadence_ticks": 15,
         "duration_ticks": 6,
-        "deadline_ticks": 22,
+        "deadline_ticks": 30,
         "capacity_cost": {
-          "cap_d": 5
+          "plan_slots": 3
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-out",
-        "type": "hospital_bed_rollup",
-        "runs_on": "output-node",
+        "id": "publish-snapshot",
+        "type": "capacity_reporting",
+        "runs_on": "bed-dashboard",
         "inputs": [
           {
             "thing": "discharge_clearance",
-            "amount": 2
+            "amount": 3
           }
         ],
         "outputs": [
@@ -520,7 +517,7 @@
         "duration_ticks": 10,
         "deadline_ticks": 90,
         "capacity_cost": {
-          "cap_e": 3
+          "snapshot_slots": 6
         },
         "failure_policy": "drop",
         "max_attempts": 1
@@ -528,128 +525,128 @@
     ],
     "demand": [
       {
-        "id": "primary-demand",
-        "type": "hospital_bed_primary",
+        "id": "bed-request",
+        "type": "bed_demand",
         "target": {
           "type": "place",
-          "id": "stage-two"
-        },
-        "requires": [
-          "discharge_clearance"
-        ],
-        "spawn_schedule": {
-          "type": "fixed",
-          "every_ticks": 60,
-          "start_tick": 60
-        },
-        "deadline_ticks": 90,
-        "priority": "high",
-        "value": 80,
-        "penalty": {
-          "score": -400,
-          "warning": "hospital_bed_primary_miss"
-        }
-      },
-      {
-        "id": "secondary-demand",
-        "type": "hospital_bed_secondary",
-        "target": {
-          "type": "place",
-          "id": "output-node"
+          "id": "bed-dashboard"
         },
         "requires": [
           "capacity_snapshot"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 300,
-          "start_tick": 200
+          "every_ticks": 180,
+          "start_tick": 120
         },
-        "deadline_ticks": 400,
+        "deadline_ticks": 250,
+        "priority": "high",
+        "value": 100,
+        "penalty": {
+          "score": -500,
+          "warning": "bed_crisis"
+        }
+      },
+      {
+        "id": "ops-summary",
+        "type": "capacity_audit",
+        "target": {
+          "type": "place",
+          "id": "bed-dashboard"
+        },
+        "requires": [
+          "capacity_snapshot"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
         "priority": "normal",
         "value": 50,
         "penalty": {
           "score": -150,
-          "warning": "hospital_bed_secondary_miss"
+          "warning": "ops_report_missed"
         }
       }
     ],
     "pressure": [
       {
-        "id": "pressure-surge",
+        "id": "patient-surge",
         "type": "source_multiplier",
         "at_tick": 600,
-        "duration_ticks": 400,
-        "target": "source-node",
+        "duration_ticks": 600,
+        "target": "admissions-desk",
         "thing": "admission_request",
-        "multiplier": 3.0
+        "multiplier": 4.0
       },
       {
-        "id": "pressure-quota",
+        "id": "ward-closure",
         "type": "quota_reduction",
-        "at_tick": 1400,
-        "duration_ticks": 300,
-        "target": "stage-two",
-        "capacity": "cap_d",
-        "reduction_percent": 40
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "ward-coordinator",
+        "capacity": "assign_slots",
+        "reduction_percent": 35
       },
       {
-        "id": "pressure-demand",
+        "id": "bed-crisis",
         "type": "demand_growth",
-        "at_tick": 1000,
-        "duration_ticks": 400,
-        "target": "primary-demand",
-        "spawn_multiplier": 2
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "bed-request",
+        "spawn_multiplier": 3
       }
     ],
     "objectives": [
       {
-        "id": "keep-output-fresh",
+        "id": "admit-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "admissions-desk",
+        "capacity": "admit_queue",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "snapshot-fresh",
         "type": "keep_fresh",
         "weight": 2,
-        "place": "output-node",
+        "place": "bed-dashboard",
         "thing": "capacity_snapshot",
-        "max_stale_ticks": 800
+        "max_stale_ticks": 700
       },
       {
-        "id": "complete-primary",
+        "id": "beds-on-time",
         "type": "complete_jobs_before_deadline",
         "weight": 3,
-        "demand": "primary-demand",
-        "max_missed": 3
-      },
-      {
-        "id": "maintain-stage2-util",
-        "type": "maintain_utilization",
-        "weight": 1,
-        "place": "stage-two",
-        "capacity": "cap_d",
-        "min_percent": 10,
-        "max_percent": 85
+        "demand": "bed-request",
+        "max_missed": 2
       }
     ],
     "failure_conditions": [
       {
-        "id": "stage2-bottleneck-fail",
+        "id": "admit-overflow",
         "type": "place_state",
-        "place": "stage-two",
-        "state": "bottleneck",
-        "grace_ticks": 90
+        "place": "admissions-desk",
+        "state": "overcrowded",
+        "grace_ticks": 60
       },
       {
-        "id": "output-stale-fail",
+        "id": "snapshot-stale",
         "type": "stale_target",
-        "place": "output-node",
+        "place": "bed-dashboard",
         "thing": "capacity_snapshot",
-        "threshold_ticks": 1000,
-        "grace_ticks": 60
+        "threshold_ticks": 850,
+        "grace_ticks": 30
       }
     ],
     "victory_conditions": [
       {
-        "id": "full-run",
+        "id": "hospital-bed-command-survived",
         "type": "survive_until",
-        "at_tick": 4800
+        "at_tick": 5200
       }
     ],
     "agents": [],
@@ -657,51 +654,57 @@
     "observability": {
       "metrics": [
         {
-          "id": "s1-load",
+          "id": "admit-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-one",
-          "capacity": "cap_b"
+          "place": "admissions-desk",
+          "capacity": "admit_queue"
         },
         {
-          "id": "s2-load",
+          "id": "ward-load",
           "source": "place_capacity_used_percent",
-          "place": "stage-two",
-          "capacity": "cap_d"
+          "place": "ward-coordinator",
+          "capacity": "assign_slots"
         },
         {
-          "id": "out-inv",
+          "id": "discharge-load",
+          "source": "place_capacity_used_percent",
+          "place": "discharge-planner",
+          "capacity": "plan_slots"
+        },
+        {
+          "id": "snapshot-inv",
           "source": "place_inventory_count",
-          "place": "output-node",
+          "place": "bed-dashboard",
           "thing": "capacity_snapshot"
         }
       ],
       "dashboards": [
         {
-          "id": "hospital_bed-dash",
+          "id": "bed-dash",
           "type": "live",
           "depends_on": [
             "capacity_snapshot",
             "discharge_clearance"
           ],
-          "freshness_slo_ticks": 600
+          "freshness_slo_ticks": 400
         }
       ],
       "alerts": [
         {
-          "id": "s2-critical",
-          "metric": "s2-load",
+          "id": "admit-high",
+          "metric": "admit-util",
           "predicate": {
             "type": "gt",
-            "threshold": 85
+            "threshold": 83
           },
           "severity": "critical"
         },
         {
-          "id": "out-low",
-          "metric": "out-inv",
+          "id": "ward-strained",
+          "metric": "ward-load",
           "predicate": {
-            "type": "lt",
-            "threshold": 2
+            "type": "gt",
+            "threshold": 78
           },
           "severity": "warning"
         }

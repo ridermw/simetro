@@ -19,126 +19,117 @@
     "title": "Weather Balloon Yard",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A radiosonde launch yard connecting inflation stations, sensor attachment benches, and release pads around a preparation loop.",
+    "description": "A radiosonde yard where a central launch tower dispatches balloons through inner prep stations to outer tracking posts.",
     "tags": [
       "balloon",
+      "easy",
       "legacy",
       "transit_loop",
-      "easy",
       "draft"
     ],
-    "palette_note": "Transit palette for easy: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Weather Balloon Yard colour theme.",
+    "layout_note": "11 nodes forming a balloon topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting balloon roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.70\u20131.30.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "launch-tower",
         "pos": [
-          200,
+          0,
           0
         ],
-        "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
+        "shape": "hexagon",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "fill-a",
         "pos": [
-          61,
-          190
+          -180,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "circle",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "fill-b",
         "pos": [
-          -61,
-          190
+          0,
+          -180
         ],
-        "shape": "diamond",
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "sensor-a",
+        "pos": [
+          180,
+          0
+        ],
+        "shape": "square",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "sensor-b",
         "pos": [
-          -161,
-          117
+          0,
+          180
         ],
-        "shape": "triangle",
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "weigh",
+        "pos": [
+          -130,
+          -130
+        ],
+        "shape": "diamond",
         "color": 5
       },
       {
-        "id": "n5",
+        "id": "track-n",
         "pos": [
-          -200,
-          0
+          0,
+          320
         ],
-        "shape": "circle",
+        "shape": "triangle",
         "color": 6
       },
       {
-        "id": "n6",
+        "id": "track-e",
         "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
-        "color": 2
-      },
-      {
-        "id": "n8",
-        "pos": [
-          61,
-          -190
-        ],
-        "shape": "diamond",
-        "color": 3
-      },
-      {
-        "id": "n9",
-        "pos": [
-          161,
-          -117
+          320,
+          0
         ],
         "shape": "triangle",
-        "color": 4
+        "color": 6
       },
       {
-        "id": "hub-a",
+        "id": "track-s",
         "pos": [
-          -80,
-          -40
+          0,
+          -320
         ],
-        "shape": "hexagon",
-        "color": 3
+        "shape": "triangle",
+        "color": 6
       },
       {
-        "id": "hub-b",
+        "id": "track-w",
         "pos": [
-          80,
-          40
+          -320,
+          0
+        ],
+        "shape": "triangle",
+        "color": 6
+      },
+      {
+        "id": "met-office",
+        "pos": [
+          150,
+          -150
         ],
         "shape": "diamond",
         "color": 5
@@ -146,120 +137,103 @@
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
-        "color": 2
-      },
-      {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "tower-fill-a",
+        "from": "launch-tower",
+        "to": "fill-a",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "tower-fill-b",
+        "from": "launch-tower",
+        "to": "fill-b",
+        "color": 3
+      },
+      {
+        "id": "tower-sensor-a",
+        "from": "launch-tower",
+        "to": "sensor-a",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "tower-sensor-b",
+        "from": "launch-tower",
+        "to": "sensor-b",
+        "color": 4
+      },
+      {
+        "id": "tower-weigh",
+        "from": "launch-tower",
+        "to": "weigh",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
+        "id": "fill-a-weigh",
+        "from": "fill-a",
+        "to": "weigh",
+        "color": 5
+      },
+      {
+        "id": "fill-b-met",
+        "from": "fill-b",
+        "to": "met-office",
+        "color": 5
+      },
+      {
+        "id": "sensor-b-track-n",
+        "from": "sensor-b",
+        "to": "track-n",
         "color": 6
       },
       {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
-        "color": 3
-      },
-      {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
-        "color": 4
-      },
-      {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
-      },
-      {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
-      },
-      {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
-        "color": 3
-      },
-      {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
+        "id": "sensor-a-track-e",
+        "from": "sensor-a",
+        "to": "track-e",
         "color": 6
+      },
+      {
+        "id": "fill-b-track-s",
+        "from": "fill-b",
+        "to": "track-s",
+        "color": 6
+      },
+      {
+        "id": "fill-a-track-w",
+        "from": "fill-a",
+        "to": "track-w",
+        "color": 6
+      },
+      {
+        "id": "met-track-e",
+        "from": "met-office",
+        "to": "track-e",
+        "color": 5
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
-        "speed": 1.5
+        "id": "balloon-a",
+        "on_path": "tower-fill-a",
+        "speed": 0.8
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
+        "id": "balloon-b",
+        "on_path": "tower-sensor-a",
+        "speed": 1.0
       },
       {
-        "id": "m2",
-        "on_path": "p4",
-        "speed": 1.2
+        "id": "balloon-c",
+        "on_path": "sensor-b-track-n",
+        "speed": 1.3
       },
       {
-        "id": "m3",
-        "on_path": "p6",
-        "speed": 1.8
+        "id": "balloon-d",
+        "on_path": "fill-b-track-s",
+        "speed": 1.1
       },
       {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
-      },
-      {
-        "id": "m5",
-        "on_path": "p1",
-        "speed": 2.2
+        "id": "balloon-e",
+        "on_path": "tower-weigh",
+        "speed": 0.7
       }
     ]
   },

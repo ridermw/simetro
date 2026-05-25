@@ -19,247 +19,396 @@
     "title": "Quantum Control Room",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A cryogenic qubit control room where dilution fridges, microwave lines, FPGA controllers, and readout chains form a quantum-state loop.",
+    "description": "A cryogenic qubit control room laid out as a dense 4\u00d74 mesh of dilution fridges, FPGA controllers, and readout chains with diagonal cross-links.",
     "tags": [
       "quantum",
+      "hard",
       "legacy",
       "transit_loop",
-      "hard",
       "draft"
     ],
-    "palette_note": "Transit palette for hard: dark background, ring paths in six hue steps, hub nodes contrasting. Visibility at small scale.",
-    "layout_note": "12 nodes arranged in a ring (n0–n9) with two central hubs (hub-a, hub-b). 14 paths form a complete ring plus four spokes to each hub.",
-    "node_language_note": "Nodes use all five shapes across the ring: circle, square, hexagon, diamond, triangle. Shape cycles by index.",
-    "mover_path_note": "6 movers placed on alternating ring paths at varying speeds (1.2–2.2). Movers loop the ring and spoke paths.",
-    "review_note": "Draft, awaiting final art pass. Validates with legacy world schema."
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Quantum Control Room colour theme.",
+    "layout_note": "16 nodes forming a quantum topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting quantum roles.",
+    "mover_path_note": "7 movers on distinct paths at speeds 1.30\u20132.40.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
     "nodes": [
       {
-        "id": "n0",
+        "id": "qc-0-0",
         "pos": [
-          200,
-          0
+          -270,
+          210
         ],
         "shape": "circle",
-        "color": 1
-      },
-      {
-        "id": "n1",
-        "pos": [
-          161,
-          117
-        ],
-        "shape": "square",
         "color": 2
       },
       {
-        "id": "n2",
+        "id": "qc-0-1",
         "pos": [
-          61,
-          190
+          -90,
+          210
         ],
         "shape": "hexagon",
         "color": 3
       },
       {
-        "id": "n3",
+        "id": "qc-0-2",
         "pos": [
-          -61,
-          190
+          90,
+          210
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "qc-0-3",
+        "pos": [
+          270,
+          210
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "qc-1-0",
+        "pos": [
+          -270,
+          70
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "qc-1-1",
+        "pos": [
+          -90,
+          70
         ],
         "shape": "diamond",
         "color": 4
       },
       {
-        "id": "n4",
+        "id": "qc-1-2",
         "pos": [
-          -161,
-          117
+          90,
+          70
         ],
-        "shape": "triangle",
+        "shape": "diamond",
         "color": 5
       },
       {
-        "id": "n5",
+        "id": "qc-1-3",
         "pos": [
-          -200,
-          0
+          270,
+          70
         ],
-        "shape": "circle",
+        "shape": "square",
         "color": 6
       },
       {
-        "id": "n6",
+        "id": "qc-2-0",
         "pos": [
-          -161,
-          -117
-        ],
-        "shape": "square",
-        "color": 1
-      },
-      {
-        "id": "n7",
-        "pos": [
-          -61,
-          -190
-        ],
-        "shape": "hexagon",
-        "color": 2
-      },
-      {
-        "id": "n8",
-        "pos": [
-          61,
-          -190
-        ],
-        "shape": "diamond",
-        "color": 3
-      },
-      {
-        "id": "n9",
-        "pos": [
-          161,
-          -117
+          -270,
+          -70
         ],
         "shape": "triangle",
         "color": 4
       },
       {
-        "id": "hub-a",
+        "id": "qc-2-1",
         "pos": [
-          -80,
-          -40
+          -90,
+          -70
         ],
         "shape": "hexagon",
+        "color": 5
+      },
+      {
+        "id": "qc-2-2",
+        "pos": [
+          90,
+          -70
+        ],
+        "shape": "hexagon",
+        "color": 6
+      },
+      {
+        "id": "qc-2-3",
+        "pos": [
+          270,
+          -70
+        ],
+        "shape": "triangle",
         "color": 3
       },
       {
-        "id": "hub-b",
+        "id": "qc-3-0",
         "pos": [
-          80,
-          40
+          -270,
+          -210
         ],
-        "shape": "diamond",
+        "shape": "circle",
         "color": 5
+      },
+      {
+        "id": "qc-3-1",
+        "pos": [
+          -90,
+          -210
+        ],
+        "shape": "square",
+        "color": 6
+      },
+      {
+        "id": "qc-3-2",
+        "pos": [
+          90,
+          -210
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "qc-3-3",
+        "pos": [
+          270,
+          -210
+        ],
+        "shape": "circle",
+        "color": 4
       }
     ],
     "paths": [
       {
-        "id": "p0",
-        "from": "n0",
-        "to": "n1",
-        "color": 1
-      },
-      {
-        "id": "p1",
-        "from": "n1",
-        "to": "n2",
+        "id": "qh-0-0",
+        "from": "qc-0-0",
+        "to": "qc-0-1",
         "color": 2
       },
       {
-        "id": "p2",
-        "from": "n2",
-        "to": "n3",
+        "id": "qh-0-1",
+        "from": "qc-0-1",
+        "to": "qc-0-2",
         "color": 3
       },
       {
-        "id": "p3",
-        "from": "n3",
-        "to": "n4",
+        "id": "qh-0-2",
+        "from": "qc-0-2",
+        "to": "qc-0-3",
         "color": 4
       },
       {
-        "id": "p4",
-        "from": "n4",
-        "to": "n5",
+        "id": "qh-1-0",
+        "from": "qc-1-0",
+        "to": "qc-1-1",
+        "color": 3
+      },
+      {
+        "id": "qh-1-1",
+        "from": "qc-1-1",
+        "to": "qc-1-2",
+        "color": 4
+      },
+      {
+        "id": "qh-1-2",
+        "from": "qc-1-2",
+        "to": "qc-1-3",
         "color": 5
       },
       {
-        "id": "p5",
-        "from": "n5",
-        "to": "n6",
-        "color": 6
-      },
-      {
-        "id": "p6",
-        "from": "n6",
-        "to": "n7",
-        "color": 1
-      },
-      {
-        "id": "p7",
-        "from": "n7",
-        "to": "n8",
-        "color": 2
-      },
-      {
-        "id": "p8",
-        "from": "n8",
-        "to": "n9",
-        "color": 3
-      },
-      {
-        "id": "p9",
-        "from": "n9",
-        "to": "n0",
+        "id": "qh-2-0",
+        "from": "qc-2-0",
+        "to": "qc-2-1",
         "color": 4
       },
       {
-        "id": "p-hub-a0",
-        "from": "hub-a",
-        "to": "n0",
-        "color": 2
+        "id": "qh-2-1",
+        "from": "qc-2-1",
+        "to": "qc-2-2",
+        "color": 5
       },
       {
-        "id": "p-hub-a5",
-        "from": "hub-a",
-        "to": "n5",
-        "color": 4
+        "id": "qh-2-2",
+        "from": "qc-2-2",
+        "to": "qc-2-3",
+        "color": 6
       },
       {
-        "id": "p-hub-b2",
-        "from": "hub-b",
-        "to": "n2",
+        "id": "qh-3-0",
+        "from": "qc-3-0",
+        "to": "qc-3-1",
+        "color": 5
+      },
+      {
+        "id": "qh-3-1",
+        "from": "qc-3-1",
+        "to": "qc-3-2",
+        "color": 6
+      },
+      {
+        "id": "qh-3-2",
+        "from": "qc-3-2",
+        "to": "qc-3-3",
         "color": 3
       },
       {
-        "id": "p-hub-b7",
-        "from": "hub-b",
-        "to": "n7",
+        "id": "qv-0-0",
+        "from": "qc-0-0",
+        "to": "qc-1-0",
+        "color": 2
+      },
+      {
+        "id": "qv-0-1",
+        "from": "qc-1-0",
+        "to": "qc-2-0",
+        "color": 3
+      },
+      {
+        "id": "qv-0-2",
+        "from": "qc-2-0",
+        "to": "qc-3-0",
+        "color": 4
+      },
+      {
+        "id": "qv-1-0",
+        "from": "qc-0-1",
+        "to": "qc-1-1",
+        "color": 3
+      },
+      {
+        "id": "qv-1-1",
+        "from": "qc-1-1",
+        "to": "qc-2-1",
+        "color": 4
+      },
+      {
+        "id": "qv-1-2",
+        "from": "qc-2-1",
+        "to": "qc-3-1",
+        "color": 5
+      },
+      {
+        "id": "qv-2-0",
+        "from": "qc-0-2",
+        "to": "qc-1-2",
+        "color": 4
+      },
+      {
+        "id": "qv-2-1",
+        "from": "qc-1-2",
+        "to": "qc-2-2",
+        "color": 5
+      },
+      {
+        "id": "qv-2-2",
+        "from": "qc-2-2",
+        "to": "qc-3-2",
         "color": 6
+      },
+      {
+        "id": "qv-3-0",
+        "from": "qc-0-3",
+        "to": "qc-1-3",
+        "color": 5
+      },
+      {
+        "id": "qv-3-1",
+        "from": "qc-1-3",
+        "to": "qc-2-3",
+        "color": 6
+      },
+      {
+        "id": "qv-3-2",
+        "from": "qc-2-3",
+        "to": "qc-3-3",
+        "color": 3
+      },
+      {
+        "id": "qd-00-11",
+        "from": "qc-0-0",
+        "to": "qc-1-1",
+        "color": 2
+      },
+      {
+        "id": "qd-02-13",
+        "from": "qc-0-2",
+        "to": "qc-1-3",
+        "color": 4
+      },
+      {
+        "id": "qd-10-21",
+        "from": "qc-1-0",
+        "to": "qc-2-1",
+        "color": 3
+      },
+      {
+        "id": "qd-12-23",
+        "from": "qc-1-2",
+        "to": "qc-2-3",
+        "color": 5
+      },
+      {
+        "id": "qd-21-32",
+        "from": "qc-2-1",
+        "to": "qc-3-2",
+        "color": 5
+      },
+      {
+        "id": "qd-01-12",
+        "from": "qc-0-1",
+        "to": "qc-1-2",
+        "color": 3
+      },
+      {
+        "id": "qd-20-31",
+        "from": "qc-2-0",
+        "to": "qc-3-1",
+        "color": 4
+      },
+      {
+        "id": "qd-11-22",
+        "from": "qc-1-1",
+        "to": "qc-2-2",
+        "color": 4
       }
     ],
     "movers": [
       {
-        "id": "m0",
-        "on_path": "p0",
+        "id": "qubit-a",
+        "on_path": "qh-0-0",
         "speed": 1.5
       },
       {
-        "id": "m1",
-        "on_path": "p2",
-        "speed": 2.0
-      },
-      {
-        "id": "m2",
-        "on_path": "p4",
-        "speed": 1.2
-      },
-      {
-        "id": "m3",
-        "on_path": "p6",
+        "id": "qubit-b",
+        "on_path": "qh-2-2",
         "speed": 1.8
       },
       {
-        "id": "m4",
-        "on_path": "p8",
-        "speed": 1.6
+        "id": "qubit-c",
+        "on_path": "qv-1-1",
+        "speed": 1.3
       },
       {
-        "id": "m5",
-        "on_path": "p1",
+        "id": "qubit-d",
+        "on_path": "qv-3-0",
+        "speed": 2.0
+      },
+      {
+        "id": "qubit-e",
+        "on_path": "qd-00-11",
         "speed": 2.2
+      },
+      {
+        "id": "qubit-f",
+        "on_path": "qd-12-23",
+        "speed": 1.9
+      },
+      {
+        "id": "qubit-g",
+        "on_path": "qd-11-22",
+        "speed": 2.4
       }
     ]
   },

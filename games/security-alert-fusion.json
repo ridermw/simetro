@@ -3,13 +3,13 @@
   "name": "security-alert-fusion",
   "theme": {
     "palette": [
-      "#061826",
-      "#f8f9fa",
-      "#4cc9f0",
-      "#f72585",
-      "#80ed99",
-      "#f9c74f",
-      "#b5179e"
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
     ],
     "background_index": 0,
     "font": "system-ui"
@@ -19,22 +19,19 @@
     "title": "Security Alert Fusion",
     "version": "0.1.0",
     "author": "simetro",
-    "description": "A security operations center where SIEM alerts, threat intelligence enrichment, correlation engines, and analyst queues must triage incidents before attackers achieve lateral movement.",
+    "description": "A security operations centre where raw SIEM events are enriched, correlated, triaged by analysts, and published as incident reports under an alert storm.",
     "tags": [
-      "security",
       "soc",
-      "alerts",
-      "cybersecurity",
+      "medium",
       "sl1",
       "scenario_language_v1",
-      "medium",
       "draft"
     ],
-    "palette_note": "Domain palette for security_fusion: dark background, distinct hues across the six places. High contrast for status visibility.",
-    "layout_note": "Six SL1 places form a source-to-output pipeline in the security_fusion domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
-    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
-    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
-    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
   },
   "pieces": {
     "nodes": [],
@@ -51,21 +48,21 @@
     "schema_version": 1,
     "places": [
       {
-        "id": "source-node",
+        "id": "siem-ingest",
         "role": "source",
         "pos": [
           -360,
-          -80
+          -70
         ],
         "shape": "triangle",
         "color": 2,
         "capacity": {
-          "cap_a": 80
+          "event_queue": 200
         },
         "storage": {
           "raw_alert": {
-            "capacity": 400,
-            "initial": 40
+            "capacity": 800,
+            "initial": 50
           }
         },
         "accepts": [],
@@ -73,36 +70,36 @@
           "raw_alert"
         ],
         "failure_domains": [
-          "security_fusion",
-          "input"
+          "soc",
+          "ingest"
         ],
         "operating_states": {
-          "saturated": {
-            "when": "cap_a.used_percent >= 80",
-            "grace_ticks": 5
+          "flooded": {
+            "when": "event_queue.used_percent >= 85",
+            "grace_ticks": 3
           }
         }
       },
       {
-        "id": "stage-one",
+        "id": "enrichment-engine",
         "role": "processor",
         "pos": [
-          -100,
+          -130,
           20
         ],
         "shape": "hexagon",
         "color": 3,
         "capacity": {
-          "cap_b": 24
+          "enrich_threads": 60
         },
         "storage": {
           "raw_alert": {
-            "capacity": 120,
-            "initial": 12
+            "capacity": 600,
+            "initial": 40
           },
           "enriched_alert": {
-            "capacity": 80,
-            "initial": 8
+            "capacity": 300,
+            "initial": 20
           }
         },
         "accepts": [
@@ -112,36 +109,36 @@
           "enriched_alert"
         ],
         "failure_domains": [
-          "security_fusion",
-          "stage1"
+          "soc",
+          "enrichment"
         ],
         "operating_states": {
-          "overloaded": {
-            "when": "cap_b.used_percent >= 85",
-            "grace_ticks": 5
+          "saturated": {
+            "when": "enrich_threads.used_percent >= 88",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "buffer-node",
-        "role": "buffer",
+        "id": "correlation-platform",
+        "role": "processor",
         "pos": [
-          120,
-          -80
+          70,
+          80
         ],
-        "shape": "diamond",
+        "shape": "hexagon",
         "color": 4,
         "capacity": {
-          "cap_c": 60
+          "rule_slots": 40
         },
         "storage": {
           "enriched_alert": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 300,
+            "initial": 20
           },
           "correlated_incident": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 150,
+            "initial": 10
           }
         },
         "accepts": [
@@ -151,36 +148,36 @@
           "correlated_incident"
         ],
         "failure_domains": [
-          "security_fusion",
-          "buffer"
+          "soc",
+          "correlation"
         ],
         "operating_states": {
-          "full": {
-            "when": "cap_c.used_percent >= 85",
-            "grace_ticks": 8
+          "overloaded": {
+            "when": "rule_slots.used_percent >= 85",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "stage-two",
-        "role": "processor",
+        "id": "analyst-queue",
+        "role": "buffer",
         "pos": [
-          320,
-          60
+          290,
+          0
         ],
-        "shape": "hexagon",
+        "shape": "diamond",
         "color": 5,
         "capacity": {
-          "cap_d": 40
+          "analyst_cases": 30
         },
         "storage": {
           "correlated_incident": {
-            "capacity": 60,
-            "initial": 6
+            "capacity": 150,
+            "initial": 10
           },
           "triage_decision": {
-            "capacity": 40,
-            "initial": 4
+            "capacity": 100,
+            "initial": 8
           }
         },
         "accepts": [
@@ -190,36 +187,36 @@
           "triage_decision"
         ],
         "failure_domains": [
-          "security_fusion",
-          "stage2"
+          "soc",
+          "analyst"
         ],
         "operating_states": {
-          "bottleneck": {
-            "when": "cap_d.used_percent >= 85",
+          "backlogged": {
+            "when": "analyst_cases.used_percent >= 80",
             "grace_ticks": 5
           }
         }
       },
       {
-        "id": "output-node",
+        "id": "incident-board",
         "role": "dashboard",
         "pos": [
-          520,
-          -60
+          510,
+          -50
         ],
         "shape": "square",
         "color": 6,
         "capacity": {
-          "cap_e": 50
+          "board_slots": 50
         },
         "storage": {
           "triage_decision": {
-            "capacity": 30,
-            "initial": 3
+            "capacity": 100,
+            "initial": 6
           },
           "incident_report": {
-            "capacity": 30,
-            "initial": 3
+            "capacity": 60,
+            "initial": 4
           }
         },
         "accepts": [
@@ -229,21 +226,21 @@
           "incident_report"
         ],
         "failure_domains": [
-          "security_fusion",
-          "output"
+          "soc",
+          "reporting"
         ],
         "operating_states": {
-          "report_lag": {
-            "when": "cap_e.used_percent >= 80",
-            "grace_ticks": 10
+          "overloaded": {
+            "when": "board_slots.used_percent >= 90",
+            "grace_ticks": 4
           }
         }
       },
       {
-        "id": "operator-node",
+        "id": "soc-manager",
         "role": "operator",
         "pos": [
-          120,
+          70,
           -220
         ],
         "shape": "circle",
@@ -253,26 +250,26 @@
         "accepts": [],
         "produces": [],
         "failure_domains": [
-          "security_fusion"
+          "soc"
         ],
         "operating_states": {}
       }
     ],
     "links": [
       {
-        "id": "link-src-s1",
-        "type": "security_fusion_feed",
-        "from": "source-node",
-        "to": "stage-one",
+        "id": "ingest-enrich",
+        "type": "event_stream",
+        "from": "siem-ingest",
+        "to": "enrichment-engine",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 10
+          "volume_per_tick": 100
         },
         "travel_ticks": 1,
         "compatibility": [
           "raw_alert"
         ],
-        "queue_capacity": 200,
+        "queue_capacity": 600,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -280,19 +277,19 @@
         }
       },
       {
-        "id": "link-s1-buf",
-        "type": "security_fusion_transfer",
-        "from": "stage-one",
-        "to": "buffer-node",
+        "id": "enrich-correlate",
+        "type": "enriched_stream",
+        "from": "enrichment-engine",
+        "to": "correlation-platform",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 60
         },
-        "travel_ticks": 2,
+        "travel_ticks": 1,
         "compatibility": [
           "enriched_alert"
         ],
-        "queue_capacity": 60,
+        "queue_capacity": 300,
         "backpressure": "spill_to_buffer",
         "render": {
           "style": "flow",
@@ -300,19 +297,19 @@
         }
       },
       {
-        "id": "link-buf-s2",
-        "type": "security_fusion_relay",
-        "from": "buffer-node",
-        "to": "stage-two",
+        "id": "correlate-analyst",
+        "type": "case_feed",
+        "from": "correlation-platform",
+        "to": "analyst-queue",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 6
+          "volume_per_tick": 30
         },
         "travel_ticks": 2,
         "compatibility": [
           "correlated_incident"
         ],
-        "queue_capacity": 40,
+        "queue_capacity": 150,
         "backpressure": "block_upstream",
         "render": {
           "style": "flow",
@@ -320,19 +317,19 @@
         }
       },
       {
-        "id": "link-s2-out",
-        "type": "security_fusion_delivery",
-        "from": "stage-two",
-        "to": "output-node",
+        "id": "analyst-board",
+        "type": "report_feed",
+        "from": "analyst-queue",
+        "to": "incident-board",
         "direction": "forward",
         "capacity": {
-          "units_per_tick": 8
+          "volume_per_tick": 20
         },
         "travel_ticks": 2,
         "compatibility": [
           "triage_decision"
         ],
-        "queue_capacity": 30,
+        "queue_capacity": 100,
         "backpressure": "drop_low_priority",
         "render": {
           "style": "flow",
@@ -340,10 +337,10 @@
         }
       },
       {
-        "id": "link-op-s1",
+        "id": "mgr-ingest",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-one",
+        "from": "soc-manager",
+        "to": "siem-ingest",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -356,10 +353,10 @@
         }
       },
       {
-        "id": "link-op-s2",
+        "id": "mgr-analyst",
         "type": "control_bus",
-        "from": "operator-node",
-        "to": "stage-two",
+        "from": "soc-manager",
+        "to": "analyst-queue",
         "direction": "bidirectional",
         "capacity": {},
         "travel_ticks": 1,
@@ -375,7 +372,7 @@
     "things": [
       {
         "id": "raw_alert",
-        "kind": "event",
+        "kind": "sensor_data",
         "tags": [
           "alert",
           "raw",
@@ -385,79 +382,79 @@
       },
       {
         "id": "enriched_alert",
-        "kind": "enriched_event",
+        "kind": "data_record",
         "tags": [
           "enriched",
-          "context",
-          "ioc"
+          "ioc",
+          "context"
         ],
-        "freshness_budget_ticks": 45
+        "freshness_budget_ticks": 60
       },
       {
         "id": "correlated_incident",
-        "kind": "incident",
+        "kind": "audit_record",
         "tags": [
           "incident",
-          "correlation",
-          "soc"
-        ],
-        "freshness_budget_ticks": 90
-      },
-      {
-        "id": "triage_decision",
-        "kind": "decision",
-        "tags": [
-          "triage",
-          "priority",
-          "analyst"
+          "correlated",
+          "rule"
         ],
         "freshness_budget_ticks": 120
       },
       {
+        "id": "triage_decision",
+        "kind": "work_order",
+        "tags": [
+          "triage",
+          "analyst",
+          "decision"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
         "id": "incident_report",
-        "kind": "report",
+        "kind": "compliance_record",
         "tags": [
           "incident",
           "report",
-          "soc"
+          "closed"
         ],
         "freshness_budget_ticks": 600
       }
     ],
     "transforms": [
       {
-        "id": "transform-s1",
-        "type": "security_fusion_process_a",
-        "runs_on": "stage-one",
+        "id": "enrich-alert",
+        "type": "threat_enrichment",
+        "runs_on": "enrichment-engine",
         "inputs": [
           {
             "thing": "raw_alert",
-            "amount": 2
+            "amount": 6
           }
         ],
         "outputs": [
           {
             "thing": "enriched_alert",
-            "amount": 1
+            "amount": 3
           }
         ],
-        "cadence_ticks": 5,
-        "duration_ticks": 3,
-        "deadline_ticks": 10,
+        "cadence_ticks": 3,
+        "duration_ticks": 1,
+        "deadline_ticks": 6,
         "capacity_cost": {
-          "cap_b": 3
+          "enrich_threads": 6
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-buf",
-        "type": "security_fusion_buffer_op",
-        "runs_on": "buffer-node",
+        "id": "correlate-alert",
+        "type": "rule_correlation",
+        "runs_on": "correlation-platform",
         "inputs": [
           {
             "thing": "enriched_alert",
-            "amount": 1
+            "amount": 4
           }
         ],
         "outputs": [
@@ -466,19 +463,19 @@
             "amount": 1
           }
         ],
-        "cadence_ticks": 8,
-        "duration_ticks": 4,
-        "deadline_ticks": 15,
+        "cadence_ticks": 6,
+        "duration_ticks": 2,
+        "deadline_ticks": 12,
         "capacity_cost": {
-          "cap_c": 4
+          "rule_slots": 5
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-s2",
-        "type": "security_fusion_process_b",
-        "runs_on": "stage-two",
+        "id": "triage-case",
+        "type": "analyst_triage",
+        "runs_on": "analyst-queue",
         "inputs": [
           {
             "thing": "correlated_incident",
@@ -491,23 +488,23 @@
             "amount": 1
           }
         ],
-        "cadence_ticks": 12,
+        "cadence_ticks": 15,
         "duration_ticks": 6,
-        "deadline_ticks": 22,
+        "deadline_ticks": 30,
         "capacity_cost": {
-          "cap_d": 5
+          "analyst_cases": 4
         },
         "failure_policy": "retry_then_warn",
         "max_attempts": 2
       },
       {
-        "id": "transform-out",
-        "type": "security_fusion_rollup",
-        "runs_on": "output-node",
+        "id": "report-incident",
+        "type": "incident_reporting",
+        "runs_on": "incident-board",
         "inputs": [
           {
             "thing": "triage_decision",
-            "amount": 2
+            "amount": 3
           }
         ],
         "outputs": [
@@ -520,7 +517,7 @@
         "duration_ticks": 10,
         "deadline_ticks": 90,
         "capacity_cost": {
-          "cap_e": 3
+          "board_slots": 6
         },
         "failure_policy": "drop",
         "max_attempts": 1
@@ -528,128 +525,128 @@
     ],
     "demand": [
       {
-        "id": "primary-demand",
-        "type": "security_fusion_primary",
+        "id": "incident-demand",
+        "type": "incident_response",
         "target": {
           "type": "place",
-          "id": "stage-two"
-        },
-        "requires": [
-          "triage_decision"
-        ],
-        "spawn_schedule": {
-          "type": "fixed",
-          "every_ticks": 60,
-          "start_tick": 60
-        },
-        "deadline_ticks": 90,
-        "priority": "high",
-        "value": 80,
-        "penalty": {
-          "score": -400,
-          "warning": "security_fusion_primary_miss"
-        }
-      },
-      {
-        "id": "secondary-demand",
-        "type": "security_fusion_secondary",
-        "target": {
-          "type": "place",
-          "id": "output-node"
+          "id": "incident-board"
         },
         "requires": [
           "incident_report"
         ],
         "spawn_schedule": {
           "type": "fixed",
-          "every_ticks": 300,
-          "start_tick": 200
+          "every_ticks": 180,
+          "start_tick": 100
         },
-        "deadline_ticks": 400,
+        "deadline_ticks": 260,
+        "priority": "high",
+        "value": 120,
+        "penalty": {
+          "score": -600,
+          "warning": "incident_sla_breach"
+        }
+      },
+      {
+        "id": "soc-audit",
+        "type": "soc_audit",
+        "target": {
+          "type": "place",
+          "id": "incident-board"
+        },
+        "requires": [
+          "incident_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
         "priority": "normal",
         "value": 50,
         "penalty": {
           "score": -150,
-          "warning": "security_fusion_secondary_miss"
+          "warning": "audit_missed"
         }
       }
     ],
     "pressure": [
       {
-        "id": "pressure-surge",
+        "id": "alert-storm",
         "type": "source_multiplier",
-        "at_tick": 600,
-        "duration_ticks": 400,
-        "target": "source-node",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "siem-ingest",
         "thing": "raw_alert",
-        "multiplier": 3.0
+        "multiplier": 6.0
       },
       {
-        "id": "pressure-quota",
+        "id": "enrich-fault",
         "type": "quota_reduction",
-        "at_tick": 1400,
-        "duration_ticks": 300,
-        "target": "stage-two",
-        "capacity": "cap_d",
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "enrichment-engine",
+        "capacity": "enrich_threads",
         "reduction_percent": 40
       },
       {
-        "id": "pressure-demand",
+        "id": "incident-rush",
         "type": "demand_growth",
-        "at_tick": 1000,
-        "duration_ticks": 400,
-        "target": "primary-demand",
-        "spawn_multiplier": 2
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "incident-demand",
+        "spawn_multiplier": 3
       }
     ],
     "objectives": [
       {
-        "id": "keep-output-fresh",
+        "id": "siem-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "siem-ingest",
+        "capacity": "event_queue",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "reports-fresh",
         "type": "keep_fresh",
         "weight": 2,
-        "place": "output-node",
+        "place": "incident-board",
         "thing": "incident_report",
-        "max_stale_ticks": 800
+        "max_stale_ticks": 700
       },
       {
-        "id": "complete-primary",
+        "id": "incidents-on-time",
         "type": "complete_jobs_before_deadline",
         "weight": 3,
-        "demand": "primary-demand",
-        "max_missed": 3
-      },
-      {
-        "id": "maintain-stage2-util",
-        "type": "maintain_utilization",
-        "weight": 1,
-        "place": "stage-two",
-        "capacity": "cap_d",
-        "min_percent": 10,
-        "max_percent": 85
+        "demand": "incident-demand",
+        "max_missed": 2
       }
     ],
     "failure_conditions": [
       {
-        "id": "stage2-bottleneck-fail",
+        "id": "siem-flood",
         "type": "place_state",
-        "place": "stage-two",
-        "state": "bottleneck",
-        "grace_ticks": 90
+        "place": "siem-ingest",
+        "state": "flooded",
+        "grace_ticks": 45
       },
       {
-        "id": "output-stale-fail",
+        "id": "report-stale",
         "type": "stale_target",
-        "place": "output-node",
+        "place": "incident-board",
         "thing": "incident_report",
-        "threshold_ticks": 1000,
-        "grace_ticks": 60
+        "threshold_ticks": 850,
+        "grace_ticks": 30
       }
     ],
     "victory_conditions": [
       {
-        "id": "full-run",
+        "id": "security-alert-fusion-survived",
         "type": "survive_until",
-        "at_tick": 4800
+        "at_tick": 5200
       }
     ],
     "agents": [],
@@ -657,51 +654,57 @@
     "observability": {
       "metrics": [
         {
-          "id": "s1-load",
+          "id": "siem-util",
           "source": "place_capacity_used_percent",
-          "place": "stage-one",
-          "capacity": "cap_b"
+          "place": "siem-ingest",
+          "capacity": "event_queue"
         },
         {
-          "id": "s2-load",
+          "id": "enrich-load",
           "source": "place_capacity_used_percent",
-          "place": "stage-two",
-          "capacity": "cap_d"
+          "place": "enrichment-engine",
+          "capacity": "enrich_threads"
         },
         {
-          "id": "out-inv",
+          "id": "analyst-load",
+          "source": "place_capacity_used_percent",
+          "place": "analyst-queue",
+          "capacity": "analyst_cases"
+        },
+        {
+          "id": "report-inv",
           "source": "place_inventory_count",
-          "place": "output-node",
+          "place": "incident-board",
           "thing": "incident_report"
         }
       ],
       "dashboards": [
         {
-          "id": "security_fusion-dash",
+          "id": "soc-dash",
           "type": "live",
           "depends_on": [
             "incident_report",
             "triage_decision"
           ],
-          "freshness_slo_ticks": 600
+          "freshness_slo_ticks": 400
         }
       ],
       "alerts": [
         {
-          "id": "s2-critical",
-          "metric": "s2-load",
+          "id": "siem-surge",
+          "metric": "siem-util",
           "predicate": {
             "type": "gt",
-            "threshold": 85
+            "threshold": 83
           },
           "severity": "critical"
         },
         {
-          "id": "out-low",
-          "metric": "out-inv",
+          "id": "enrich-high",
+          "metric": "enrich-load",
           "predicate": {
-            "type": "lt",
-            "threshold": 2
+            "type": "gt",
+            "threshold": 86
           },
           "severity": "warning"
         }
