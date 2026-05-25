@@ -770,7 +770,7 @@ pub struct Sl1Demand {
 
 /// Raw, post-serde representation of a `pressure[]` entry. Strict
 /// schema (`#[serde(deny_unknown_fields)]`) at this layer rejects any
-/// nested typo, then [`validate_pressure`] does typed per-variant
+/// nested typo, then `validate_pressure` does typed per-variant
 /// parameter validation. The discriminator is a free string so unknown
 /// `type` values surface as a typed
 /// [`Sl1LoadError::PressureUnknownType`] instead of serde's generic
@@ -918,7 +918,7 @@ impl Sl1Pressure {
     /// The active interval is `[at_tick, at_tick + duration_ticks)`,
     /// so the inclusive last tick is `at_tick + duration_ticks - 1`
     /// for `duration_ticks > 0`. A `duration_ticks == 0` pressure is
-    /// rejected at load (see [`validate_pressure`]) so this is always
+    /// rejected at load (see `validate_pressure`) so this is always
     /// well-defined.
     #[must_use]
     pub fn end_tick(&self) -> u64 {
