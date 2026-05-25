@@ -770,11 +770,11 @@ pub struct Sl1Demand {
 
 /// Raw, post-serde representation of a `pressure[]` entry. Strict
 /// schema (`#[serde(deny_unknown_fields)]`) at this layer rejects any
-/// nested typo, then `validate_pressure` does typed per-variant
-/// parameter validation. The discriminator is a free string so unknown
-/// `type` values surface as a typed
-/// [`Sl1LoadError::PressureUnknownType`] instead of serde's generic
-/// "unknown variant" error.
+/// nested typo, then per-variant parameter validation rejects bad
+/// multiplier ranges, zero durations, unknown targets, etc. The
+/// discriminator is a free string so unknown `type` values surface as
+/// a typed [`Sl1LoadError::PressureUnknownType`] instead of serde's
+/// generic "unknown variant" error.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RawSl1Pressure {
@@ -914,12 +914,12 @@ pub struct Sl1Pressure {
 }
 
 impl Sl1Pressure {
-    /// Last tick (inclusive) during which the pressure is active.
-    /// The active interval is `[at_tick, at_tick + duration_ticks)`,
-    /// so the inclusive last tick is `at_tick + duration_ticks - 1`
-    /// for `duration_ticks > 0`. A `duration_ticks == 0` pressure is
-    /// rejected at load (see `validate_pressure`) so this is always
-    /// well-defined.
+    /// Exclusive end of the pressure's active window.
+    /// The active interval is `[at_tick, end_tick())`, i.e. the pressure
+    /// is active while `at_tick <= now < end_tick()` and deactivates the
+    /// first tick `now >= end_tick()`. The inclusive last active tick is
+    /// therefore `end_tick() - 1` (always well-defined because
+    /// `duration_ticks > 0` is enforced at load).
     #[must_use]
     pub fn end_tick(&self) -> u64 {
         self.at_tick.saturating_add(self.duration_ticks)
