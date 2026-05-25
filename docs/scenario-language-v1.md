@@ -404,6 +404,93 @@ so legacy + SL1-empty scenes serialize without them. Snapshot
 encoding clears `sl1_place_inventories` every tick (mirroring the
 `movers` pattern) and rebuilds it from `World.sl1_runtime`.
 
+## Transforms (PR 4)
+
+Transforms describe cadence-driven typed work: "at place P, every N
+ticks, consume X of thing T and produce Y of thing U, with capacity
+cost C, deadline D, and failure policy F". They are the primitive
+that turns inventories into game pressure.
+
+### Grammar
+
+| Field | Required | Type | Notes |
+|---|---|---|---|
+| `id` | yes | `string` | Stable SL1 id (`[a-z][a-z0-9_-]*`, ≤64 chars). |
+| `type` | yes | `string` | Open string, non-empty. Used for grouping/HUD. |
+| `runs_on` | yes | `PlaceId` | Must reference a declared place. |
+| `inputs` | no | `[{thing, amount}]` | Things must be declared; amounts > 0. |
+| `outputs` | yes | `[{thing, amount}]` | At least one entry. Outputs are written to `runs_on`. |
+| `cadence_ticks` | yes | `u64` | > 0. Cadence fires when `tick > 0 && tick % cadence_ticks == 0`. |
+| `duration_ticks` | yes | `u64` | > 0. Ticks the transform stays Running once started. |
+| `deadline_ticks` | yes | `u64` | > 0 and ≥ `duration_ticks`. Measured from `scheduled_at`. |
+| `capacity_cost` | no | `{string: u64}` | Keys must be capacity buckets declared on `runs_on`. |
+| `failure_policy` | yes | `retry_then_warn` \| `drop` | PR 4 supports these two. `degrade_quality` is reserved for PR 8 and rejected at load until then. |
+| `max_attempts` | conditional | `u32` | Required for `retry_then_warn`; must be > 0. |
+
+Unknown fields on a transform or on an io entry fail the load with
+`Sl1LoadError::Parse`. `inputs` and `outputs` may not repeat the same
+thing — sum amounts in JSON instead.
+
+### State machine
+
+```
+                        cadence fires (now>0, now%cadence==0)
+   ┌───────────────────────────────────────────────┐
+   │                                               │
+   ▼                                               │
+ Idle ──start_attempt──▶ Running ──completion──▶ Idle
+   │                       │
+   │                       │ now > deadline
+   │                       ▼
+   │   inputs missing    Late ──RetryThenWarn(attempt<max)──▶ retry
+   ├──────────────────▶ Starved ──deadline──▶ Late ─────┐
+   │                                                     │
+   │   capacity/output  Blocked ──deadline──▶ Late       │
+   └──────────────────▶                                  ▼
+                                                  Drop / max_attempts
+                                                  ───emit Failed──▶ Idle
+```
+
+`Failed` is **not** a persistent state — it is an event surfaced as
+a one-shot `WarningPayload::Sl1Transform { event: Failed, ... }` and
+the transform immediately resets to `Idle` so subsequent cadences
+keep firing.
+
+### Failure policies
+
+- `drop`: a single attempt. If the transform is starved/blocked and
+  the deadline passes, emit `Failed` once and reset to `Idle`.
+- `retry_then_warn`: each Late tick is a retry. If `try_start`
+  succeeds while Late, transition back to `Running`. Otherwise
+  increment `attempt`. When `attempt >= max_attempts`, emit `Failed`
+  and reset to `Idle`.
+
+### Capacity contention
+
+Transforms are processed in stable id (BTreeMap) order each tick.
+When two transforms target the same capacity bucket on the same
+place, the lower id is offered the slot first. Reservations are
+released on completion **and** on failure. Inputs are only consumed
+once all gates (inputs, capacity, output storage) pass.
+
+### Warnings
+
+The `Sl1Transform` warning payload carries `transform_id`, `event`,
+`tick`, and an optional `attempt`. The `event` discriminator is one
+of:
+
+- `Starved` — emitted once on entry to `Starved` (missing inputs).
+- `Blocked` — emitted once on entry to `Blocked` (capacity or output
+  storage refuses the start).
+- `Late` — emitted once when the deadline is breached.
+- `Failed` — emitted once on terminal failure (Drop, or
+  RetryThenWarn at max_attempts).
+- `SlotMissed` — emitted once each time a cadence fires while the
+  previous instance is still non-`Idle`.
+
+Re-entry into `Starved` or `Blocked` does **not** re-emit; warnings
+are state-class change events, not per-tick.
+
 ## Roadmap (per `plan.md`)
 
 | PR | Adds |

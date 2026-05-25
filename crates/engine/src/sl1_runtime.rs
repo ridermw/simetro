@@ -179,6 +179,8 @@ fn process_one(
             attempt,
             since,
             now,
+            storage_caps,
+            place_caps,
             messages,
         ),
     };
@@ -310,21 +312,59 @@ fn advance_waiting(
 fn advance_late(
     def: &Sl1Transform,
     id: &str,
-    _runtime: &mut crate::scenario_language_v1::Sl1RuntimeState,
+    runtime: &mut crate::scenario_language_v1::Sl1RuntimeState,
     scheduled_at: u64,
     attempt: u32,
     since: u64,
     now: u64,
+    storage_caps: &BTreeMap<(&str, &str), u64>,
+    place_caps: &BTreeMap<&str, &BTreeMap<String, u64>>,
     messages: &mut Vec<SimMessage>,
 ) -> Sl1TransformState {
-    // Already Late. Under RetryThenWarn we wait for the next cadence
-    // slot; under Drop we immediately fail. The drop case is already
-    // handled at entry to Late, so here we just preserve.
-    let _ = (def, id, scheduled_at, attempt, since, now, messages);
-    Sl1TransformState::Late {
-        scheduled_at,
-        attempt,
-        since,
+    // Drop policy always fails immediately at deadline breach, so any
+    // Late state we see here is RetryThenWarn. We treat each tick in
+    // Late as a retry slot: try to start, and if we exhaust max_attempts
+    // without succeeding, emit Failed and reset to Idle.
+    match def.failure_policy {
+        Sl1FailurePolicy::Drop => {
+            // Unexpected — Drop should never produce a Late state, but
+            // be defensive: emit Failed and reset.
+            emit_warning(
+                messages,
+                id,
+                Sl1TransformWarningKind::Failed,
+                now,
+                Some(attempt),
+            );
+            Sl1TransformState::Idle
+        }
+        Sl1FailurePolicy::RetryThenWarn => {
+            if attempt >= def.max_attempts {
+                emit_warning(
+                    messages,
+                    id,
+                    Sl1TransformWarningKind::Failed,
+                    now,
+                    Some(attempt),
+                );
+                return Sl1TransformState::Idle;
+            }
+            // Try to recover: re-attempt start. If it succeeds we go
+            // back to Running; otherwise increment attempt and stay
+            // Late until next tick.
+            match try_start(def, runtime, storage_caps, place_caps) {
+                StartResult::Started => Sl1TransformState::Running {
+                    scheduled_at,
+                    started_at: now,
+                    attempt,
+                },
+                _ => Sl1TransformState::Late {
+                    scheduled_at,
+                    attempt: attempt.saturating_add(1),
+                    since,
+                },
+            }
+        }
     }
 }
 
