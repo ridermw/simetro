@@ -271,6 +271,43 @@ fn milestone_empty_highlight_rejected() {
 }
 
 #[test]
+fn milestone_unknown_camera_focus_target_rejected() {
+    // "ghost-place" is not a declared SL1 entity; strict-schema must
+    // reject the silent typo so the viewer can't no-op a focus hint.
+    let json = scene_with_pressure(
+        r#"[{"id":"p","type":"schema_drift","at_tick":1,"duration_ticks":1,"target":"report"}]"#,
+        r#"[{"id":"m","label":"x","camera_focus":["ghost-place"],"trigger":{"type":"pressure_activated","pressure":"p"}}]"#,
+    );
+    assert!(matches!(
+        expect_sl1_err(json),
+        Sl1LoadError::MilestoneUnknownCameraFocus { .. }
+    ));
+}
+
+#[test]
+fn milestone_unknown_highlight_target_rejected() {
+    let json = scene_with_pressure(
+        r#"[{"id":"p","type":"schema_drift","at_tick":1,"duration_ticks":1,"target":"report"}]"#,
+        r#"[{"id":"m","label":"x","highlight":"ghost-target","trigger":{"type":"pressure_activated","pressure":"p"}}]"#,
+    );
+    assert!(matches!(
+        expect_sl1_err(json),
+        Sl1LoadError::MilestoneUnknownHighlight { .. }
+    ));
+}
+
+#[test]
+fn milestone_camera_focus_accepts_dashboard_id() {
+    // Dashboards, like places, are addressable SL1 entities and should
+    // be accepted as camera_focus targets.
+    let json = scene_with_obs(
+        r#"{ "dashboards":[{"id":"exec","type":"ad_hoc","depends_on":[],"freshness_slo_ticks":5}], "metrics":[], "alerts":[] }"#,
+        r#"[{"id":"m","label":"x","camera_focus":["exec"],"trigger":{"type":"dashboard_state","dashboard":"exec","state":"ok"}}]"#,
+    );
+    let _ = load_scene_str(&json, 0).expect("scene loads");
+}
+
+#[test]
 fn milestone_unknown_top_level_field_rejected() {
     let json = scene_with_pressure(
         r#"[{"id":"p","type":"schema_drift","at_tick":1,"duration_ticks":1,"target":"report"}]"#,

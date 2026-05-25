@@ -3503,6 +3503,26 @@ pub enum Sl1LoadError {
     )]
     MilestoneEmptyHighlight { id: String },
 
+    /// A `camera_focus` entry references an id that is not declared on
+    /// the scene. The strict-schema contract requires every UI
+    /// reference to point at a known SL1 entity so the viewer never
+    /// silently no-ops a focus hint on a typo.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].camera_focus: \
+         unknown target {entry:?}"
+    )]
+    MilestoneUnknownCameraFocus { id: String, entry: String },
+
+    /// `highlight` references an id that is not declared on the scene.
+    /// The strict-schema contract requires every UI reference to point
+    /// at a known SL1 entity so the viewer never silently no-ops a
+    /// highlight hint on a typo.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].highlight: \
+         unknown target {target:?}"
+    )]
+    MilestoneUnknownHighlight { id: String, target: String },
+
     /// A `pressure_activated`/`pressure_deactivated` trigger names a
     /// pressure id that is not declared on the scene.
     #[error(
@@ -4542,9 +4562,36 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     agents.sort_by(|a, b| a.id.cmp(&b.id));
 
     // ---- PR 11 — milestones ----
-    // Cross-references existing pressure / metric / dashboard ids.
+    // Cross-references existing pressure / metric / dashboard ids, and
+    // requires camera_focus / highlight to target a known SL1 entity so
+    // viewers never silently no-op a focus hint on a typo.
     let pressure_ids_ref: std::collections::BTreeSet<&str> =
         pressure.iter().map(|p| p.id.as_str()).collect();
+    let link_ids_ref: std::collections::BTreeSet<&str> =
+        links.iter().map(|l| l.id.as_str()).collect();
+    let thing_ids_ref: std::collections::BTreeSet<&str> =
+        things.iter().map(|t| t.id.as_str()).collect();
+    let alert_ids_ref: std::collections::BTreeSet<&str> = observability
+        .as_ref()
+        .map(|o| o.alerts.iter().map(|a| a.id.as_str()).collect())
+        .unwrap_or_default();
+    let agent_ids_ref: std::collections::BTreeSet<&str> =
+        agents.iter().map(|a| a.id.as_str()).collect();
+    let failure_condition_ids_ref: std::collections::BTreeSet<&str> =
+        failure_conditions.iter().map(|f| f.id.as_str()).collect();
+    let mut focusable_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    focusable_ids.extend(place_ids_ref.iter().copied());
+    focusable_ids.extend(link_ids_ref.iter().copied());
+    focusable_ids.extend(thing_ids_ref.iter().copied());
+    focusable_ids.extend(transform_ids_ref.iter().copied());
+    focusable_ids.extend(demand_ids_ref.iter().copied());
+    focusable_ids.extend(pressure_ids_ref.iter().copied());
+    focusable_ids.extend(objective_ids_ref.iter().copied());
+    focusable_ids.extend(failure_condition_ids_ref.iter().copied());
+    focusable_ids.extend(metric_ids.iter().copied());
+    focusable_ids.extend(dashboard_ids.iter().copied());
+    focusable_ids.extend(alert_ids_ref.iter().copied());
+    focusable_ids.extend(agent_ids_ref.iter().copied());
     let mut milestones: Vec<Sl1Milestone> = Vec::with_capacity(raw.milestones.len());
     let mut seen_milestone_ids: std::collections::BTreeSet<String> =
         std::collections::BTreeSet::new();
@@ -4554,6 +4601,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             &pressure_ids_ref,
             &metric_ids,
             &dashboard_ids,
+            &focusable_ids,
         )?;
         if !seen_milestone_ids.insert(milestone.id.clone()) {
             return Err(Sl1LoadError::MilestoneDuplicateId { id: milestone.id });
@@ -5002,6 +5050,7 @@ fn validate_milestone(
     pressure_ids: &std::collections::BTreeSet<&str>,
     metric_ids: &std::collections::BTreeSet<&str>,
     dashboard_ids: &std::collections::BTreeSet<&str>,
+    focusable_ids: &std::collections::BTreeSet<&str>,
 ) -> Result<Sl1Milestone, Sl1LoadError> {
     if !is_valid_sl1_id(&raw.id) {
         return Err(Sl1LoadError::MilestoneInvalidId { id: raw.id });
@@ -5025,6 +5074,12 @@ fn validate_milestone(
                         entry: entry.clone(),
                     });
                 }
+                if !focusable_ids.contains(entry.as_str()) {
+                    return Err(Sl1LoadError::MilestoneUnknownCameraFocus {
+                        id: raw.id,
+                        entry: entry.clone(),
+                    });
+                }
             }
             list
         }
@@ -5034,6 +5089,12 @@ fn validate_milestone(
         Some(s) => {
             if s.trim().is_empty() {
                 return Err(Sl1LoadError::MilestoneEmptyHighlight { id: raw.id });
+            }
+            if !focusable_ids.contains(s.as_str()) {
+                return Err(Sl1LoadError::MilestoneUnknownHighlight {
+                    id: raw.id,
+                    target: s,
+                });
             }
             Some(s)
         }
