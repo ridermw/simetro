@@ -976,7 +976,7 @@ pub enum Sl1LoadError {
         value: String,
     },
 
-    /// `transforms[].id` does not satisfy [`is_valid_sl1_id`].
+    /// `transforms[].id` does not satisfy `is_valid_sl1_id`.
     #[error("scenario_language_v1.transforms[{id:?}].id: invalid identifier")]
     TransformInvalidId { id: String },
 
