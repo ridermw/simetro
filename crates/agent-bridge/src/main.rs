@@ -102,15 +102,28 @@ async fn run_loop(backend: Box<dyn Backend>) -> std::io::Result<()> {
             }
         };
 
+        // Per spec (crates/protocol/src/lib.rs schema_version docs):
+        // "Consumers MUST check schema_version == SCHEMA_VERSION
+        // before processing payload. Receivers MUST reject on
+        // mismatch; never silently process." Validate every envelope
+        // before dispatch — not just the Hello handshake — so a peer
+        // that bumps versions mid-session is rejected the same way.
+        if !env.is_compatible() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "schema_version mismatch: peer={}, ours={}; refusing to process payload \
+                     (per spec §10.1)",
+                    env.schema_version,
+                    simetro_protocol::SCHEMA_VERSION
+                ),
+            ));
+        }
+
         match env.payload {
-            BridgeMessage::Hello { schema_version, .. } => {
-                if schema_version != simetro_protocol::SCHEMA_VERSION {
-                    tracing::warn!(
-                        "simetro-bridge: peer schema_version={schema_version} != ours={}; \
-                         continuing but failures are expected",
-                        simetro_protocol::SCHEMA_VERSION
-                    );
-                }
+            BridgeMessage::Hello { .. } => {
+                // is_compatible above already validated. Nothing else
+                // to negotiate today; future versions may add fields.
             }
             BridgeMessage::Shutdown => {
                 tracing::info!("simetro-bridge: Shutdown received, exiting cleanly");
