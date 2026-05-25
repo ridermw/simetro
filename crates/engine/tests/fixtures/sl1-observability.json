@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "name": "sl1-observability-fixture",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": { "nodes": [], "paths": [], "movers": [] },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [0.0, 0.0],
+        "capacity": { "machine_hours": 4 },
+        "storage": {
+          "raw_material": { "capacity": 100, "initial": 100 },
+          "report":       { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["report"]
+      },
+      {
+        "id": "sink",
+        "role": "consumer",
+        "pos": [10.0, 0.0],
+        "capacity": { "queries": 8 },
+        "storage": { "report": { "capacity": 100, "initial": 0 } },
+        "accepts": ["report"],
+        "produces": []
+      }
+    ],
+    "things": [
+      { "id": "raw_material", "kind": "input", "tags": [] },
+      { "id": "report",       "kind": "data",  "tags": [], "freshness_budget_ticks": 50 }
+    ],
+    "links": [
+      {
+        "id": "factory-to-sink",
+        "type": "report_pipe",
+        "from": "factory", "to": "sink",
+        "direction": "forward",
+        "capacity": { "reports": 5 },
+        "travel_ticks": 2,
+        "compatibility": ["report"],
+        "queue_capacity": 5,
+        "backpressure": "block_upstream"
+      }
+    ],
+    "observability": {
+      "dashboards": [
+        {
+          "id": "exec-report",
+          "type": "report",
+          "depends_on": ["report"],
+          "freshness_slo_ticks": 10
+        },
+        {
+          "id": "live-tile",
+          "type": "live",
+          "depends_on": ["report"],
+          "freshness_slo_ticks": 5
+        },
+        {
+          "id": "adhoc-view",
+          "type": "ad_hoc",
+          "depends_on": [],
+          "freshness_slo_ticks": 100
+        }
+      ],
+      "metrics": [
+        {
+          "id": "factory-machine-util",
+          "source": "place_capacity_used_percent",
+          "place": "factory",
+          "capacity": "machine_hours"
+        },
+        {
+          "id": "factory-report-count",
+          "source": "place_inventory_count",
+          "place": "factory",
+          "thing": "report"
+        },
+        {
+          "id": "exec-report-age",
+          "source": "dashboard_freshness",
+          "dashboard": "exec-report"
+        }
+      ],
+      "alerts": [
+        {
+          "id": "machine-overloaded",
+          "metric": "factory-machine-util",
+          "predicate": { "type": "gt", "threshold": 80 },
+          "severity": "warning"
+        },
+        {
+          "id": "no-reports",
+          "metric": "factory-report-count",
+          "predicate": { "type": "lt", "threshold": 1 },
+          "severity": "info"
+        },
+        {
+          "id": "report-too-stale",
+          "metric": "exec-report-age",
+          "predicate": { "type": "out_of_range", "min": 0, "max": 20 },
+          "severity": "critical"
+        }
+      ]
+    }
+  }
+}

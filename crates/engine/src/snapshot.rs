@@ -18,26 +18,28 @@
 
 use simetro_protocol::{
     FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView,
-    Sl1DemandPenaltyView, Sl1DemandPriorityView, Sl1DemandRuntimeView, Sl1DemandScheduleView,
-    Sl1DemandTargetView, Sl1DemandView, Sl1FailureConditionParamsView,
+    Sl1AlertPredicateView, Sl1AlertStateView, Sl1AlertView, Sl1DashboardStateView,
+    Sl1DashboardView, Sl1DemandPenaltyView, Sl1DemandPriorityView, Sl1DemandRuntimeView,
+    Sl1DemandScheduleView, Sl1DemandTargetView, Sl1DemandView, Sl1FailureConditionParamsView,
     Sl1FailureConditionRuntimeView, Sl1FailureConditionView, Sl1FailurePolicyView,
     Sl1GameOutcomeView, Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView,
-    Sl1LinkView, Sl1ObjectiveParamsView, Sl1ObjectiveRuntimeView, Sl1ObjectiveStatusTag,
-    Sl1ObjectiveView, Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView,
-    Sl1PlaceView, Sl1PressureParamsView, Sl1PressureView, Sl1StorageSlotView,
-    Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView, Sl1TransformIoView,
-    Sl1TransformRuntimeView, Sl1TransformStateView, Sl1TransformView,
-    Sl1VictoryConditionParamsView, Sl1VictoryConditionRuntimeView, Sl1VictoryConditionView,
-    SnapshotPayload, StaticPayload,
+    Sl1LinkView, Sl1MetricSourceView, Sl1MetricStateView, Sl1MetricView, Sl1ObjectiveParamsView,
+    Sl1ObjectiveRuntimeView, Sl1ObjectiveStatusTag, Sl1ObjectiveView, Sl1OperatingPredicateView,
+    Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView, Sl1PressureParamsView,
+    Sl1PressureView, Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView,
+    Sl1ThingView, Sl1TransformIoView, Sl1TransformRuntimeView, Sl1TransformStateView,
+    Sl1TransformView, Sl1VictoryConditionParamsView, Sl1VictoryConditionRuntimeView,
+    Sl1VictoryConditionView, SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
 use crate::scenario_language_v1::{
-    FreshnessState, GameOutcome, Sl1FailureCondition, Sl1FailureConditionParams, Sl1Link,
-    Sl1LinkBackpressure, Sl1LinkDirection, Sl1Objective, Sl1ObjectiveParams, Sl1ObjectiveStatus,
-    Sl1OperatingPredicate, Sl1Place, Sl1Pressure, Sl1PressureKind, Sl1PressureParams, Sl1Thing,
-    Sl1VictoryCondition, Sl1VictoryConditionParams,
+    FreshnessState, GameOutcome, Sl1Alert, Sl1AlertPredicate, Sl1Dashboard, Sl1FailureCondition,
+    Sl1FailureConditionParams, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1Metric,
+    Sl1MetricSource, Sl1Objective, Sl1ObjectiveParams, Sl1ObjectiveStatus, Sl1OperatingPredicate,
+    Sl1Place, Sl1Pressure, Sl1PressureKind, Sl1PressureParams, Sl1Thing, Sl1VictoryCondition,
+    Sl1VictoryConditionParams,
 };
 use crate::world::World;
 
@@ -155,6 +157,24 @@ pub fn encode_static_parts(
                     .map(victory_condition_to_view)
                     .collect()
             })
+            .unwrap_or_default(),
+        sl1_observability_metrics: world
+            .sl1
+            .as_ref()
+            .and_then(|sl1| sl1.observability.as_ref())
+            .map(|o| o.metrics.iter().map(metric_to_view).collect())
+            .unwrap_or_default(),
+        sl1_observability_dashboards: world
+            .sl1
+            .as_ref()
+            .and_then(|sl1| sl1.observability.as_ref())
+            .map(|o| o.dashboards.iter().map(dashboard_to_view).collect())
+            .unwrap_or_default(),
+        sl1_observability_alerts: world
+            .sl1
+            .as_ref()
+            .and_then(|sl1| sl1.observability.as_ref())
+            .map(|o| o.alerts.iter().map(alert_to_view).collect())
             .unwrap_or_default(),
     }
 }
@@ -537,6 +557,55 @@ fn outcome_to_view(o: &GameOutcome) -> Sl1GameOutcomeView {
     }
 }
 
+fn metric_to_view(m: &Sl1Metric) -> Sl1MetricView {
+    Sl1MetricView {
+        id: m.id.clone(),
+        source: match &m.source {
+            Sl1MetricSource::PlaceCapacityUsedPercent { place, capacity } => {
+                Sl1MetricSourceView::PlaceCapacityUsedPercent {
+                    place: place.clone(),
+                    capacity: capacity.clone(),
+                }
+            }
+            Sl1MetricSource::PlaceInventoryCount { place, thing } => {
+                Sl1MetricSourceView::PlaceInventoryCount {
+                    place: place.clone(),
+                    thing: thing.clone(),
+                }
+            }
+            Sl1MetricSource::DashboardFreshness { dashboard } => {
+                Sl1MetricSourceView::DashboardFreshness {
+                    dashboard: dashboard.clone(),
+                }
+            }
+        },
+    }
+}
+
+fn dashboard_to_view(d: &Sl1Dashboard) -> Sl1DashboardView {
+    Sl1DashboardView {
+        id: d.id.clone(),
+        kind: d.kind.as_str().to_string(),
+        depends_on: d.depends_on.clone(),
+        freshness_slo_ticks: d.freshness_slo_ticks,
+    }
+}
+
+fn alert_to_view(a: &Sl1Alert) -> Sl1AlertView {
+    Sl1AlertView {
+        id: a.id.clone(),
+        metric: a.metric.clone(),
+        predicate: match a.predicate {
+            Sl1AlertPredicate::Gt { threshold } => Sl1AlertPredicateView::Gt { threshold },
+            Sl1AlertPredicate::Lt { threshold } => Sl1AlertPredicateView::Lt { threshold },
+            Sl1AlertPredicate::OutOfRange { min, max } => {
+                Sl1AlertPredicateView::OutOfRange { min, max }
+            }
+        },
+        severity: a.severity.as_str().to_string(),
+    }
+}
+
 /// Compute group-by-color batches over path views. Renderer caches one
 /// `Path2D` per color and re-uses it across frames.
 ///
@@ -567,6 +636,9 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
     out.sl1_victory_condition_states.clear();
     out.sl1_game_outcome = None;
     out.sl1_game_phase = None;
+    out.sl1_metric_states.clear();
+    out.sl1_dashboard_states.clear();
+    out.sl1_alert_states.clear();
 
     for m in world.movers.values() {
         let (pos, on_path) = match m.state() {
@@ -657,6 +729,66 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
         }
         out.sl1_game_outcome = Some(outcome_to_view(&runtime.game_outcome));
         out.sl1_game_phase = Some(runtime.game_phase.as_str().to_string());
+
+        for (metric_id, state) in runtime.metric_states.iter() {
+            let (state_str, value) = match state {
+                crate::scenario_language_v1::Sl1MetricState::Ok { value } => {
+                    ("ok".to_string(), Some(*value))
+                }
+                crate::scenario_language_v1::Sl1MetricState::NoData => {
+                    ("no_data".to_string(), None)
+                }
+            };
+            out.sl1_metric_states.push(Sl1MetricStateView {
+                metric_id: metric_id.clone(),
+                state: state_str,
+                value,
+            });
+        }
+        for (dashboard_id, state) in runtime.dashboard_states.iter() {
+            let (state_str, freshness_ticks) = match state {
+                crate::scenario_language_v1::Sl1DashboardState::Ok => {
+                    // Recompute the actual freshness age so the HUD always
+                    // has a numeric chip to render even in the Ok state.
+                    let age = world
+                        .sl1
+                        .as_ref()
+                        .and_then(|s| s.observability.as_ref())
+                        .and_then(|o| o.dashboards.iter().find(|d| d.id == *dashboard_id))
+                        .map(|d| {
+                            crate::sl1_observability::dashboard_freshness(d, runtime, world.tick)
+                                .unwrap_or(0)
+                        });
+                    ("ok".to_string(), age)
+                }
+                crate::scenario_language_v1::Sl1DashboardState::Stale { freshness_ticks } => {
+                    ("stale".to_string(), Some(*freshness_ticks))
+                }
+                crate::scenario_language_v1::Sl1DashboardState::NoData => {
+                    ("no_data".to_string(), None)
+                }
+            };
+            out.sl1_dashboard_states.push(Sl1DashboardStateView {
+                dashboard_id: dashboard_id.clone(),
+                state: state_str,
+                freshness_ticks,
+            });
+        }
+        for (alert_id, state) in runtime.alert_states.iter() {
+            let (state_str, fired_at_tick) = match state {
+                crate::scenario_language_v1::Sl1AlertState::Inactive => {
+                    ("inactive".to_string(), None)
+                }
+                crate::scenario_language_v1::Sl1AlertState::Firing { fired_at_tick } => {
+                    ("firing".to_string(), Some(*fired_at_tick))
+                }
+            };
+            out.sl1_alert_states.push(Sl1AlertStateView {
+                alert_id: alert_id.clone(),
+                state: state_str,
+                fired_at_tick,
+            });
+        }
     }
 
     out.movers.len()

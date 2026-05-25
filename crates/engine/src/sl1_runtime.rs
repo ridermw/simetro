@@ -62,6 +62,12 @@ pub fn run(
     // world for this tick. The evaluator is internally short-circuited
     // when `game_outcome` is already terminal.
     crate::sl1_objectives::run(scene, runtime, now, events, messages);
+
+    // Observability runs AFTER objectives so metric/dashboard/alert
+    // states reflect the post-evaluation world for this tick. Per the
+    // SL1 spec ordering "objectives → observability → agents →
+    // milestones" (PR 9).
+    crate::sl1_observability::run(scene, runtime, now, events);
 }
 
 fn age_freshness(

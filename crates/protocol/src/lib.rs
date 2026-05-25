@@ -164,6 +164,27 @@ pub struct StaticPayload {
     /// Sorted by `id`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_victory_conditions: Vec<Sl1VictoryConditionView>,
+    /// SL1 observability metrics for this scene (PR 9). Static
+    /// definitions only; per-tick values go in
+    /// [`SnapshotPayload::sl1_metric_states`]. Empty for non-SL1
+    /// scenes and for SL1 scenes with no `observability.metrics`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_observability_metrics: Vec<Sl1MetricView>,
+    /// SL1 observability dashboards for this scene (PR 9). Static
+    /// definitions only; per-tick state goes in
+    /// [`SnapshotPayload::sl1_dashboard_states`]. Empty for non-SL1
+    /// scenes and for SL1 scenes with no `observability.dashboards`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_observability_dashboards: Vec<Sl1DashboardView>,
+    /// SL1 observability alerts for this scene (PR 9). Static
+    /// definitions only; per-tick state goes in
+    /// [`SnapshotPayload::sl1_alert_states`]. Empty for non-SL1
+    /// scenes and for SL1 scenes with no `observability.alerts`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_observability_alerts: Vec<Sl1AlertView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -624,6 +645,102 @@ pub struct Sl1GameOutcomeView {
     pub reason: Option<String>,
 }
 
+// --- PR 9 — observability (metrics / dashboards / alerts) ---
+
+/// Wire-level view of a validated SL1 metric definition. Static —
+/// per-tick values land in [`Sl1MetricStateView`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1MetricView {
+    pub id: String,
+    pub source: Sl1MetricSourceView,
+}
+
+/// Wire-level metric source payload, tagged by `kind` (`type` in the
+/// authored JSON is the same discriminator). Mirrors
+/// `engine::scenario_language_v1::Sl1MetricSource` 1:1.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1MetricSourceView {
+    PlaceCapacityUsedPercent { place: String, capacity: String },
+    PlaceInventoryCount { place: String, thing: String },
+    DashboardFreshness { dashboard: String },
+}
+
+/// Wire-level view of a validated SL1 dashboard definition. Static —
+/// per-tick state lands in [`Sl1DashboardStateView`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1DashboardView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub depends_on: Vec<String>,
+    pub freshness_slo_ticks: u64,
+}
+
+/// Wire-level view of a validated SL1 alert definition. Static —
+/// per-tick state lands in [`Sl1AlertStateView`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1AlertView {
+    pub id: String,
+    pub metric: String,
+    pub predicate: Sl1AlertPredicateView,
+    pub severity: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1AlertPredicateView {
+    Gt {
+        threshold: u64,
+    },
+    Lt {
+        threshold: u64,
+    },
+    /// Inclusive bounds. Fires when `value < min` or `value > max`.
+    OutOfRange {
+        min: u64,
+        max: u64,
+    },
+}
+
+/// Per-tick state of a single metric.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1MetricStateView {
+    pub metric_id: String,
+    /// Canonical discriminant (`ok` / `no_data`).
+    pub state: String,
+    /// Numeric value when `state == "ok"`. `None` for `no_data`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<u64>,
+}
+
+/// Per-tick state of a single dashboard.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1DashboardStateView {
+    pub dashboard_id: String,
+    /// Canonical discriminant (`ok` / `stale` / `no_data`).
+    pub state: String,
+    /// Maximum age (in ticks) across `depends_on` things at this
+    /// tick. `None` for `no_data`; `Some(value)` for `ok` and
+    /// `stale`. Carried even when `state == "ok"` so the HUD can
+    /// show a freshness chip without re-resolving against the
+    /// snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness_ticks: Option<u64>,
+}
+
+/// Per-tick state of a single alert.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1AlertStateView {
+    pub alert_id: String,
+    /// Canonical discriminant (`inactive` / `firing`).
+    pub state: String,
+    /// Tick of the most recent `Inactive` → `Firing` transition.
+    /// `None` while inactive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fired_at_tick: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -697,6 +814,21 @@ pub struct SnapshotPayload {
     /// `None` for non-SL1 scenes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sl1_game_phase: Option<String>,
+    /// SL1 per-metric runtime state for this tick (PR 9). Emitted once
+    /// per declared metric (sorted by `metric_id`). Empty for non-SL1
+    /// scenes and for SL1 scenes with no `observability.metrics`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_metric_states: Vec<Sl1MetricStateView>,
+    /// SL1 per-dashboard runtime state for this tick (PR 9). Sorted by
+    /// `dashboard_id`. Empty for non-SL1 scenes and for SL1 scenes
+    /// with no `observability.dashboards`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_dashboard_states: Vec<Sl1DashboardStateView>,
+    /// SL1 per-alert runtime state for this tick (PR 9). Sorted by
+    /// `alert_id`. Empty for non-SL1 scenes and for SL1 scenes with
+    /// no `observability.alerts`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_alert_states: Vec<Sl1AlertStateView>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -792,6 +924,43 @@ pub enum SimEvent {
         /// `Some` only when `to == "lost"`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+    },
+    /// An SL1 dashboard transitioned state (`ok` / `stale` / `no_data`)
+    /// (PR 9). Emitted exactly once per transition, in stable dashboard
+    /// id order. Same-state ticks do not emit.
+    Sl1DashboardStateChanged {
+        dashboard_id: String,
+        from: String,
+        to: String,
+        tick: u64,
+        /// Only `Some` when the new state is `stale`. The maximum age
+        /// (in ticks) across the dashboard's `depends_on` things at
+        /// the moment of transition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        freshness_ticks: Option<u64>,
+    },
+    /// An SL1 alert transitioned from `Inactive` to `Firing` (PR 9).
+    /// Edge-triggered: emitted exactly once per transition. The metric
+    /// value at the moment of firing and the alert severity are
+    /// carried so consumers (HUD, agent prompts, DecisionTimeline)
+    /// don't need to round-trip back into the snapshot.
+    Sl1AlertFired {
+        alert_id: String,
+        metric_id: String,
+        value: u64,
+        severity: String,
+        predicate: String,
+        tick: u64,
+    },
+    /// An SL1 alert transitioned from `Firing` to `Inactive` (PR 9).
+    /// Edge-triggered counterpart to [`Self::Sl1AlertFired`]. Emitted
+    /// when the metric value re-enters the safe band, or when the
+    /// underlying metric transitions to `NoData` (treated as
+    /// "predicate cannot fire").
+    Sl1AlertCleared {
+        alert_id: String,
+        metric_id: String,
+        tick: u64,
     },
 }
 
@@ -1306,6 +1475,9 @@ mod tests {
             sl1_victory_condition_states: Vec::new(),
             sl1_game_outcome: None,
             sl1_game_phase: None,
+            sl1_metric_states: Vec::new(),
+            sl1_dashboard_states: Vec::new(),
+            sl1_alert_states: Vec::new(),
         };
         let back: SnapshotPayload = roundtrip(&snap);
         assert_eq!(back.tick, 100);
@@ -1348,6 +1520,9 @@ mod tests {
             sl1_objectives: Vec::new(),
             sl1_failure_conditions: Vec::new(),
             sl1_victory_conditions: Vec::new(),
+            sl1_observability_metrics: Vec::new(),
+            sl1_observability_dashboards: Vec::new(),
+            sl1_observability_alerts: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -1446,6 +1621,9 @@ mod tests {
             sl1_objectives: Vec::new(),
             sl1_failure_conditions: Vec::new(),
             sl1_victory_conditions: Vec::new(),
+            sl1_observability_metrics: Vec::new(),
+            sl1_observability_dashboards: Vec::new(),
+            sl1_observability_alerts: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -1482,6 +1660,9 @@ mod tests {
             sl1_objectives: vec![],
             sl1_failure_conditions: vec![],
             sl1_victory_conditions: vec![],
+            sl1_observability_metrics: vec![],
+            sl1_observability_dashboards: vec![],
+            sl1_observability_alerts: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -1544,6 +1725,9 @@ mod tests {
             sl1_objectives: vec![],
             sl1_failure_conditions: vec![],
             sl1_victory_conditions: vec![],
+            sl1_observability_metrics: vec![],
+            sl1_observability_dashboards: vec![],
+            sl1_observability_alerts: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);
