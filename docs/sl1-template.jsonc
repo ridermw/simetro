@@ -1,0 +1,280 @@
+// SL1 scene authoring template (PR 14).
+//
+// Copy to games/<slug>.json, remove comments, and validate with
+//
+//   cargo run -p simetro-headless -- hash --scene games/<slug>.json --ticks 100
+//
+// SL1 enforces strict-schema rejection on every behavior-bearing
+// field. Unknown fields, out-of-range values, references to
+// undeclared ids, and unsupported predicate kinds produce a typed
+// `Sl1LoadError` and the scene fails to load. See `docs/runbook.md`
+// section "scenario_language_v1 (SL1) taxonomy" for the full error
+// surface, and `docs/scenario-language-v1.md` for the grammar
+// reference.
+//
+// This template is the source of truth for the SL1 author surface
+// as of PR 14. The legacy v1 `pieces` / `goals` / `agents` arrays
+// at the top level must remain present (back-compat); SL1 behavior
+// lives entirely inside the `scenario_language_v1` block.
+{
+  "schema_version": 1,
+  "name": "sl1-template",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7", "#bb9af7", "#9ece6a"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "sl1-template",
+    "title": "SL1 Template",
+    "version": "0.1.0",
+    "author": "simetro team",
+    "description": "Annotated authoring template for scenario_language_v1 scenes.",
+    "tags": ["sl1", "template"],
+    "palette_note": "Document the background, foreground, and route accents.",
+    "layout_note": "Document the silhouette reviewers should see in the screenshot.",
+    "node_language_note": "Document what each place role/render hint means.",
+    "mover_path_note": "SL1 movers are typed inventory flows along links; document the dominant pipeline.",
+    "review_note": "Reviewed against world-quality checklist for v1+SL1."
+  },
+
+  // Legacy v1 surface (kept for back-compat; SL1 ignores it).
+  "pieces": { "nodes": [], "paths": [], "movers": [] },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [],
+
+  // ------------------------------------------------------------------
+  // The SL1 block. All behavior-bearing fields here use
+  // #[serde(deny_unknown_fields)] in the Rust loader — unknown keys
+  // fail load with a typed Sl1LoadError.
+  // ------------------------------------------------------------------
+  "scenario_language_v1": {
+    "schema_version": 1,
+
+    // PLACES (PR 1). Nodes in the topology. Required: id, role, pos.
+    // Optional: capacity (typed buckets), storage (typed thing
+    // inventories), accepts/produces (Vec<ThingId>), failure_domains,
+    // operating_states (typed predicates only).
+    "places": [
+      {
+        "id": "source",
+        "role": "source",                      // open string; conventional roles: source, compute_cluster, dashboard, operator
+        "pos": [-200.0, 0.0],
+        "capacity": { "events_per_tick": 100 },
+        "storage": {},
+        "accepts": [],
+        "produces": ["raw_event"],
+        "failure_domains": ["region-a"],
+        "operating_states": {}                 // map<state_name, { when: "<typed predicate>" }>
+      },
+      {
+        "id": "processor",
+        "role": "compute_cluster",
+        "pos": [0.0, 0.0],
+        "capacity": { "compute_slots": 8 },
+        "storage": {
+          "raw_event":       { "capacity": 1000, "initial": 0 },
+          "processed_event": { "capacity": 500,  "initial": 0 }
+        },
+        "accepts": ["raw_event"],
+        "produces": ["processed_event"],
+        "failure_domains": ["region-a"],
+        "operating_states": {
+          // Typed predicates only. Supported forms:
+          //   "used_percent_gte:<bucket>:<percent 0..=100>"
+          //   "overloaded_ticks_gt:<n>"
+          //   "inventory_gte:<thing_id>:<count>"
+          "saturated": { "when": "used_percent_gte:compute_slots:90" }
+        }
+      },
+      {
+        "id": "sink",
+        "role": "operator",
+        "pos": [200.0, 0.0],
+        "capacity": {},
+        "storage": { "processed_event": { "capacity": 100, "initial": 0 } },
+        "accepts": ["processed_event"],
+        "produces": [],
+        "failure_domains": ["region-a"],
+        "operating_states": {}
+      }
+    ],
+
+    // LINKS (PR 2). Declarative edges between places. Required:
+    // id, type, from, to, direction, capacity, travel_ticks,
+    // backpressure. compatibility list is canonicalized.
+    "links": [
+      {
+        "id": "src_to_proc",
+        "type": "data_flow",
+        "from": "source",
+        "to": "processor",
+        "direction": "forward",                // "forward" | "bidirectional"
+        "capacity": { "events_per_tick": 100 },
+        "travel_ticks": 1,
+        "compatibility": ["raw_event"],
+        "queue_capacity": 200,
+        "backpressure": "drop_oldest"          // "block" | "drop_oldest" | "drop_newest"
+      }
+    ],
+
+    // THINGS (PR 3). Typed inventory shapes. Required: id, kind.
+    // Optional: tags, schema_version, freshness_budget_ticks,
+    // quality_contract.
+    "things": [
+      {
+        "id": "raw_event",
+        "kind": "telemetry",
+        "tags": ["raw"],
+        "freshness_budget_ticks": 50,
+        "quality_contract": { "max_drop_percent": 5.0, "max_late_ticks": 10 }
+      },
+      {
+        "id": "processed_event",
+        "kind": "telemetry",
+        "tags": ["processed"],
+        "freshness_budget_ticks": 100
+      }
+    ],
+
+    // TRANSFORMS (PR 4). Inputs → outputs at a fixed cadence.
+    "transforms": [
+      {
+        "id": "process_event",
+        "type": "process",
+        "runs_on": "processor",
+        "inputs":  [{ "thing": "raw_event",       "amount": 1 }],
+        "outputs": [{ "thing": "processed_event", "amount": 1 }],
+        "cadence_ticks": 10,
+        "duration_ticks": 3,
+        "deadline_ticks": 20,                  // must be >= duration_ticks
+        "capacity_cost": { "compute_slots": 1 },
+        "failure_policy": "retry_then_warn",   // | "drop" | "degrade_quality"
+        "max_attempts": 3
+      }
+    ],
+
+    // DEMAND (PR 5). Drives the world. Score-bearing.
+    "demand": [
+      {
+        "id": "deliver_events",
+        "kind": "queries",
+        "target": { "kind": "place", "id": "sink" },
+        "requires": ["processed_event"],
+        "spawn_schedule": { "type": "fixed", "every_ticks": 30, "start_tick": 0 },
+        "deadline_ticks": 60,
+        "priority": "normal",                  // "low" | "normal" | "high"
+        "value": 10,
+        "penalty": { "score": -5, "warning": "deliver_events_dropped" }
+      }
+    ],
+
+    // PRESSURE (PR 7). Scheduled disturbances. Typed discriminator;
+    // every variant carries its own parameter shape. Supported in
+    // this build: source_multiplier, demand_growth, quota_reduction,
+    // path_outage. Variants like schema_drift, dashboard_storm,
+    // spot_eviction_wave, storage_metadata_storm, cooling_degradation
+    // load fine but emit `Sl1Warning::PressureUnsupportedInThisPr`.
+    "pressure": [
+      {
+        "id": "rush_hour",
+        "type": "source_multiplier",
+        "at_tick": 100,
+        "duration_ticks": 60,
+        "target": "source",
+        "multiplier": 200                      // basis points; 200 = +2x
+      }
+    ],
+
+    // OBJECTIVES (PR 8). Win/loss progress signals. Each carries a
+    // weight in [0, MAX_OBJECTIVE_WEIGHT]. Supported runtime kinds:
+    // keep_fresh, complete_jobs_before_deadline, maintain_utilization.
+    // Recognized but not-yet-evaluated kinds emit
+    // `Sl1Warning::ObjectiveUnsupportedInThisPr`.
+    "objectives": [
+      {
+        "id": "events_fresh",
+        "type": "keep_fresh",
+        "target": { "kind": "place", "id": "sink" },
+        "thing": "processed_event",
+        "max_age_ticks": 30,
+        "weight": 1
+      }
+    ],
+
+    // FAILURE_CONDITIONS (PR 8). Fire → GameOutcome::Lost.
+    "failure_conditions": [
+      {
+        "id": "no_events_for_too_long",
+        "type": "stale_target",
+        "target": { "kind": "place", "id": "sink" },
+        "thing": "processed_event",
+        "max_age_ticks": 120,
+        "grace_ticks": 0
+      }
+    ],
+
+    // VICTORY_CONDITIONS (PR 8). Fire → GameOutcome::Won.
+    "victory_conditions": [
+      { "id": "survive_500", "type": "survive_ticks", "at_tick": 500 }
+    ],
+
+    // OBSERVABILITY (PR 9). Metrics + dashboards + alerts.
+    "observability": {
+      "metrics": [
+        {
+          "id": "sink_inventory",
+          "source": { "kind": "inventory", "place": "sink", "thing": "processed_event" },
+          "window_ticks": 10
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "ops",
+          "type": "telemetry",
+          "depends_on": ["processed_event"],
+          "freshness_slo_ticks": 60,
+          "query_cost": {}
+        }
+      ],
+      "alerts": [
+        {
+          "id": "sink_empty",
+          "metric": "sink_inventory",
+          "predicate": { "kind": "lt", "value": 1 },
+          "severity": "warning"                // "info" | "warning" | "critical"
+        }
+      ]
+    },
+
+    // AGENTS (PR 10). Scoped action surface. Each agent declares the
+    // small set of typed actions it is allowed to take.
+    "agents": [
+      {
+        "id": "throttler",
+        "kind": "builtin",                     // "mock" | "builtin" | "llm" (feature-gated)
+        "role": "throttle source events",
+        "interval_ticks": 60,
+        "observation_scope": ["sink_inventory"],
+        "allowed_actions": ["throttle_demand"],
+        "budgets": { "max_cost_per_decision": 10 },
+        "cooldown_ticks": 120,
+        "objective_weights": { "events_fresh": 1 }
+      }
+    ],
+
+    // MILESTONES (PR 11). Narrative chips in the HUD; DecisionTimeline.
+    "milestones": [
+      {
+        "id": "first_event",
+        "label": "First event delivered",
+        "trigger": { "kind": "metric_threshold", "metric": "sink_inventory", "predicate": { "kind": "gte", "value": 1 } }
+      },
+      {
+        "id": "pressure_arrives",
+        "label": "Rush hour",
+        "trigger": { "kind": "pressure_start", "pressure": "rush_hour" }
+      }
+    ]
+  }
+}

@@ -1,11 +1,23 @@
 # scenario_language_v1 (SL1)
 
-> **Status:** PR 3 — Things landed. The SL1 root, taxonomy, Place,
-> Link, and Thing primitives ship; later primitives (transforms,
-> demand, pressure, …) arrive in subsequent PRs.
+> **Status:** PR 14 — Hardening and final docs landed. All grammar
+> primitives (Places, Links, Things, Transforms, Demand, Pressure,
+> Objectives + Failure/Victory Conditions, Observability, Agents,
+> Milestones), the GPU Launch Week marquee scene, the frontend HUD,
+> and the policy-search runner ship in v1.
 >
 > **Authoritative spec:**
 > [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](superpowers/specs/2026-05-24-scenario_language_v1-plan.md)
+>
+> **Authoring template:**
+> [`docs/sl1-template.jsonc`](sl1-template.jsonc) — annotated
+> reference scene covering every primitive.
+>
+> **Error/warning surface:** see
+> [`docs/runbook.md`](runbook.md) section "scenario_language_v1
+> (SL1) taxonomy" for the operator-facing summary of every
+> `Sl1LoadError`, `Sl1Warning`, `Sl1Fault`, and `GameOutcome`
+> variant.
 
 `scenario_language_v1` (SL1) is the unified JSON grammar that turns
 simetro from a kinetic-toy framework into a view-only, AI-operated
@@ -832,6 +844,40 @@ the runner does not emit).
 - `policies/gpu-launch-week-throttler-aggressive.json` — example
   candidate: `interval_ticks: 60 → 30`, `cooldown_ticks: 120 → 60`,
   modest `objective_weights` tweak on the `demand-throttler` agent.
+
+## Frontend XSS posture (PR 14 audit)
+
+Every SL1-sourced string in the frontend renders via `textContent`
+(or an equivalent safe DOM API), never `innerHTML`. This is a
+non-negotiable safety rule across the codebase — see the policy
+comment at the top of `frontend/src/ui/sl1_hud.ts` and the
+parallel comments in `frontend/src/inspector/panel.ts` and
+`frontend/src/protocol/messages.ts`.
+
+The audit covered:
+
+- Place labels and roles
+- Link ids, types, and render hints
+- Thing ids, kinds, and tags
+- Transform ids and failure reasons
+- Demand ids, kinds, and `penalty.warning` strings
+- Pressure ids, types, and target ids
+- Objective ids, types, and breach reasons
+- Observability metric, dashboard, and alert ids/text
+- Agent ids, roles, rationale text, and `raw_response` payloads
+- Milestone ids and labels
+
+LLM-sourced strings (agent rationale, raw_response, refusal
+messages, faulted-agent context) are the highest-risk vector
+because they can be prompt-injected to emit `<script>` payloads.
+These render through the same safe-text path as static
+SL1-authored strings; the bridge never hands an HTML fragment to
+the renderer, and the renderer never has a `.innerHTML =` site
+that consumes SL1 or LLM data.
+
+Tests in `frontend/src/tests/unit/sl1_hud.test.ts`,
+`ui.test.ts`, and `inspector.test.ts` assert `textContent` is
+used for the SL1-derived HUD and inspector surfaces.
 
 ## Roadmap (per `plan.md`)
 
