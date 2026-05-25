@@ -558,17 +558,16 @@ pub fn run_policy_search(
                     best_name = Some(policy.name.clone());
                 }
             }
-            (None, _) => {
+            (None, _)
+                if rec.status != TrialStatus::Failed && rec.status != TrialStatus::Blocked =>
+            {
                 // Baseline blocked/failed → candidates can't be compared.
-                if rec.status != TrialStatus::Failed && rec.status != TrialStatus::Blocked {
-                    rec.status = TrialStatus::Blocked;
-                    rec.error = Some(
-                        "baseline did not produce a comparable score; candidate skipped".into(),
-                    );
-                    rec.score = None;
-                    rec.delta = None;
-                    rec.hash = None;
-                }
+                rec.status = TrialStatus::Blocked;
+                rec.error =
+                    Some("baseline did not produce a comparable score; candidate skipped".into());
+                rec.score = None;
+                rec.delta = None;
+                rec.hash = None;
             }
             _ => {}
         }
