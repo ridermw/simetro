@@ -67,6 +67,7 @@ export class HoverTooltip {
   private el: HTMLDivElement;
   private scene: StaticPayload | null = null;
   private snap: SnapshotPayload | null = null;
+  private screenToWorld: ((x: number, y: number) => [number, number]) | null = null;
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement("div");
@@ -101,7 +102,20 @@ export class HoverTooltip {
     this.hide();
   }
 
-  attach(canvas: HTMLCanvasElement): void {
+  /**
+   * Attach mouse event listeners to the canvas.
+   * @param canvas The canvas element to listen on.
+   * @param screenToWorld Optional converter from canvas-relative screen coords to
+   *   world coords. Pass `renderer.screenToWorld.bind(renderer)` so that
+   *   hit-testing works correctly under pan/zoom. When omitted, screen coords
+   *   are used directly (identity transform — only correct under the default
+   *   viewport).
+   */
+  attach(
+    canvas: HTMLCanvasElement,
+    screenToWorld?: (x: number, y: number) => [number, number]
+  ): void {
+    this.screenToWorld = screenToWorld ?? null;
     canvas.addEventListener("mousemove", (ev) => this.onMove(ev, canvas));
     canvas.addEventListener("mouseleave", () => this.hide());
   }
@@ -112,9 +126,13 @@ export class HoverTooltip {
       return;
     }
     const rect = canvas.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    const y = ev.clientY - rect.top;
-    const hit = hitTestPiece(this.scene, this.snap, x, y);
+    const screenX = ev.clientX - rect.left;
+    const screenY = ev.clientY - rect.top;
+    const [worldX, worldY] =
+      this.screenToWorld !== null
+        ? this.screenToWorld(screenX, screenY)
+        : [screenX, screenY];
+    const hit = hitTestPiece(this.scene, this.snap, worldX, worldY);
     if (hit === null) {
       this.hide();
       return;

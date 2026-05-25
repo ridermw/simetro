@@ -198,6 +198,64 @@ describe("Renderer viewport", () => {
     expect(vp.offsetX).toBeCloseTo(fitVp.offsetX, 6);
     expect(vp.offsetY).toBeCloseTo(fitVp.offsetY, 6);
   });
+
+  it("screenToWorld inverts the viewport transform", () => {
+    const r = makeRenderer();
+    r.warm(DEFAULT_THEME);
+    r.setScene(emptyScene()); // identity: scale=1, offset=0,0
+    // Under identity, world == screen.
+    expect(r.screenToWorld(100, 200)).toEqual([100, 200]);
+
+    // Pan by (50, 30), then world = (screen - offset) / scale
+    r.panBy(50, 30);
+    const [wx, wy] = r.screenToWorld(150, 130);
+    expect(wx).toBeCloseTo(100, 6);
+    expect(wy).toBeCloseTo(100, 6);
+  });
+
+  it("screenToWorld works under scale", () => {
+    const r = makeRenderer();
+    r.warm(DEFAULT_THEME);
+    r.setScene(emptyScene());
+    r.zoomAt(0, 0, 2); // scale=2, offset=(0,0)
+    // Screen (200,400) => world (100,200).
+    const [wx, wy] = r.screenToWorld(200, 400);
+    expect(wx).toBeCloseTo(100, 6);
+    expect(wy).toBeCloseTo(200, 6);
+  });
+
+  it("refitViewport updates fit and viewport for new canvas dimensions", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 800;
+    canvas.height = 600;
+    const r = new Renderer(canvas);
+    r.warm(DEFAULT_THEME);
+    r.setScene(largeScene());
+    const scaleBefore = r.viewportForTest.scale;
+
+    // Shrink canvas — same world, smaller canvas should produce smaller scale.
+    canvas.width = 400;
+    canvas.height = 300;
+    r.refitViewport();
+
+    const scaleAfter = r.viewportForTest.scale;
+    expect(scaleAfter).toBeLessThan(scaleBefore);
+
+    // resetViewport should now use the recomputed fit.
+    r.panBy(999, 999);
+    r.resetViewport();
+    expect(r.viewportForTest.scale).toBeCloseTo(scaleAfter, 6);
+  });
+
+  it("refitViewport is a no-op when no world bounds are set", () => {
+    const r = makeRenderer();
+    r.warm(DEFAULT_THEME);
+    r.setScene(emptyScene()); // no world bounds
+    r.panBy(100, 100);
+    r.refitViewport(); // should not throw or crash
+    // Pan-offset preserved (no-op since no bounds).
+    expect(r.viewportForTest.offsetX).toBe(100);
+  });
 });
 
 describe("theme", () => {

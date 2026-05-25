@@ -226,9 +226,29 @@ export class Renderer {
     this.viewport.scale = newScale;
   }
 
+  /** Convert a canvas-relative screen point to world coordinates. */
+  screenToWorld(screenX: number, screenY: number): [number, number] {
+    return [
+      (screenX - this.viewport.offsetX) / this.viewport.scale,
+      (screenY - this.viewport.offsetY) / this.viewport.scale,
+    ];
+  }
+
   /** Reset to the auto-fit viewport computed at the last setScene(). */
   resetViewport(): void {
     this.viewport = { ...this.fitViewport };
+  }
+
+  /**
+   * Recompute the fit viewport from the cached world bounds for the
+   * current canvas dimensions, then apply it as both the fit baseline
+   * and the current viewport. Call this after resizing the canvas.
+   */
+  refitViewport(): void {
+    if (!this.hasWorldBounds) return;
+    const fit = this.computeFit();
+    this.fitViewport = fit;
+    this.viewport = { ...fit };
   }
 
   /**
@@ -242,6 +262,10 @@ export class Renderer {
     let lastY = 0;
 
     canvas.addEventListener("pointerdown", (e) => {
+      // Only respond to the primary (left) button to avoid interfering
+      // with context-menu and right-drag gestures.
+      if (e.button !== 0) return;
+      e.preventDefault();
       isDragging = true;
       lastX = e.clientX;
       lastY = e.clientY;

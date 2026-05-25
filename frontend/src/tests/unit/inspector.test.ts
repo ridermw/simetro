@@ -156,4 +156,34 @@ describe("hover hit-testing", () => {
     tooltip.clear();
     expect(tooltip.__testEl().style.display).toBe("none");
   });
+
+  it("HoverTooltip hit-tests in world coords using the screenToWorld converter", () => {
+    // Node at world [100, 100]. With scale=2, offset=0 the screen position is [200, 200].
+    // Without a converter, mouse at [200,200] would NOT hit (distance ~141 > radius 22).
+    // With the converter, [200,200] maps to world [100,100] and DOES hit.
+    const parent = document.createElement("div");
+    const canvas = document.createElement("canvas");
+    const tooltip = new HoverTooltip(parent);
+    tooltip.setScene(scene);
+    tooltip.setSnapshot(snap);
+    // Provide a screenToWorld that inverts scale=2 with zero offset.
+    tooltip.attach(canvas, (sx, sy) => [sx / 2, sy / 2]);
+
+    canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: 200, clientY: 200 }));
+    expect(tooltip.__testEl().style.display).toBe("block");
+  });
+
+  it("HoverTooltip misses when screenToWorld not provided and cursor is in screen-space far from world node", () => {
+    // Same scenario — scale=2 but no converter. Mouse at [200,200] stays at world [200,200]
+    // which is >100 units from the node at [100,100], well outside NODE_HIT_RADIUS=22.
+    const parent = document.createElement("div");
+    const canvas = document.createElement("canvas");
+    const tooltip = new HoverTooltip(parent);
+    tooltip.setScene(scene);
+    tooltip.setSnapshot(snap);
+    tooltip.attach(canvas); // no converter — screen coords used directly
+
+    canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: 200, clientY: 200 }));
+    expect(tooltip.__testEl().style.display).toBe("none");
+  });
 });
