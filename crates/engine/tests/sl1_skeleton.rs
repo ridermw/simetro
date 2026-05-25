@@ -133,13 +133,14 @@ fn loader_rejects_explicit_null_sl1_block() {
 }
 
 #[test]
-fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
+fn legacy_top_level_agents_still_loads_and_nested_typed_milestones_validate() {
     // `agents` is intentionally excluded from the reserved-top-level
     // guard because legacy v1/v2 scenes use it at the top level
     // alongside `pieces`. This test documents both halves of that
-    // intentional collision: top-level `agents` still loads, while a
-    // nested SL1 `agents` block fails with PrimitiveNotImplemented
-    // until PR 10 lands.
+    // intentional collision: top-level `agents` still loads, and a
+    // nested `milestones` primitive (typed as of PR 11) now surfaces a
+    // typed Parse error when given a non-conformant entry instead of
+    // the PR 0 `PrimitiveNotImplemented` placeholder.
 
     let with_legacy_agents = r##"{
         "schema_version": 1,
@@ -157,7 +158,7 @@ fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
 
     let with_nested_agents = r##"{
         "schema_version": 1,
-        "name": "sl1-nested-agents",
+        "name": "sl1-nested-milestones",
         "theme": {
             "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
             "background_index": 0,
@@ -165,16 +166,14 @@ fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
         },
         "pieces": { "nodes": [], "paths": [], "movers": [] },
         "scenario_language_v1": {
-            "agents": [{}]
+            "milestones": [{}]
         }
     }"##;
     let err = load_scene_str(with_nested_agents, 0)
-        .expect_err("nested SL1 `agents` must fail until PR 10");
+        .expect_err("nested SL1 `milestones` with malformed entry must fail");
     match err {
-        LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "agents");
-        }
-        other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
+        LoadError::Sl1(Sl1LoadError::Parse { .. }) => {}
+        other => panic!("expected LoadError::Sl1(Parse), got {other:?}"),
     }
 }
 
@@ -206,17 +205,15 @@ fn loader_rejects_misplaced_top_level_sl1_primitive() {
 }
 
 #[test]
-fn loader_rejects_non_empty_primitive_until_pr_lands() {
-    // PRs 10–11 have no behavior for their primitive — even a
-    // well-formed entry must fail load so authors cannot build
-    // proto-SL1 scenes that silently no-op. PRs 1–5 promoted `places`,
-    // `links`, `things`, `transforms`, and `demand`, PR 7 promoted
-    // `pressure`, and PR 8 promoted `objectives`, `failure_conditions`,
-    // and `victory_conditions` to typed primitives. This regression
-    // test uses `agents` (still a placeholder until PR 10).
+fn loader_rejects_malformed_typed_primitive() {
+    // PR 11 promoted `milestones` from placeholder to typed primitive.
+    // A malformed entry now surfaces a typed `Parse` error instead of
+    // the PR 0 `PrimitiveNotImplemented` placeholder; this regression
+    // test documents that typed-loader rejection still happens (so
+    // authors cannot silently ship malformed milestones).
     let json = r##"{
         "schema_version": 1,
-        "name": "sl1-non-empty-agents",
+        "name": "sl1-non-empty-milestones",
         "theme": {
             "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
             "background_index": 0,
@@ -224,16 +221,13 @@ fn loader_rejects_non_empty_primitive_until_pr_lands() {
         },
         "pieces": { "nodes": [], "paths": [], "movers": [] },
         "scenario_language_v1": {
-            "agents": [{}]
+            "milestones": [{}]
         }
     }"##;
-    let err =
-        load_scene_str(json, 0).expect_err("non-empty SL1 placeholder primitive must be rejected");
+    let err = load_scene_str(json, 0).expect_err("malformed SL1 milestone entry must be rejected");
     match err {
-        LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "agents");
-        }
-        other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
+        LoadError::Sl1(Sl1LoadError::Parse { .. }) => {}
+        other => panic!("expected LoadError::Sl1(Parse), got {other:?}"),
     }
 }
 

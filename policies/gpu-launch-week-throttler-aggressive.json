@@ -1,0 +1,16 @@
+{
+  "name": "gpu-launch-week-throttler-aggressive",
+  "description": "Halve demand-throttler interval (60 -> 30) and shorten its cooldown (120 -> 60) so it reacts faster to GPU-fault-storm and dashboard-storm pressure. Bumps the no-dropped-refreshes objective weight to its max (1.0) to prioritize keeping the executive dashboard fresh during pressure windows. Example policy artifact for PR 13's policy-search runner. Does NOT change scene topology, demand, pressure, or objectives -- only agent heuristics, per the SL1 spec contract.",
+  "overrides": {
+    "agents": {
+      "demand-throttler": {
+        "interval_ticks": 30,
+        "cooldown_ticks": 60,
+        "objective_weights": {
+          "no-dropped-refreshes": 1.0,
+          "platform-utilization": 0.25
+        }
+      }
+    }
+  }
+}

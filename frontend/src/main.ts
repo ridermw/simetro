@@ -22,7 +22,7 @@
 // Steps 18-21 plug animations, audio, inspector, and UI shell into
 // the slots already present in this wiring.
 
-import { MockTransport, type Transport } from "./transport/mock";
+import { MockTransport, sl1ModeFromLocation, type Transport } from "./transport/mock";
 import { TauriTransport } from "./transport/tauri";
 import type { MoverState, NodeView, SimMessage, StaticPayload } from "./protocol/messages";
 import { Renderer } from "./renderer/canvas";
@@ -36,6 +36,11 @@ import { HoverTooltip } from "./inspector/hover";
 import { ControlsBar, type ControlIntent } from "./ui/controls";
 import { SceneBrowser, type SceneSelectIntent } from "./ui/scene_browser";
 import { FaultOverlay, HeartbeatBadge, PerfOverlay, WarningStrip } from "./ui/overlays";
+import {
+  applySl1HudStatic,
+  createSl1Hud,
+  type Sl1Hud,
+} from "./ui/sl1_hud";
 import { SCENE_CATALOG, findSceneById } from "./catalog/scenes";
 import { invokeSetScene } from "./app/scene_commands";
 import {
@@ -61,6 +66,7 @@ interface AppState {
   warnings: WarningStrip | null;
   heartbeat: HeartbeatBadge | null;
   perf: PerfOverlay | null;
+  sl1: Sl1Hud | null;
   paused: boolean;
   speedFactor: number;
   lastSnapshotAt: number;
@@ -89,6 +95,7 @@ function createAppState(): AppState {
     warnings: null,
     heartbeat: null,
     perf: null,
+    sl1: null,
     paused: false,
     speedFactor: 1,
     lastSnapshotAt: 0,
@@ -225,6 +232,16 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
   switch (msg.kind) {
     case "static": {
       applySceneStatic(state, renderer, msg.payload);
+      if (state.sl1 !== null) {
+        applySl1HudStatic(
+          state.sl1,
+          msg.payload.sl1_observability_dashboards,
+          msg.payload.sl1_observability_alerts
+        );
+        // Static block carries no live state — clear status until the
+        // first snapshot lands.
+        state.sl1.status.update(undefined, undefined);
+      }
       break;
     }
     case "snapshot": {
@@ -246,6 +263,15 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
       if (state.hover !== null) {
         state.hover.setSnapshot(msg.payload);
       }
+      if (state.sl1 !== null) {
+        state.sl1.status.update(msg.payload.sl1_game_outcome, msg.payload.sl1_game_phase);
+        if (msg.payload.sl1_dashboard_states !== undefined) {
+          state.sl1.dashboards.updateStates(msg.payload.sl1_dashboard_states);
+        }
+        if (msg.payload.sl1_alert_states !== undefined) {
+          state.sl1.alerts.updateStates(msg.payload.sl1_alert_states);
+        }
+      }
       break;
     }
     case "events": {
@@ -258,6 +284,13 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
           const node = findArrivalNode(scene, ev.at_node);
           const tone = node !== undefined ? toneForShape(node.shape) : fallbackArrivalTone();
           state.audio.play(tone);
+        }
+        if (state.sl1 !== null && ev.kind === "sl1_milestone_fired") {
+          state.sl1.milestones.push({
+            milestone_id: ev.milestone_id,
+            label: ev.label,
+            tick: ev.tick,
+          });
         }
       }
       break;
@@ -315,7 +348,15 @@ function createTransport(): Transport {
   if (isTauri()) {
     return new TauriTransport();
   }
-  return new MockTransport();
+  // Non-Tauri runs use the browser-only MockTransport. SL1 demo mode
+  // is opt-in via `?sl1demo=1` and only ever feeds the mock — there
+  // is no live data path in this branch, so the query flag cannot
+  // exfiltrate or spoof anything a real Tauri build would render.
+  const search =
+    typeof window !== "undefined" && window.location !== undefined
+      ? window.location.search
+      : undefined;
+  return new MockTransport({ sl1Mode: sl1ModeFromLocation(search) });
 }
 
 function resize(canvas: HTMLCanvasElement): void {
@@ -347,6 +388,7 @@ function boot(): void {
     state.warnings = new WarningStrip(appRoot);
     state.heartbeat = new HeartbeatBadge(appRoot);
     state.perf = new PerfOverlay(appRoot);
+    state.sl1 = createSl1Hud(appRoot);
     state.controls = new ControlsBar(appRoot, (intent: ControlIntent) => {
       handleControl(intent, state);
     });

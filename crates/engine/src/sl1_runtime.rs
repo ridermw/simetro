@@ -68,6 +68,21 @@ pub fn run(
     // SL1 spec ordering "objectives → observability → agents →
     // milestones" (PR 9).
     crate::sl1_observability::run(scene, runtime, now, events);
+
+    // Agents run AFTER observability so each agent's interval-cadence
+    // decision observes the freshest metric/dashboard/alert state on
+    // the tick it fires (PR 10).
+    if !scene.agents.is_empty() {
+        crate::sl1_agents::run(scene, runtime, now, events);
+    }
+
+    // Milestones run LAST so they can fire on the freshest
+    // post-pressure / post-observability / post-agent state for the
+    // current tick (PR 11). Per the SL1 spec ordering
+    // "objectives → observability → agents → milestones".
+    if !scene.milestones.is_empty() {
+        crate::sl1_milestones::run(scene, runtime, now, events);
+    }
 }
 
 fn age_freshness(
@@ -695,7 +710,19 @@ fn run_demand(
             let Some(rt) = runtime.demand.get_mut(&def.id) else {
                 continue;
             };
-            if should_spawn(def, rt, now) {
+            // PR 10: an agent may have paused spawning of this demand.
+            // We deterministically suppress *spawn* (not drop/fulfill)
+            // while `now < pause_until_tick`. Stale entries are
+            // pruned here so they don't accumulate.
+            let paused = match runtime.agent_demand_pauses.get(&def.id) {
+                Some(&until) if now < until => true,
+                Some(_) => {
+                    runtime.agent_demand_pauses.remove(&def.id);
+                    false
+                }
+                None => false,
+            };
+            if !paused && should_spawn(def, rt, now) {
                 // PR 7: effective spawn count is 1 plus the sum of
                 // active `demand_growth.spawn_multiplier` overlays on
                 // this demand. We compute it once per scheduled

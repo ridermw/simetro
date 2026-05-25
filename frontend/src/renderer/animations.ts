@@ -204,4 +204,18 @@ export const animations: Record<SimEventKind, AnimationSpec> = {
   path_pulsed: { durationMs: 400, ease: easings.easeInOutCubic, render: drawPathPulse },
   agent_decided: { durationMs: 250, ease: easings.easeOutQuad, render: drawDecisionPulse },
   tick: { durationMs: 0, ease: easings.linear, render: noopRender },
+  // scenario_language_v1 events are surfaced via the HUD (chips, panels)
+  // rather than canvas-overlay animations. No canvas pulse needed today.
+  sl1_pressure_lifecycle: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_objective_state_changed: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_failure_condition_fired: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_victory_condition_met: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_game_outcome_changed: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_dashboard_state_changed: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_alert_fired: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_alert_cleared: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_agent_action_applied: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_agent_action_rejected: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_agent_llm_disabled: { durationMs: 0, ease: easings.linear, render: noopRender },
+  sl1_milestone_fired: { durationMs: 0, ease: easings.linear, render: noopRender },
 };

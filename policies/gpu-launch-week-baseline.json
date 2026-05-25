@@ -1,0 +1,7 @@
+{
+  "name": "gpu-launch-week-baseline",
+  "description": "Empty-overrides baseline: use the scene's authored agent fields verbatim. PR 13 ships this as the trusted reference run for policy-search comparisons against gpu-launch-week.json.",
+  "overrides": {
+    "agents": {}
+  }
+}

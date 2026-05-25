@@ -50,6 +50,18 @@ describe("animations table", () => {
       "path_pulsed",
       "agent_decided",
       "tick",
+      "sl1_pressure_lifecycle",
+      "sl1_objective_state_changed",
+      "sl1_failure_condition_fired",
+      "sl1_victory_condition_met",
+      "sl1_game_outcome_changed",
+      "sl1_dashboard_state_changed",
+      "sl1_alert_fired",
+      "sl1_alert_cleared",
+      "sl1_agent_action_applied",
+      "sl1_agent_action_rejected",
+      "sl1_agent_llm_disabled",
+      "sl1_milestone_fired",
     ];
     for (const k of kinds) {
       expect(animations[k]).toBeDefined();
@@ -85,6 +97,16 @@ describe("AnimationEngine", () => {
   it("ignores zero-duration events (tick)", () => {
     const e = new AnimationEngine();
     e.spawn({ kind: "tick", tick: 1 }, 0);
+    expect(e.liveCount()).toBe(0);
+  });
+
+  it("ignores unknown SimEvent kinds without throwing", () => {
+    // Defensive contract: if a new Rust SimEvent variant arrives over
+    // the wire before the TS mirror is updated, the render loop must
+    // not crash. Cast around the union type to simulate the drift.
+    const e = new AnimationEngine();
+    const future = { kind: "sl1_brand_new_event", tick: 42 } as unknown as SimEvent;
+    expect(() => e.spawn(future, 0)).not.toThrow();
     expect(e.liveCount()).toBe(0);
   });
 

@@ -27,6 +27,27 @@ non-simulation metadata.
   in `catalog.screenshot` or a concise `catalog.review_note` explaining
   what was reviewed.
 
+### SL1 frontend addendum (PR 12b)
+
+For `scenario_language_v1` scenes (those with
+`scenario_language_v1: { … }`) the HUD must additionally satisfy:
+
+- **Status panel:** `Sl1StatusPanel` is visible and shows a
+  non-empty outcome + phase within ~1 second of scene load.
+- **Dashboard chips:** every `observability.dashboards[*].id` has a
+  chip rendered in `#simetro-sl1-dashboards`.
+- **Alert pill behavior:** firing alerts surface a pill in
+  `#simetro-sl1-alerts` and resolve back to no-pill when the alert
+  state returns to `inactive`.
+- **Milestone strip:** every `milestones[*]` that fires during the
+  scripted scene appears as a chip in `#simetro-sl1-milestones`
+  with the author-supplied label rendered via `textContent`.
+- **Safe text:** the unit tests in
+  `frontend/src/tests/unit/sl1_hud.test.ts` exercise XSS payloads
+  in every SL1 string field. New SL1 author strings introduced by
+  later scenes inherit this contract for free as long as they go
+  through the existing HUD components.
+
 ## Validation approach
 
 The executable gate lives in

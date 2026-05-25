@@ -17,29 +17,30 @@
 //! tick loop allocates nothing per frame (zero-allocation target).
 
 use simetro_protocol::{
-    FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView,
+    FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView, Sl1AgentView,
     Sl1AlertPredicateView, Sl1AlertStateView, Sl1AlertView, Sl1DashboardStateView,
     Sl1DashboardView, Sl1DemandPenaltyView, Sl1DemandPriorityView, Sl1DemandRuntimeView,
     Sl1DemandScheduleView, Sl1DemandTargetView, Sl1DemandView, Sl1FailureConditionParamsView,
     Sl1FailureConditionRuntimeView, Sl1FailureConditionView, Sl1FailurePolicyView,
     Sl1GameOutcomeView, Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView,
-    Sl1LinkView, Sl1MetricSourceView, Sl1MetricStateView, Sl1MetricView, Sl1ObjectiveParamsView,
-    Sl1ObjectiveRuntimeView, Sl1ObjectiveStatusTag, Sl1ObjectiveView, Sl1OperatingPredicateView,
-    Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView, Sl1PressureParamsView,
-    Sl1PressureView, Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView,
-    Sl1ThingView, Sl1TransformIoView, Sl1TransformRuntimeView, Sl1TransformStateView,
-    Sl1TransformView, Sl1VictoryConditionParamsView, Sl1VictoryConditionRuntimeView,
-    Sl1VictoryConditionView, SnapshotPayload, StaticPayload,
+    Sl1LinkView, Sl1MetricSourceView, Sl1MetricStateView, Sl1MetricView, Sl1MilestoneTriggerView,
+    Sl1MilestoneView, Sl1ObjectiveParamsView, Sl1ObjectiveRuntimeView, Sl1ObjectiveStatusTag,
+    Sl1ObjectiveView, Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView,
+    Sl1PlaceView, Sl1PressureParamsView, Sl1PressureView, Sl1StorageSlotView,
+    Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView, Sl1TransformIoView,
+    Sl1TransformRuntimeView, Sl1TransformStateView, Sl1TransformView,
+    Sl1VictoryConditionParamsView, Sl1VictoryConditionRuntimeView, Sl1VictoryConditionView,
+    SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
 use crate::scenario_language_v1::{
-    FreshnessState, GameOutcome, Sl1Alert, Sl1AlertPredicate, Sl1Dashboard, Sl1FailureCondition,
-    Sl1FailureConditionParams, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1Metric,
-    Sl1MetricSource, Sl1Objective, Sl1ObjectiveParams, Sl1ObjectiveStatus, Sl1OperatingPredicate,
-    Sl1Place, Sl1Pressure, Sl1PressureKind, Sl1PressureParams, Sl1Thing, Sl1VictoryCondition,
-    Sl1VictoryConditionParams,
+    FreshnessState, GameOutcome, Sl1Agent, Sl1Alert, Sl1AlertPredicate, Sl1Dashboard,
+    Sl1FailureCondition, Sl1FailureConditionParams, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection,
+    Sl1Metric, Sl1MetricSource, Sl1Milestone, Sl1MilestoneTrigger, Sl1Objective,
+    Sl1ObjectiveParams, Sl1ObjectiveStatus, Sl1OperatingPredicate, Sl1Place, Sl1Pressure,
+    Sl1PressureKind, Sl1PressureParams, Sl1Thing, Sl1VictoryCondition, Sl1VictoryConditionParams,
 };
 use crate::world::World;
 
@@ -175,6 +176,16 @@ pub fn encode_static_parts(
             .as_ref()
             .and_then(|sl1| sl1.observability.as_ref())
             .map(|o| o.alerts.iter().map(alert_to_view).collect())
+            .unwrap_or_default(),
+        sl1_agents: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.agents.iter().map(agent_to_view).collect())
+            .unwrap_or_default(),
+        sl1_milestones: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.milestones.iter().map(milestone_to_view).collect())
             .unwrap_or_default(),
     }
 }
@@ -603,6 +614,75 @@ fn alert_to_view(a: &Sl1Alert) -> Sl1AlertView {
             }
         },
         severity: a.severity.as_str().to_string(),
+    }
+}
+
+fn agent_to_view(a: &Sl1Agent) -> Sl1AgentView {
+    Sl1AgentView {
+        id: a.id.clone(),
+        kind: a.kind.as_str().to_string(),
+        role: a.role.clone(),
+        interval_ticks: a.interval_ticks,
+        observation_scope: a
+            .observation_scope
+            .iter()
+            .map(|t| format!("{}:{}", t.kind_str(), t.id()))
+            .collect(),
+        allowed_actions: a
+            .allowed_actions
+            .iter()
+            .map(|k| k.as_str().to_string())
+            .collect(),
+        max_cost_per_decision: a.max_cost_per_decision,
+        cooldown_ticks: a.cooldown_ticks,
+        objective_weights: a.objective_weights.clone(),
+    }
+}
+
+fn milestone_to_view(m: &Sl1Milestone) -> Sl1MilestoneView {
+    let (trigger_kind, trigger) = match &m.trigger {
+        Sl1MilestoneTrigger::PressureActivated { pressure } => (
+            "pressure_activated".to_string(),
+            Sl1MilestoneTriggerView::PressureActivated {
+                pressure: pressure.clone(),
+            },
+        ),
+        Sl1MilestoneTrigger::PressureDeactivated { pressure } => (
+            "pressure_deactivated".to_string(),
+            Sl1MilestoneTriggerView::PressureDeactivated {
+                pressure: pressure.clone(),
+            },
+        ),
+        Sl1MilestoneTrigger::MetricThreshold {
+            metric,
+            predicate,
+            value,
+        } => (
+            "metric_threshold".to_string(),
+            Sl1MilestoneTriggerView::MetricThreshold {
+                metric: metric.clone(),
+                predicate: predicate.as_str().to_string(),
+                value: *value,
+            },
+        ),
+        Sl1MilestoneTrigger::DashboardState {
+            dashboard,
+            target_state,
+        } => (
+            "dashboard_state".to_string(),
+            Sl1MilestoneTriggerView::DashboardState {
+                dashboard: dashboard.clone(),
+                state: target_state.as_str().to_string(),
+            },
+        ),
+    };
+    Sl1MilestoneView {
+        id: m.id.clone(),
+        label: m.label.clone(),
+        trigger_kind,
+        trigger,
+        camera_focus: m.camera_focus.clone(),
+        highlight: m.highlight.clone(),
     }
 }
 

@@ -21,6 +21,14 @@ import {
   type SimEvent,
   type MoverState,
   type AgentReport,
+  type Sl1AlertView,
+  type Sl1DashboardView,
+  type Sl1DashboardStateView,
+  type Sl1AlertStateView,
+  type Sl1MilestoneView,
+  type Sl1GameOutcomeView,
+  type StaticPayload,
+  type SnapshotPayload,
   SCHEMA_VERSION,
 } from "../protocol/messages";
 
@@ -30,6 +38,24 @@ export interface Transport {
   connect(handler: MessageHandler): void;
   disconnect(): void;
   readonly name: string;
+}
+
+export interface MockTransportOptions {
+  /**
+   * When true, the mock decorates `DEMO_STATIC` with SL1 observability
+   * metadata (one dashboard, one alert, two milestones) and runs a
+   * scripted timeline so the SL1 HUD components mount and exercise
+   * each state transition. Default false — the mock then behaves
+   * exactly like the non-SL1 demo so legacy tests stay stable.
+   */
+  sl1Mode?: boolean;
+}
+
+/** Read URL query string and decide whether to enable SL1 mock mode. */
+export function sl1ModeFromLocation(search: string | undefined): boolean {
+  if (search === undefined) return false;
+  const params = new URLSearchParams(search);
+  return params.get("sl1demo") === "1";
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +166,128 @@ function encodeSnapshot(tick: number, movers: MockMover[]): SimMessage {
 //  MockTransport
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+//  SL1 demo metadata (browser-only mock; surfaces SL1 HUD panels for
+//  Playwright E2E without requiring the Tauri shell + Rust engine).
+// ---------------------------------------------------------------------------
+
+const SL1_DASHBOARDS: Sl1DashboardView[] = [
+  {
+    id: "exec-dashboard",
+    type: "executive",
+    depends_on: ["telemetry"],
+    freshness_slo_ticks: 40,
+  },
+];
+
+const SL1_ALERTS: Sl1AlertView[] = [
+  {
+    id: "exec-dashboard-stale",
+    metric: "exec-dashboard-freshness",
+    predicate: { kind: "gt", threshold: 30 },
+    severity: "warning",
+  },
+];
+
+const SL1_MILESTONES: Sl1MilestoneView[] = [
+  {
+    id: "first-pressure",
+    label: "Spot eviction wave begins",
+    trigger_kind: "pressure_activated",
+    trigger: { type: "pressure_activated", pressure: "evict-1" },
+  },
+  {
+    id: "exec-recovered",
+    label: "Executive dashboard recovered",
+    trigger_kind: "dashboard_state",
+    trigger: {
+      type: "dashboard_state",
+      dashboard: "exec-dashboard",
+      state: "ok",
+    },
+  },
+];
+
+function sl1StaticMessage(): SimMessage {
+  // Augment DEMO_STATIC with SL1 metadata. We rebuild the payload to
+  // avoid mutating the shared constant (other tests rely on it).
+  const base = DEMO_STATIC.payload as StaticPayload;
+  return {
+    kind: "static",
+    payload: {
+      ...base,
+      sl1_observability_dashboards: SL1_DASHBOARDS,
+      sl1_observability_alerts: SL1_ALERTS,
+      sl1_milestones: SL1_MILESTONES,
+    },
+  };
+}
+
+interface Sl1Step {
+  /** Snapshot tick at which this step takes effect. */
+  atTick: number;
+  outcome?: Sl1GameOutcomeView;
+  phase?: string;
+  dashboardStates?: Sl1DashboardStateView[];
+  alertStates?: Sl1AlertStateView[];
+  events?: SimEvent[];
+}
+
+/** Scripted SL1 timeline so the HUD shows every state.
+ *
+ *  Timings are chosen so the firing/stale window is wide enough for
+ *  Playwright to observe (≥1s) without making the suite long. At
+ *  50ms/tick the schedule is ~1.5s end-to-end. */
+const SL1_SCRIPT: Sl1Step[] = [
+  {
+    atTick: 1,
+    outcome: { state: "in_progress" },
+    phase: "winning",
+    dashboardStates: [{ dashboard_id: "exec-dashboard", state: "ok", freshness_ticks: 0 }],
+    alertStates: [{ alert_id: "exec-dashboard-stale", state: "inactive" }],
+  },
+  {
+    atTick: 2,
+    events: [
+      {
+        kind: "sl1_milestone_fired",
+        milestone_id: "first-pressure",
+        label: "Spot eviction wave begins",
+        trigger_kind: "pressure_activated",
+        tick: 2,
+      },
+    ],
+  },
+  {
+    atTick: 5,
+    outcome: { state: "in_progress" },
+    phase: "spiraling",
+    dashboardStates: [{ dashboard_id: "exec-dashboard", state: "stale", freshness_ticks: 35 }],
+    alertStates: [{ alert_id: "exec-dashboard-stale", state: "firing", fired_at_tick: 5 }],
+  },
+  {
+    atTick: 25,
+    outcome: { state: "in_progress" },
+    phase: "stabilizing",
+    dashboardStates: [{ dashboard_id: "exec-dashboard", state: "ok", freshness_ticks: 0 }],
+    alertStates: [{ alert_id: "exec-dashboard-stale", state: "inactive" }],
+    events: [
+      {
+        kind: "sl1_milestone_fired",
+        milestone_id: "exec-recovered",
+        label: "Executive dashboard recovered",
+        trigger_kind: "dashboard_state",
+        tick: 25,
+      },
+    ],
+  },
+  {
+    atTick: 30,
+    outcome: { state: "won" },
+    phase: "winning",
+  },
+];
+
 export class MockTransport implements Transport {
   readonly name = "mock";
   private handler: MessageHandler | null = null;
@@ -148,19 +296,32 @@ export class MockTransport implements Transport {
   private movers: MockMover[] = [];
   private tick = 0;
   private snapshotCount = 0;
+  private sl1Mode: boolean;
+  private sl1LastOutcome: Sl1GameOutcomeView | undefined;
+  private sl1LastPhase: string | undefined;
+  private sl1LastDashboardStates: Sl1DashboardStateView[] | undefined;
+  private sl1LastAlertStates: Sl1AlertStateView[] | undefined;
+
+  constructor(options: MockTransportOptions = {}) {
+    this.sl1Mode = options.sl1Mode === true;
+  }
 
   connect(handler: MessageHandler): void {
     this.handler = handler;
     this.movers = initialMovers();
     this.tick = 0;
     this.snapshotCount = 0;
+    this.sl1LastOutcome = undefined;
+    this.sl1LastPhase = undefined;
+    this.sl1LastDashboardStates = undefined;
+    this.sl1LastAlertStates = undefined;
 
     // Defer initial messages one microtask so callers finish wiring
     // before first dispatch — matches the real transport's async surface.
     this.initTimer = setTimeout(() => {
       this.initTimer = null;
-      this.handler?.(DEMO_STATIC);
-      this.handler?.(encodeSnapshot(0, this.movers));
+      this.handler?.(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+      this.handler?.(this.encodeSnapshot(0));
       // Start the animation loop after emitting initial state.
       this.interval = setInterval(() => this.step(), TICK_INTERVAL_MS);
     }, 0);
@@ -176,6 +337,28 @@ export class MockTransport implements Transport {
       this.interval = null;
     }
     this.handler = null;
+  }
+
+  private encodeSnapshot(tick: number): SimMessage {
+    const moverStates: MoverState[] = this.movers.map((m) => ({
+      id: m.id,
+      pos: moverPos(m),
+      on_path: m.pathId,
+      speed: m.speed,
+    }));
+    if (!this.sl1Mode) {
+      return { kind: "snapshot", payload: { tick, movers: moverStates } };
+    }
+    // Only attach SL1 fields when defined; exactOptionalPropertyTypes
+    // rejects `undefined` literals on optional properties.
+    const payload: SnapshotPayload = { tick, movers: moverStates };
+    if (this.sl1LastOutcome !== undefined) payload.sl1_game_outcome = this.sl1LastOutcome;
+    if (this.sl1LastPhase !== undefined) payload.sl1_game_phase = this.sl1LastPhase;
+    if (this.sl1LastDashboardStates !== undefined) {
+      payload.sl1_dashboard_states = this.sl1LastDashboardStates;
+    }
+    if (this.sl1LastAlertStates !== undefined) payload.sl1_alert_states = this.sl1LastAlertStates;
+    return { kind: "snapshot", payload };
   }
 
   private step(): void {
@@ -214,13 +397,33 @@ export class MockTransport implements Transport {
       }
     }
 
+    // Apply scripted SL1 state changes (mutates last* fields so the
+    // snapshot emitted below carries the latest values).
+    if (this.sl1Mode) {
+      for (const stepEntry of SL1_SCRIPT) {
+        if (stepEntry.atTick === this.tick) {
+          if (stepEntry.outcome !== undefined) this.sl1LastOutcome = stepEntry.outcome;
+          if (stepEntry.phase !== undefined) this.sl1LastPhase = stepEntry.phase;
+          if (stepEntry.dashboardStates !== undefined) {
+            this.sl1LastDashboardStates = stepEntry.dashboardStates;
+          }
+          if (stepEntry.alertStates !== undefined) {
+            this.sl1LastAlertStates = stepEntry.alertStates;
+          }
+          if (stepEntry.events !== undefined) {
+            events.push(...stepEntry.events);
+          }
+        }
+      }
+    }
+
     // Emit events batch if there are semantic events.
     if (events.length > 0) {
       this.handler({ kind: "events", payload: events });
     }
 
     // Emit snapshot.
-    this.handler(encodeSnapshot(this.tick, this.movers));
+    this.handler(this.encodeSnapshot(this.tick));
 
     // Emit agent report periodically.
     this.snapshotCount += 1;

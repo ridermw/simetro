@@ -222,9 +222,190 @@
         "multiplier": 4.0
       }
     ],
-    "objectives": [],
-    "failure_conditions": [],
-    "agents": [],
-    "milestones": []
+    "objectives": [
+      {
+        "id": "keep-dashboard-fresh",
+        "type": "keep_fresh",
+        "weight": 3,
+        "place": "gpu-platform",
+        "thing": "dashboard_result",
+        "max_stale_ticks": 240
+      },
+      {
+        "id": "no-dropped-refreshes",
+        "type": "complete_jobs_before_deadline",
+        "weight": 2,
+        "demand": "exec-dashboard-refresh",
+        "max_missed": 1
+      },
+      {
+        "id": "platform-utilization",
+        "type": "maintain_utilization",
+        "weight": 1,
+        "place": "gpu-platform",
+        "capacity": "compute_units",
+        "min_percent": 0,
+        "max_percent": 95
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "executive-dashboard-stale",
+        "type": "stale_target",
+        "place": "gpu-platform",
+        "thing": "dashboard_result",
+        "threshold_ticks": 360,
+        "grace_ticks": 60
+      },
+      {
+        "id": "refresh-objective-breached",
+        "type": "objective_breach_count",
+        "objective_id": "no-dropped-refreshes",
+        "max_count": 3
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "survive-launch-week",
+        "type": "survive_until",
+        "at_tick": 2800
+      }
+    ],
+    "observability": {
+      "metrics": [
+        {
+          "id": "platform-compute-load",
+          "source": "place_capacity_used_percent",
+          "place": "gpu-platform",
+          "capacity": "compute_units"
+        },
+        {
+          "id": "heartbeat-backlog",
+          "source": "place_inventory_count",
+          "place": "gpu-platform",
+          "thing": "gpu_heartbeat"
+        },
+        {
+          "id": "exec-dashboard-freshness",
+          "source": "dashboard_freshness",
+          "dashboard": "exec-report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "exec-report",
+          "type": "report",
+          "depends_on": ["dashboard_result"],
+          "freshness_slo_ticks": 180
+        },
+        {
+          "id": "platform-health",
+          "type": "live",
+          "depends_on": ["gpu_uptime_fact"],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "platform-compute-saturated",
+          "metric": "platform-compute-load",
+          "predicate": { "type": "gt", "threshold": 90 },
+          "severity": "critical"
+        },
+        {
+          "id": "exec-dashboard-going-stale",
+          "metric": "exec-dashboard-freshness",
+          "predicate": { "type": "gt", "threshold": 150 },
+          "severity": "warning"
+        }
+      ]
+    },
+    "agents": [
+      {
+        "id": "sre-observer",
+        "kind": "mock",
+        "role": "observer",
+        "interval_ticks": 30,
+        "observation_scope": [
+          "metric:platform-compute-load",
+          "metric:heartbeat-backlog",
+          "dashboard:exec-report"
+        ],
+        "allowed_actions": [],
+        "budgets": {
+          "max_cost_per_decision": 1,
+          "cooldown_ticks": 0
+        },
+        "objective_weights": {
+          "keep-dashboard-fresh": 1.0
+        }
+      },
+      {
+        "id": "demand-throttler",
+        "kind": "builtin",
+        "role": "demand_throttler",
+        "interval_ticks": 60,
+        "observation_scope": [
+          "demand:exec-dashboard-refresh",
+          "metric:platform-compute-load"
+        ],
+        "allowed_actions": [
+          "throttle_demand"
+        ],
+        "budgets": {
+          "max_cost_per_decision": 1,
+          "cooldown_ticks": 120
+        },
+        "objective_weights": {
+          "no-dropped-refreshes": 1.0,
+          "platform-utilization": 0.5
+        }
+      }
+    ],
+    "milestones": [
+      {
+        "id": "gpu-storm-begins",
+        "label": "GPU heartbeat storm begins",
+        "trigger": { "type": "pressure_activated", "pressure": "gpu-fault-storm" },
+        "camera_focus": ["gpu-platform"],
+        "highlight": "gpu-fault-storm"
+      },
+      {
+        "id": "gpu-storm-clears",
+        "label": "GPU heartbeat storm clears",
+        "trigger": { "type": "pressure_deactivated", "pressure": "gpu-fault-storm" },
+        "camera_focus": ["gpu-platform"]
+      },
+      {
+        "id": "dashboard-storm-begins",
+        "label": "Executive dashboard query storm begins",
+        "trigger": { "type": "pressure_activated", "pressure": "dashboard-storm" },
+        "camera_focus": ["kusto-dashboard"],
+        "highlight": "dashboard-storm"
+      },
+      {
+        "id": "dashboard-storm-clears",
+        "label": "Executive dashboard query storm clears",
+        "trigger": { "type": "pressure_deactivated", "pressure": "dashboard-storm" },
+        "camera_focus": ["kusto-dashboard"]
+      },
+      {
+        "id": "exec-dashboard-went-stale",
+        "label": "Executive dashboard went stale",
+        "trigger": { "type": "dashboard_state", "dashboard": "exec-report", "state": "stale" },
+        "highlight": "exec-report"
+      },
+      {
+        "id": "platform-compute-saturated-detected",
+        "label": "GPU platform compute capacity saturated",
+        "trigger": {
+          "type": "metric_threshold",
+          "metric": "platform-compute-load",
+          "predicate": "gte",
+          "value": 90
+        },
+        "camera_focus": ["gpu-platform"]
+      }
+    ]
   }
 }

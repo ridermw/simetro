@@ -185,6 +185,21 @@ pub struct StaticPayload {
     /// Sorted by `id`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_observability_alerts: Vec<Sl1AlertView>,
+    /// SL1 agents for this scene (PR 10). Static metadata only;
+    /// per-tick agent runtime state (last decision tick, cooldown,
+    /// etc.) is not yet exposed in [`SnapshotPayload`] in PR 10.
+    /// Empty for non-SL1 scenes and for SL1 scenes with no `agents`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_agents: Vec<Sl1AgentView>,
+    /// SL1 milestones for this scene (PR 11). Static metadata only.
+    /// `fired` runtime state is communicated via the
+    /// [`SimEvent::Sl1MilestoneFired`] event stream so DecisionTimeline
+    /// replays can address each milestone deterministically. Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `milestones`. Sorted
+    /// by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_milestones: Vec<Sl1MilestoneView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -741,6 +756,81 @@ pub struct Sl1AlertStateView {
     pub fired_at_tick: Option<u64>,
 }
 
+/// Wire-level view of one validated SL1 agent (PR 10). Mirrors
+/// `engine::scenario_language_v1::Sl1Agent` 1:1. Static metadata; the
+/// runtime state (last decision tick, cooldown deadline) is not yet
+/// surfaced in [`SnapshotPayload`] in PR 10.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sl1AgentView {
+    pub id: String,
+    /// Canonical wire string (`mock` / `builtin` / `llm`).
+    pub kind: String,
+    pub role: String,
+    pub interval_ticks: u64,
+    /// `"<kind>:<id>"` strings, sorted (canonical).
+    pub observation_scope: Vec<String>,
+    /// Canonical snake_case action kinds, sorted.
+    pub allowed_actions: Vec<String>,
+    pub max_cost_per_decision: u64,
+    pub cooldown_ticks: u64,
+    /// Per-objective weights in `[0, 1]`. Empty if the author did not
+    /// declare any.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub objective_weights: std::collections::BTreeMap<String, f64>,
+}
+
+/// Wire-level view of one validated SL1 milestone (PR 11). Mirrors
+/// `engine::scenario_language_v1::Sl1Milestone` 1:1. Static metadata
+/// only; the runtime `fired_at_tick` state is communicated via the
+/// [`SimEvent::Sl1MilestoneFired`] event stream.
+///
+/// `label`, `camera_focus`, and `highlight` carry author-supplied
+/// JSON strings unchanged. Frontends MUST render them via safe text
+/// APIs (`textContent`-equivalent) and never via `innerHTML`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sl1MilestoneView {
+    pub id: String,
+    pub label: String,
+    /// Canonical snake_case trigger discriminator:
+    /// `pressure_activated` | `pressure_deactivated` |
+    /// `metric_threshold` | `dashboard_state`.
+    pub trigger_kind: String,
+    /// Trigger payload mirrored verbatim. Each variant maps 1:1 to
+    /// the typed `Sl1MilestoneTrigger` variants in the engine.
+    pub trigger: Sl1MilestoneTriggerView,
+    /// Optional viewer focus hints. Empty when the author omitted
+    /// `camera_focus`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub camera_focus: Vec<String>,
+    /// Optional viewer highlight target. `None` when the author
+    /// omitted `highlight`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<String>,
+}
+
+/// Tagged-union mirror of `Sl1MilestoneTrigger` (PR 11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Sl1MilestoneTriggerView {
+    PressureActivated {
+        pressure: String,
+    },
+    PressureDeactivated {
+        pressure: String,
+    },
+    MetricThreshold {
+        metric: String,
+        /// Canonical predicate: `gte | lte | gt | lt`.
+        predicate: String,
+        value: i64,
+    },
+    DashboardState {
+        dashboard: String,
+        /// Canonical dashboard state: `ok | stale | no_data`.
+        state: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -960,6 +1050,60 @@ pub enum SimEvent {
     Sl1AlertCleared {
         alert_id: String,
         metric_id: String,
+        tick: u64,
+    },
+    /// An SL1 agent's decision was accepted (PR 10). `action_kind` is
+    /// the canonical snake_case discriminator
+    /// ([`Sl1AgentActionKind`](../engine/scenario_language_v1/enum.Sl1AgentActionKind.html)).
+    /// `target_id` is the action's primary target identifier (e.g.
+    /// the demand id for `throttle_demand`).
+    Sl1AgentActionApplied {
+        agent_id: String,
+        action_kind: String,
+        target_id: String,
+        cost: u64,
+        tick: u64,
+    },
+    /// An SL1 agent proposed a decision but the runtime rejected it
+    /// (PR 10). `reason` is the canonical snake_case discriminator
+    /// ([`Sl1AgentRejectionReason`](../engine/scenario_language_v1/enum.Sl1AgentRejectionReason.html)).
+    /// `target_id` is `None` only when the rejection is purely
+    /// agent-state-level (e.g. `cooldown`).
+    Sl1AgentActionRejected {
+        agent_id: String,
+        action_kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_id: Option<String>,
+        reason: String,
+        tick: u64,
+    },
+    /// One-shot per agent: emitted the first time an `llm`-kind agent
+    /// would have fired (PR 10) but the live LLM backend is disabled
+    /// in this build. Mirrors the bridge's feature-gate so authors can
+    /// distinguish "agent chose not to act" from "live LLM not wired".
+    Sl1AgentLlmDisabled {
+        agent_id: String,
+        tick: u64,
+    },
+    /// An SL1 milestone fired (PR 11). Edge-triggered: emitted exactly
+    /// once per milestone per scene run, on the first tick the
+    /// milestone's trigger condition transitions from unsatisfied to
+    /// satisfied. `trigger_kind` is the canonical snake_case
+    /// discriminator (`pressure_activated` / `pressure_deactivated` /
+    /// `metric_threshold` / `dashboard_state`).
+    ///
+    /// `camera_focus` and `highlight` carry the scene's author-supplied
+    /// hints. Frontends rendering these strings MUST use safe text APIs
+    /// (`textContent`-equivalent) — the strings are author-controlled
+    /// JSON values.
+    Sl1MilestoneFired {
+        milestone_id: String,
+        label: String,
+        trigger_kind: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        camera_focus: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        highlight: Option<String>,
         tick: u64,
     },
 }
@@ -1523,6 +1667,8 @@ mod tests {
             sl1_observability_metrics: Vec::new(),
             sl1_observability_dashboards: Vec::new(),
             sl1_observability_alerts: Vec::new(),
+            sl1_agents: Vec::new(),
+            sl1_milestones: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -1624,6 +1770,8 @@ mod tests {
             sl1_observability_metrics: Vec::new(),
             sl1_observability_dashboards: Vec::new(),
             sl1_observability_alerts: Vec::new(),
+            sl1_agents: Vec::new(),
+            sl1_milestones: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -1663,6 +1811,8 @@ mod tests {
             sl1_observability_metrics: vec![],
             sl1_observability_dashboards: vec![],
             sl1_observability_alerts: vec![],
+            sl1_agents: vec![],
+            sl1_milestones: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -1728,6 +1878,8 @@ mod tests {
             sl1_observability_metrics: vec![],
             sl1_observability_dashboards: vec![],
             sl1_observability_alerts: vec![],
+            sl1_agents: vec![],
+            sl1_milestones: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);
