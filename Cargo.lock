@@ -1010,6 +1010,7 @@ dependencies = [
  "jsonschema",
  "serde",
  "serde_json",
+ "simetro-engine",
  "simetro-protocol",
  "thiserror",
  "tokio",
