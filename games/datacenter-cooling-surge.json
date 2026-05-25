@@ -1,0 +1,711 @@
+{
+  "schema_version": 1,
+  "name": "datacenter-cooling-surge",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "datacenter-cooling-surge",
+    "title": "Datacenter Cooling Surge",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A hyperscale datacenter cooling plant where chillers, cooling towers, and distribution loops must suppress rack temperatures during unexpected compute surges and chiller faults.",
+    "tags": [
+      "datacenter",
+      "cooling",
+      "hvac",
+      "infrastructure",
+      "sl1",
+      "scenario_language_v1",
+      "medium",
+      "draft"
+    ],
+    "palette_note": "Domain palette for datacenter_cooling: dark background, distinct hues across the six places. High contrast for status visibility.",
+    "layout_note": "Six SL1 places form a source-to-output pipeline in the datacenter_cooling domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
+    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
+    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
+    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "source-node",
+        "role": "source",
+        "pos": [
+          -360,
+          -80
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "cap_a": 80
+        },
+        "storage": {
+          "thermal_reading": {
+            "capacity": 400,
+            "initial": 40
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "thermal_reading"
+        ],
+        "failure_domains": [
+          "datacenter_cooling",
+          "input"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "cap_a.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "stage-one",
+        "role": "processor",
+        "pos": [
+          -100,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "cap_b": 24
+        },
+        "storage": {
+          "thermal_reading": {
+            "capacity": 120,
+            "initial": 12
+          },
+          "cooling_setpoint": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "thermal_reading"
+        ],
+        "produces": [
+          "cooling_setpoint"
+        ],
+        "failure_domains": [
+          "datacenter_cooling",
+          "stage1"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "cap_b.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "buffer-node",
+        "role": "buffer",
+        "pos": [
+          120,
+          -80
+        ],
+        "shape": "diamond",
+        "color": 4,
+        "capacity": {
+          "cap_c": 60
+        },
+        "storage": {
+          "cooling_setpoint": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "chilled_water_flow": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "cooling_setpoint"
+        ],
+        "produces": [
+          "chilled_water_flow"
+        ],
+        "failure_domains": [
+          "datacenter_cooling",
+          "buffer"
+        ],
+        "operating_states": {
+          "full": {
+            "when": "cap_c.used_percent >= 85",
+            "grace_ticks": 8
+          }
+        }
+      },
+      {
+        "id": "stage-two",
+        "role": "processor",
+        "pos": [
+          320,
+          60
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "cap_d": 40
+        },
+        "storage": {
+          "chilled_water_flow": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "rack_temp_event": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "chilled_water_flow"
+        ],
+        "produces": [
+          "rack_temp_event"
+        ],
+        "failure_domains": [
+          "datacenter_cooling",
+          "stage2"
+        ],
+        "operating_states": {
+          "bottleneck": {
+            "when": "cap_d.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "output-node",
+        "role": "dashboard",
+        "pos": [
+          520,
+          -60
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "cap_e": 50
+        },
+        "storage": {
+          "rack_temp_event": {
+            "capacity": 30,
+            "initial": 3
+          },
+          "cooling_report": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "rack_temp_event"
+        ],
+        "produces": [
+          "cooling_report"
+        ],
+        "failure_domains": [
+          "datacenter_cooling",
+          "output"
+        ],
+        "operating_states": {
+          "report_lag": {
+            "when": "cap_e.used_percent >= 80",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "operator-node",
+        "role": "operator",
+        "pos": [
+          120,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "datacenter_cooling"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "link-src-s1",
+        "type": "datacenter_cooling_feed",
+        "from": "source-node",
+        "to": "stage-one",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 10
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "thermal_reading"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "link-s1-buf",
+        "type": "datacenter_cooling_transfer",
+        "from": "stage-one",
+        "to": "buffer-node",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "cooling_setpoint"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "link-buf-s2",
+        "type": "datacenter_cooling_relay",
+        "from": "buffer-node",
+        "to": "stage-two",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "chilled_water_flow"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "link-s2-out",
+        "type": "datacenter_cooling_delivery",
+        "from": "stage-two",
+        "to": "output-node",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 8
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "rack_temp_event"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "link-op-s1",
+        "type": "control_bus",
+        "from": "operator-node",
+        "to": "stage-one",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "link-op-s2",
+        "type": "control_bus",
+        "from": "operator-node",
+        "to": "stage-two",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "thermal_reading",
+        "kind": "sensor_reading",
+        "tags": [
+          "thermal",
+          "temperature",
+          "datacenter"
+        ],
+        "freshness_budget_ticks": 30
+      },
+      {
+        "id": "cooling_setpoint",
+        "kind": "control_plan",
+        "tags": [
+          "setpoint",
+          "cooling",
+          "hvac"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "chilled_water_flow",
+        "kind": "fluid_stream",
+        "tags": [
+          "chilled",
+          "water",
+          "cooling"
+        ],
+        "freshness_budget_ticks": 45
+      },
+      {
+        "id": "rack_temp_event",
+        "kind": "event",
+        "tags": [
+          "rack",
+          "temp",
+          "threshold"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "cooling_report",
+        "kind": "report",
+        "tags": [
+          "cooling",
+          "thermal",
+          "ops"
+        ],
+        "freshness_budget_ticks": 300
+      }
+    ],
+    "transforms": [
+      {
+        "id": "transform-s1",
+        "type": "datacenter_cooling_process_a",
+        "runs_on": "stage-one",
+        "inputs": [
+          {
+            "thing": "thermal_reading",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "cooling_setpoint",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "cap_b": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-buf",
+        "type": "datacenter_cooling_buffer_op",
+        "runs_on": "buffer-node",
+        "inputs": [
+          {
+            "thing": "cooling_setpoint",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "chilled_water_flow",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 15,
+        "capacity_cost": {
+          "cap_c": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-s2",
+        "type": "datacenter_cooling_process_b",
+        "runs_on": "stage-two",
+        "inputs": [
+          {
+            "thing": "chilled_water_flow",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "rack_temp_event",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 12,
+        "duration_ticks": 6,
+        "deadline_ticks": 22,
+        "capacity_cost": {
+          "cap_d": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-out",
+        "type": "datacenter_cooling_rollup",
+        "runs_on": "output-node",
+        "inputs": [
+          {
+            "thing": "rack_temp_event",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "cooling_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "cap_e": 3
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "primary-demand",
+        "type": "datacenter_cooling_primary",
+        "target": {
+          "type": "place",
+          "id": "stage-two"
+        },
+        "requires": [
+          "rack_temp_event"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "high",
+        "value": 80,
+        "penalty": {
+          "score": -400,
+          "warning": "datacenter_cooling_primary_miss"
+        }
+      },
+      {
+        "id": "secondary-demand",
+        "type": "datacenter_cooling_secondary",
+        "target": {
+          "type": "place",
+          "id": "output-node"
+        },
+        "requires": [
+          "cooling_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 300,
+          "start_tick": 200
+        },
+        "deadline_ticks": 400,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "datacenter_cooling_secondary_miss"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "pressure-surge",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 400,
+        "target": "source-node",
+        "thing": "thermal_reading",
+        "multiplier": 3.0
+      },
+      {
+        "id": "pressure-quota",
+        "type": "quota_reduction",
+        "at_tick": 1400,
+        "duration_ticks": 300,
+        "target": "stage-two",
+        "capacity": "cap_d",
+        "reduction_percent": 40
+      },
+      {
+        "id": "pressure-demand",
+        "type": "demand_growth",
+        "at_tick": 1000,
+        "duration_ticks": 400,
+        "target": "primary-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-output-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "output-node",
+        "thing": "cooling_report",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "complete-primary",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "primary-demand",
+        "max_missed": 3
+      },
+      {
+        "id": "maintain-stage2-util",
+        "type": "maintain_utilization",
+        "weight": 1,
+        "place": "stage-two",
+        "capacity": "cap_d",
+        "min_percent": 10,
+        "max_percent": 85
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "stage2-bottleneck-fail",
+        "type": "place_state",
+        "place": "stage-two",
+        "state": "bottleneck",
+        "grace_ticks": 90
+      },
+      {
+        "id": "output-stale-fail",
+        "type": "stale_target",
+        "place": "output-node",
+        "thing": "cooling_report",
+        "threshold_ticks": 1000,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "full-run",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "s1-load",
+          "source": "place_capacity_used_percent",
+          "place": "stage-one",
+          "capacity": "cap_b"
+        },
+        {
+          "id": "s2-load",
+          "source": "place_capacity_used_percent",
+          "place": "stage-two",
+          "capacity": "cap_d"
+        },
+        {
+          "id": "out-inv",
+          "source": "place_inventory_count",
+          "place": "output-node",
+          "thing": "cooling_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "datacenter_cooling-dash",
+          "type": "operations",
+          "depends_on": [
+            "cooling_report",
+            "rack_temp_event"
+          ],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "s2-critical",
+          "metric": "s2-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "out-low",
+          "metric": "out-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

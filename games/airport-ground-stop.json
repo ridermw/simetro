@@ -1,0 +1,713 @@
+{
+  "schema_version": 1,
+  "name": "airport-ground-stop",
+  "theme": {
+    "palette": [
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "airport-ground-stop",
+    "title": "Airport Ground Stop",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An airport traffic control operation during a ground stop, managing gate conflicts, pushback sequencing, taxiway deconfliction, and departure slot compliance under maximum congestion.",
+    "tags": [
+      "airport",
+      "atc",
+      "ground-stop",
+      "aviation",
+      "hard",
+      "sl1",
+      "scenario_language_v1",
+      "hard",
+      "draft"
+    ],
+    "palette_note": "Domain palette for airport_ground: dark background, distinct hues across the six places. High contrast for status visibility.",
+    "layout_note": "Six SL1 places form a source-to-output pipeline in the airport_ground domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
+    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
+    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
+    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "source-node",
+        "role": "source",
+        "pos": [
+          -360,
+          -80
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "cap_a": 80
+        },
+        "storage": {
+          "flight_plan": {
+            "capacity": 400,
+            "initial": 40
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "flight_plan"
+        ],
+        "failure_domains": [
+          "airport_ground",
+          "input"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "cap_a.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "stage-one",
+        "role": "processor",
+        "pos": [
+          -100,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "cap_b": 24
+        },
+        "storage": {
+          "flight_plan": {
+            "capacity": 120,
+            "initial": 12
+          },
+          "gate_assignment": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "flight_plan"
+        ],
+        "produces": [
+          "gate_assignment"
+        ],
+        "failure_domains": [
+          "airport_ground",
+          "stage1"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "cap_b.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "buffer-node",
+        "role": "buffer",
+        "pos": [
+          120,
+          -80
+        ],
+        "shape": "diamond",
+        "color": 4,
+        "capacity": {
+          "cap_c": 60
+        },
+        "storage": {
+          "gate_assignment": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "pushback_clearance": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "gate_assignment"
+        ],
+        "produces": [
+          "pushback_clearance"
+        ],
+        "failure_domains": [
+          "airport_ground",
+          "buffer"
+        ],
+        "operating_states": {
+          "full": {
+            "when": "cap_c.used_percent >= 85",
+            "grace_ticks": 8
+          }
+        }
+      },
+      {
+        "id": "stage-two",
+        "role": "processor",
+        "pos": [
+          320,
+          60
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "cap_d": 40
+        },
+        "storage": {
+          "pushback_clearance": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "departure_sequence": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "pushback_clearance"
+        ],
+        "produces": [
+          "departure_sequence"
+        ],
+        "failure_domains": [
+          "airport_ground",
+          "stage2"
+        ],
+        "operating_states": {
+          "bottleneck": {
+            "when": "cap_d.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "output-node",
+        "role": "dashboard",
+        "pos": [
+          520,
+          -60
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "cap_e": 50
+        },
+        "storage": {
+          "departure_sequence": {
+            "capacity": 30,
+            "initial": 3
+          },
+          "atc_report": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "departure_sequence"
+        ],
+        "produces": [
+          "atc_report"
+        ],
+        "failure_domains": [
+          "airport_ground",
+          "output"
+        ],
+        "operating_states": {
+          "report_lag": {
+            "when": "cap_e.used_percent >= 80",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "operator-node",
+        "role": "operator",
+        "pos": [
+          120,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "airport_ground"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "link-src-s1",
+        "type": "airport_ground_feed",
+        "from": "source-node",
+        "to": "stage-one",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 10
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "flight_plan"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "link-s1-buf",
+        "type": "airport_ground_transfer",
+        "from": "stage-one",
+        "to": "buffer-node",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "gate_assignment"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "link-buf-s2",
+        "type": "airport_ground_relay",
+        "from": "buffer-node",
+        "to": "stage-two",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "pushback_clearance"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "link-s2-out",
+        "type": "airport_ground_delivery",
+        "from": "stage-two",
+        "to": "output-node",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 8
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "departure_sequence"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "link-op-s1",
+        "type": "control_bus",
+        "from": "operator-node",
+        "to": "stage-one",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "link-op-s2",
+        "type": "control_bus",
+        "from": "operator-node",
+        "to": "stage-two",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "flight_plan",
+        "kind": "control_plan",
+        "tags": [
+          "flight",
+          "plan",
+          "atc"
+        ],
+        "freshness_budget_ticks": 600
+      },
+      {
+        "id": "gate_assignment",
+        "kind": "work_order",
+        "tags": [
+          "gate",
+          "assignment",
+          "terminal"
+        ],
+        "freshness_budget_ticks": 300
+      },
+      {
+        "id": "pushback_clearance",
+        "kind": "clearance",
+        "tags": [
+          "pushback",
+          "ground",
+          "taxiway"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "departure_sequence",
+        "kind": "sequence",
+        "tags": [
+          "departure",
+          "sequence",
+          "runway"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "atc_report",
+        "kind": "report",
+        "tags": [
+          "atc",
+          "ops",
+          "report",
+          "ground"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "transform-s1",
+        "type": "airport_ground_process_a",
+        "runs_on": "stage-one",
+        "inputs": [
+          {
+            "thing": "flight_plan",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "gate_assignment",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "cap_b": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-buf",
+        "type": "airport_ground_buffer_op",
+        "runs_on": "buffer-node",
+        "inputs": [
+          {
+            "thing": "gate_assignment",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "pushback_clearance",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 15,
+        "capacity_cost": {
+          "cap_c": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-s2",
+        "type": "airport_ground_process_b",
+        "runs_on": "stage-two",
+        "inputs": [
+          {
+            "thing": "pushback_clearance",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "departure_sequence",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 12,
+        "duration_ticks": 6,
+        "deadline_ticks": 22,
+        "capacity_cost": {
+          "cap_d": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-out",
+        "type": "airport_ground_rollup",
+        "runs_on": "output-node",
+        "inputs": [
+          {
+            "thing": "departure_sequence",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "atc_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "cap_e": 3
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "primary-demand",
+        "type": "airport_ground_primary",
+        "target": {
+          "type": "place",
+          "id": "stage-two"
+        },
+        "requires": [
+          "departure_sequence"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "high",
+        "value": 80,
+        "penalty": {
+          "score": -400,
+          "warning": "airport_ground_primary_miss"
+        }
+      },
+      {
+        "id": "secondary-demand",
+        "type": "airport_ground_secondary",
+        "target": {
+          "type": "place",
+          "id": "output-node"
+        },
+        "requires": [
+          "atc_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 300,
+          "start_tick": 200
+        },
+        "deadline_ticks": 400,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "airport_ground_secondary_miss"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "pressure-surge",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 400,
+        "target": "source-node",
+        "thing": "flight_plan",
+        "multiplier": 3.0
+      },
+      {
+        "id": "pressure-quota",
+        "type": "quota_reduction",
+        "at_tick": 1400,
+        "duration_ticks": 300,
+        "target": "stage-two",
+        "capacity": "cap_d",
+        "reduction_percent": 40
+      },
+      {
+        "id": "pressure-demand",
+        "type": "demand_growth",
+        "at_tick": 1000,
+        "duration_ticks": 400,
+        "target": "primary-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-output-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "output-node",
+        "thing": "atc_report",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "complete-primary",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "primary-demand",
+        "max_missed": 3
+      },
+      {
+        "id": "maintain-stage2-util",
+        "type": "maintain_utilization",
+        "weight": 1,
+        "place": "stage-two",
+        "capacity": "cap_d",
+        "min_percent": 10,
+        "max_percent": 85
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "stage2-bottleneck-fail",
+        "type": "place_state",
+        "place": "stage-two",
+        "state": "bottleneck",
+        "grace_ticks": 90
+      },
+      {
+        "id": "output-stale-fail",
+        "type": "stale_target",
+        "place": "output-node",
+        "thing": "atc_report",
+        "threshold_ticks": 1000,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "full-run",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "s1-load",
+          "source": "place_capacity_used_percent",
+          "place": "stage-one",
+          "capacity": "cap_b"
+        },
+        {
+          "id": "s2-load",
+          "source": "place_capacity_used_percent",
+          "place": "stage-two",
+          "capacity": "cap_d"
+        },
+        {
+          "id": "out-inv",
+          "source": "place_inventory_count",
+          "place": "output-node",
+          "thing": "atc_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "airport_ground-dash",
+          "type": "operations",
+          "depends_on": [
+            "atc_report",
+            "departure_sequence"
+          ],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "s2-critical",
+          "metric": "s2-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "out-low",
+          "metric": "out-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

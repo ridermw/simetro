@@ -1,0 +1,691 @@
+{
+  "schema_version": 1,
+  "name": "greenhouse-water-watch",
+  "theme": {
+    "palette": [
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "greenhouse-water-watch",
+    "title": "Greenhouse Water Watch",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An automated greenhouse where weather sensors, water pumps, soil monitors, and irrigation grids must keep every grow bed watered through drought spells and pump failures.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "greenhouse",
+      "water",
+      "agriculture",
+      "intro",
+      "draft"
+    ],
+    "palette_note": "Natural green and earth palette: dark background, amber pipeline, teal soil monitors, coral drought alerts, green healthy plants, violet control desk.",
+    "layout_note": "Six SL1 places form a sensor-to-plant pipeline: outdoor weather sensor left, pump room, soil monitor center, irrigation grid, plant nursery right, control desk above. Layout reads as a water journey from sky to root.",
+    "node_language_note": "Place roles: source=weather-sensor, processor=water-pump/irrigation-grid, buffer=soil-monitor, dashboard=plant-nursery, operator=control-desk. Shapes reinforce role: triangle=source, hexagon=processor, diamond=buffer, square=dashboard, circle=operator.",
+    "mover_path_note": "No legacy movers; SL1 links carry control and data flow. Six links span sensor-to-nursery plus two control buses from the desk.",
+    "review_note": "Draft pending SL1 renderer. Schema validates against the PR-7 loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "weather-sensor",
+        "role": "source",
+        "pos": [
+          -360,
+          -140
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "sensor_bandwidth": 100
+        },
+        "storage": {
+          "rainfall_data": {
+            "capacity": 500,
+            "initial": 50
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "rainfall_data"
+        ],
+        "failure_domains": [
+          "greenhouse",
+          "outdoor"
+        ],
+        "operating_states": {
+          "data_burst": {
+            "when": "sensor_bandwidth.used_percent >= 80",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "water-pump",
+        "role": "processor",
+        "pos": [
+          -100,
+          -20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "pump_capacity": 20
+        },
+        "storage": {
+          "rainfall_data": {
+            "capacity": 200,
+            "initial": 20
+          },
+          "water_schedule": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "rainfall_data"
+        ],
+        "produces": [
+          "water_schedule"
+        ],
+        "failure_domains": [
+          "greenhouse",
+          "pump-room"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "pump_capacity.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "soil-monitor",
+        "role": "buffer",
+        "pos": [
+          80,
+          80
+        ],
+        "shape": "diamond",
+        "color": 4,
+        "capacity": {
+          "sensor_slots": 30
+        },
+        "storage": {
+          "soil_moisture": {
+            "capacity": 100,
+            "initial": 10
+          },
+          "water_schedule": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "water_schedule"
+        ],
+        "produces": [
+          "soil_moisture"
+        ],
+        "failure_domains": [
+          "greenhouse",
+          "grow-zone"
+        ],
+        "operating_states": {
+          "dry_warning": {
+            "when": "sensor_slots.used_percent >= 70",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "irrigation-grid",
+        "role": "processor",
+        "pos": [
+          300,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "valve_slots": 40
+        },
+        "storage": {
+          "soil_moisture": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "irrigation_event": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "soil_moisture"
+        ],
+        "produces": [
+          "irrigation_event"
+        ],
+        "failure_domains": [
+          "greenhouse",
+          "irrigation"
+        ],
+        "operating_states": {
+          "surge": {
+            "when": "valve_slots.used_percent >= 90",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "plant-nursery",
+        "role": "dashboard",
+        "pos": [
+          500,
+          -120
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "bed_capacity": 50
+        },
+        "storage": {
+          "irrigation_event": {
+            "capacity": 40,
+            "initial": 4
+          },
+          "plant_health_report": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "irrigation_event"
+        ],
+        "produces": [
+          "plant_health_report"
+        ],
+        "failure_domains": [
+          "greenhouse",
+          "nursery"
+        ],
+        "operating_states": {
+          "stressed": {
+            "when": "bed_capacity.used_percent >= 75",
+            "grace_ticks": 20
+          }
+        }
+      },
+      {
+        "id": "control-desk",
+        "role": "operator",
+        "pos": [
+          100,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "greenhouse"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "sensor-to-pump",
+        "type": "data_feed",
+        "from": "weather-sensor",
+        "to": "water-pump",
+        "direction": "forward",
+        "capacity": {
+          "readings_per_tick": 10
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "rainfall_data"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "pump-to-soil",
+        "type": "control_signal",
+        "from": "water-pump",
+        "to": "soil-monitor",
+        "direction": "forward",
+        "capacity": {
+          "schedules_per_tick": 5
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "water_schedule"
+        ],
+        "queue_capacity": 50,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "soil-to-grid",
+        "type": "moisture_report",
+        "from": "soil-monitor",
+        "to": "irrigation-grid",
+        "direction": "forward",
+        "capacity": {
+          "readings_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "soil_moisture"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "grid-to-nursery",
+        "type": "irrigation_feed",
+        "from": "irrigation-grid",
+        "to": "plant-nursery",
+        "direction": "forward",
+        "capacity": {
+          "events_per_tick": 8
+        },
+        "travel_ticks": 3,
+        "compatibility": [
+          "irrigation_event"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "desk-to-pump",
+        "type": "control_bus",
+        "from": "control-desk",
+        "to": "water-pump",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 20,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "desk-to-grid",
+        "type": "control_bus",
+        "from": "control-desk",
+        "to": "irrigation-grid",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 20,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "rainfall_data",
+        "kind": "sensor_reading",
+        "tags": [
+          "weather",
+          "precipitation"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "water_schedule",
+        "kind": "control_plan",
+        "tags": [
+          "irrigation",
+          "schedule"
+        ],
+        "freshness_budget_ticks": 180
+      },
+      {
+        "id": "soil_moisture",
+        "kind": "measurement",
+        "tags": [
+          "soil",
+          "moisture",
+          "grow"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "irrigation_event",
+        "kind": "actuation",
+        "tags": [
+          "irrigation",
+          "valve",
+          "water"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "plant_health_report",
+        "kind": "report",
+        "tags": [
+          "health",
+          "plant",
+          "nursery"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "parse-weather",
+        "type": "data_ingestion",
+        "runs_on": "water-pump",
+        "inputs": [
+          {
+            "thing": "rainfall_data",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "water_schedule",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "pump_capacity": 2
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "monitor-soil",
+        "type": "sensor_fusion",
+        "runs_on": "soil-monitor",
+        "inputs": [
+          {
+            "thing": "water_schedule",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "soil_moisture",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 3,
+        "deadline_ticks": 15,
+        "capacity_cost": {
+          "sensor_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "schedule-irrigation",
+        "type": "valve_actuation",
+        "runs_on": "irrigation-grid",
+        "inputs": [
+          {
+            "thing": "soil_moisture",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "irrigation_event",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "valve_slots": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "compile-health",
+        "type": "health_rollup",
+        "runs_on": "plant-nursery",
+        "inputs": [
+          {
+            "thing": "irrigation_event",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "plant_health_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 120,
+        "capacity_cost": {
+          "bed_capacity": 5
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "daily-irrigation",
+        "type": "irrigation_cycle",
+        "target": {
+          "type": "place",
+          "id": "irrigation-grid"
+        },
+        "requires": [
+          "irrigation_event"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 120,
+          "start_tick": 120
+        },
+        "deadline_ticks": 180,
+        "priority": "high",
+        "value": 60,
+        "penalty": {
+          "score": -300,
+          "warning": "plant_stress"
+        }
+      },
+      {
+        "id": "weekly-health-report",
+        "type": "health_assessment",
+        "target": {
+          "type": "place",
+          "id": "plant-nursery"
+        },
+        "requires": [
+          "plant_health_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 300
+        },
+        "deadline_ticks": 600,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "health_report_missing"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "drought-wave",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 400,
+        "target": "weather-sensor",
+        "thing": "rainfall_data",
+        "multiplier": 0.2
+      },
+      {
+        "id": "pump-failure",
+        "type": "quota_reduction",
+        "at_tick": 1200,
+        "duration_ticks": 200,
+        "target": "water-pump",
+        "capacity": "pump_capacity",
+        "reduction_percent": 50
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-health-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "plant-nursery",
+        "thing": "plant_health_report",
+        "max_stale_ticks": 1200
+      },
+      {
+        "id": "complete-irrigation",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "daily-irrigation",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "pump-overload-fail",
+        "type": "place_state",
+        "place": "water-pump",
+        "state": "overloaded",
+        "grace_ticks": 60
+      },
+      {
+        "id": "health-stale-fail",
+        "type": "stale_target",
+        "place": "plant-nursery",
+        "thing": "plant_health_report",
+        "threshold_ticks": 1500,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "full-season",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "pump-load",
+          "source": "place_capacity_used_percent",
+          "place": "water-pump",
+          "capacity": "pump_capacity"
+        },
+        {
+          "id": "valve-load",
+          "source": "place_capacity_used_percent",
+          "place": "irrigation-grid",
+          "capacity": "valve_slots"
+        },
+        {
+          "id": "health-inv",
+          "source": "place_inventory_count",
+          "place": "plant-nursery",
+          "thing": "plant_health_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "greenhouse-dash",
+          "type": "operations",
+          "depends_on": [
+            "plant_health_report",
+            "irrigation_event"
+          ],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "pump-critical",
+          "metric": "pump-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "health-low",
+          "metric": "health-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

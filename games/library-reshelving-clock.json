@@ -1,0 +1,688 @@
+{
+  "schema_version": 1,
+  "name": "library-reshelving-clock",
+  "theme": {
+    "palette": [
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "library-reshelving-clock",
+    "title": "Library Reshelving Clock",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A public library where a returning tide of books must be sorted, catalogued, shelved, and surfaced as availability reports before the reading-room backlog grows unmanageable.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "library",
+      "catalog",
+      "operations",
+      "intro",
+      "draft"
+    ],
+    "palette_note": "Warm library palette: dark background, sand foreground, blue intake, amber sort, green catalog, teal shelf, violet operator. Low-saturation tones evoke paper and wood.",
+    "layout_note": "Six SL1 places form a returns-to-reading pipeline: return desk at far left, sort station, catalog database above, shelf zone right, reading room far right, librarian post above center.",
+    "node_language_note": "Place roles: source=return-desk, processor=sort-station/shelf-zone, buffer=catalog-db, dashboard=reading-room, operator=librarian-post. Shapes vary: circle=source/reading-room, square=sort, diamond=catalog, hexagon=shelf/librarian.",
+    "mover_path_note": "No legacy movers; SL1 links carry item flows. Six links span returns-to-reading plus two bidirectional oversight buses from the librarian.",
+    "review_note": "Draft pending SL1 canvas renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "return-desk",
+        "role": "source",
+        "pos": [
+          -360,
+          -120
+        ],
+        "shape": "circle",
+        "color": 2,
+        "capacity": {
+          "return_slots": 60
+        },
+        "storage": {
+          "returned_item": {
+            "capacity": 300,
+            "initial": 30
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "returned_item"
+        ],
+        "failure_domains": [
+          "library",
+          "circulation"
+        ],
+        "operating_states": {
+          "pile_up": {
+            "when": "return_slots.used_percent >= 75",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "sort-station",
+        "role": "processor",
+        "pos": [
+          -100,
+          0
+        ],
+        "shape": "square",
+        "color": 3,
+        "capacity": {
+          "sort_capacity": 20
+        },
+        "storage": {
+          "returned_item": {
+            "capacity": 120,
+            "initial": 12
+          },
+          "sort_ticket": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "returned_item"
+        ],
+        "produces": [
+          "sort_ticket"
+        ],
+        "failure_domains": [
+          "library",
+          "processing"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "sort_capacity.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "catalog-db",
+        "role": "buffer",
+        "pos": [
+          100,
+          -100
+        ],
+        "shape": "diamond",
+        "color": 4,
+        "capacity": {
+          "db_slots": 200
+        },
+        "storage": {
+          "sort_ticket": {
+            "capacity": 100,
+            "initial": 10
+          },
+          "catalog_entry": {
+            "capacity": 100,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "sort_ticket"
+        ],
+        "produces": [
+          "catalog_entry"
+        ],
+        "failure_domains": [
+          "library",
+          "catalog"
+        ],
+        "operating_states": {
+          "index_lag": {
+            "when": "db_slots.used_percent >= 85",
+            "grace_ticks": 8
+          }
+        }
+      },
+      {
+        "id": "shelf-zone",
+        "role": "processor",
+        "pos": [
+          300,
+          40
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "shelf_capacity": 400
+        },
+        "storage": {
+          "catalog_entry": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "shelf_request": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "catalog_entry"
+        ],
+        "produces": [
+          "shelf_request"
+        ],
+        "failure_domains": [
+          "library",
+          "stacks"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "shelf_capacity.used_percent >= 90",
+            "grace_ticks": 12
+          }
+        }
+      },
+      {
+        "id": "reading-room",
+        "role": "dashboard",
+        "pos": [
+          520,
+          -80
+        ],
+        "shape": "circle",
+        "color": 6,
+        "capacity": {
+          "reader_seats": 50
+        },
+        "storage": {
+          "shelf_request": {
+            "capacity": 40,
+            "initial": 4
+          },
+          "availability_report": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "shelf_request"
+        ],
+        "produces": [
+          "availability_report"
+        ],
+        "failure_domains": [
+          "library",
+          "public"
+        ],
+        "operating_states": {
+          "crowded": {
+            "when": "reader_seats.used_percent >= 80",
+            "grace_ticks": 15
+          }
+        }
+      },
+      {
+        "id": "librarian-post",
+        "role": "operator",
+        "pos": [
+          100,
+          -240
+        ],
+        "shape": "hexagon",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "library"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "returns-to-sort",
+        "type": "intake_conveyor",
+        "from": "return-desk",
+        "to": "sort-station",
+        "direction": "forward",
+        "capacity": {
+          "items_per_tick": 6
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "returned_item"
+        ],
+        "queue_capacity": 120,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "sort-to-catalog",
+        "type": "catalog_feed",
+        "from": "sort-station",
+        "to": "catalog-db",
+        "direction": "forward",
+        "capacity": {
+          "tickets_per_tick": 4
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "sort_ticket"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "catalog-to-shelf",
+        "type": "shelving_order",
+        "from": "catalog-db",
+        "to": "shelf-zone",
+        "direction": "forward",
+        "capacity": {
+          "entries_per_tick": 5
+        },
+        "travel_ticks": 3,
+        "compatibility": [
+          "catalog_entry"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "shelf-to-reading",
+        "type": "availability_feed",
+        "from": "shelf-zone",
+        "to": "reading-room",
+        "direction": "forward",
+        "capacity": {
+          "requests_per_tick": 8
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "shelf_request"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "librarian-to-sort",
+        "type": "oversight",
+        "from": "librarian-post",
+        "to": "sort-station",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "librarian-to-catalog",
+        "type": "oversight",
+        "from": "librarian-post",
+        "to": "catalog-db",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "returned_item",
+        "kind": "physical_item",
+        "tags": [
+          "book",
+          "media",
+          "return"
+        ],
+        "freshness_budget_ticks": 300
+      },
+      {
+        "id": "sort_ticket",
+        "kind": "work_order",
+        "tags": [
+          "sort",
+          "processing"
+        ],
+        "freshness_budget_ticks": 200
+      },
+      {
+        "id": "catalog_entry",
+        "kind": "metadata_record",
+        "tags": [
+          "catalog",
+          "index"
+        ],
+        "freshness_budget_ticks": 400
+      },
+      {
+        "id": "shelf_request",
+        "kind": "placement_order",
+        "tags": [
+          "shelf",
+          "location"
+        ],
+        "freshness_budget_ticks": 150
+      },
+      {
+        "id": "availability_report",
+        "kind": "report",
+        "tags": [
+          "availability",
+          "public"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "catalog-return",
+        "type": "item_registration",
+        "runs_on": "sort-station",
+        "inputs": [
+          {
+            "thing": "returned_item",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "sort_ticket",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 4,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
+        "capacity_cost": {
+          "sort_capacity": 2
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "index-item",
+        "type": "db_update",
+        "runs_on": "catalog-db",
+        "inputs": [
+          {
+            "thing": "sort_ticket",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "catalog_entry",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 6,
+        "duration_ticks": 3,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "db_slots": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "assign-shelf",
+        "type": "placement_planning",
+        "runs_on": "shelf-zone",
+        "inputs": [
+          {
+            "thing": "catalog_entry",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "shelf_request",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "shelf_capacity": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "compile-availability",
+        "type": "status_rollup",
+        "runs_on": "reading-room",
+        "inputs": [
+          {
+            "thing": "shelf_request",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "availability_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 8,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "reader_seats": 2
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "catalog-update-demand",
+        "type": "catalog_maintenance",
+        "target": {
+          "type": "place",
+          "id": "catalog-db"
+        },
+        "requires": [
+          "catalog_entry"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "normal",
+        "value": 40,
+        "penalty": {
+          "score": -200,
+          "warning": "catalog_lag"
+        }
+      },
+      {
+        "id": "availability-report-demand",
+        "type": "public_report",
+        "target": {
+          "type": "place",
+          "id": "reading-room"
+        },
+        "requires": [
+          "availability_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 300,
+          "start_tick": 200
+        },
+        "deadline_ticks": 400,
+        "priority": "low",
+        "value": 30,
+        "penalty": {
+          "score": -80,
+          "warning": "availability_stale"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "rush-returns",
+        "type": "demand_growth",
+        "at_tick": 600,
+        "duration_ticks": 300,
+        "target": "catalog-update-demand",
+        "spawn_multiplier": 2
+      },
+      {
+        "id": "system-lag",
+        "type": "quota_reduction",
+        "at_tick": 1200,
+        "duration_ticks": 400,
+        "target": "catalog-db",
+        "capacity": "db_slots",
+        "reduction_percent": 35
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-availability-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "reading-room",
+        "thing": "availability_report",
+        "max_stale_ticks": 900
+      },
+      {
+        "id": "complete-catalog-demand",
+        "type": "complete_jobs_before_deadline",
+        "weight": 2,
+        "demand": "catalog-update-demand",
+        "max_missed": 4
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "sort-backlog-fail",
+        "type": "place_state",
+        "place": "sort-station",
+        "state": "backlogged",
+        "grace_ticks": 120
+      },
+      {
+        "id": "availability-stale-fail",
+        "type": "stale_target",
+        "place": "reading-room",
+        "thing": "availability_report",
+        "threshold_ticks": 1200,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "full-shift",
+        "type": "survive_until",
+        "at_tick": 3600
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "sort-load",
+          "source": "place_capacity_used_percent",
+          "place": "sort-station",
+          "capacity": "sort_capacity"
+        },
+        {
+          "id": "shelf-load",
+          "source": "place_capacity_used_percent",
+          "place": "shelf-zone",
+          "capacity": "shelf_capacity"
+        },
+        {
+          "id": "avail-inv",
+          "source": "place_inventory_count",
+          "place": "reading-room",
+          "thing": "availability_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "library-ops-dash",
+          "type": "operations",
+          "depends_on": [
+            "availability_report",
+            "catalog_entry"
+          ],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "sort-critical",
+          "metric": "sort-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 80
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "avail-low",
+          "metric": "avail-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

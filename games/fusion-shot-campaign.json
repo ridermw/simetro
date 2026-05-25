@@ -1,0 +1,712 @@
+{
+  "schema_version": 1,
+  "name": "fusion-shot-campaign",
+  "theme": {
+    "palette": [
+      "#1a1423",
+      "#fff7ed",
+      "#06d6a0",
+      "#ef476f",
+      "#118ab2",
+      "#ffd166",
+      "#c77dff"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "fusion-shot-campaign",
+    "title": "Fusion Shot Campaign",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An inertial confinement fusion facility executing a multi-shot ignition campaign where laser charge, target alignment, timing synchronization, and diagnostics must converge within femtosecond tolerances.",
+    "tags": [
+      "fusion",
+      "energy",
+      "laser",
+      "nif",
+      "hard",
+      "sl1",
+      "scenario_language_v1",
+      "hard",
+      "draft"
+    ],
+    "palette_note": "Domain palette for fusion_shot: dark background, distinct hues across the six places. High contrast for status visibility.",
+    "layout_note": "Six SL1 places form a source-to-output pipeline in the fusion_shot domain. Two processors bracket a central buffer; operator node provides bidirectional control.",
+    "node_language_note": "Place roles: source, processor×2, buffer, dashboard, operator. Shapes vary by role.",
+    "mover_path_note": "No legacy movers; SL1 links carry domain-specific flows plus two bidirectional control buses.",
+    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "source-node",
+        "role": "source",
+        "pos": [
+          -360,
+          -80
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "cap_a": 80
+        },
+        "storage": {
+          "plasma_config": {
+            "capacity": 400,
+            "initial": 40
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "plasma_config"
+        ],
+        "failure_domains": [
+          "fusion_shot",
+          "input"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "cap_a.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "stage-one",
+        "role": "processor",
+        "pos": [
+          -100,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "cap_b": 24
+        },
+        "storage": {
+          "plasma_config": {
+            "capacity": 120,
+            "initial": 12
+          },
+          "laser_charge": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "plasma_config"
+        ],
+        "produces": [
+          "laser_charge"
+        ],
+        "failure_domains": [
+          "fusion_shot",
+          "stage1"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "cap_b.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "buffer-node",
+        "role": "buffer",
+        "pos": [
+          120,
+          -80
+        ],
+        "shape": "diamond",
+        "color": 4,
+        "capacity": {
+          "cap_c": 60
+        },
+        "storage": {
+          "laser_charge": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "target_alignment": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "laser_charge"
+        ],
+        "produces": [
+          "target_alignment"
+        ],
+        "failure_domains": [
+          "fusion_shot",
+          "buffer"
+        ],
+        "operating_states": {
+          "full": {
+            "when": "cap_c.used_percent >= 85",
+            "grace_ticks": 8
+          }
+        }
+      },
+      {
+        "id": "stage-two",
+        "role": "processor",
+        "pos": [
+          320,
+          60
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "cap_d": 40
+        },
+        "storage": {
+          "target_alignment": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "shot_event": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "target_alignment"
+        ],
+        "produces": [
+          "shot_event"
+        ],
+        "failure_domains": [
+          "fusion_shot",
+          "stage2"
+        ],
+        "operating_states": {
+          "bottleneck": {
+            "when": "cap_d.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "output-node",
+        "role": "dashboard",
+        "pos": [
+          520,
+          -60
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "cap_e": 50
+        },
+        "storage": {
+          "shot_event": {
+            "capacity": 30,
+            "initial": 3
+          },
+          "yield_measurement": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "shot_event"
+        ],
+        "produces": [
+          "yield_measurement"
+        ],
+        "failure_domains": [
+          "fusion_shot",
+          "output"
+        ],
+        "operating_states": {
+          "report_lag": {
+            "when": "cap_e.used_percent >= 80",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "operator-node",
+        "role": "operator",
+        "pos": [
+          120,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "fusion_shot"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "link-src-s1",
+        "type": "fusion_shot_feed",
+        "from": "source-node",
+        "to": "stage-one",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 10
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "plasma_config"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "link-s1-buf",
+        "type": "fusion_shot_transfer",
+        "from": "stage-one",
+        "to": "buffer-node",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "laser_charge"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "link-buf-s2",
+        "type": "fusion_shot_relay",
+        "from": "buffer-node",
+        "to": "stage-two",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "target_alignment"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "link-s2-out",
+        "type": "fusion_shot_delivery",
+        "from": "stage-two",
+        "to": "output-node",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 8
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "shot_event"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "link-op-s1",
+        "type": "control_bus",
+        "from": "operator-node",
+        "to": "stage-one",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "link-op-s2",
+        "type": "control_bus",
+        "from": "operator-node",
+        "to": "stage-two",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "plasma_config",
+        "kind": "control_plan",
+        "tags": [
+          "plasma",
+          "configuration",
+          "nif"
+        ],
+        "freshness_budget_ticks": 300
+      },
+      {
+        "id": "laser_charge",
+        "kind": "state_vector",
+        "tags": [
+          "laser",
+          "energy",
+          "charge"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "target_alignment",
+        "kind": "measurement",
+        "tags": [
+          "target",
+          "alignment",
+          "hohlraum"
+        ],
+        "freshness_budget_ticks": 30
+      },
+      {
+        "id": "shot_event",
+        "kind": "event",
+        "tags": [
+          "shot",
+          "fired",
+          "pulse"
+        ],
+        "freshness_budget_ticks": 10
+      },
+      {
+        "id": "yield_measurement",
+        "kind": "measurement",
+        "tags": [
+          "yield",
+          "energy",
+          "fusion"
+        ],
+        "freshness_budget_ticks": 120
+      }
+    ],
+    "transforms": [
+      {
+        "id": "transform-s1",
+        "type": "fusion_shot_process_a",
+        "runs_on": "stage-one",
+        "inputs": [
+          {
+            "thing": "plasma_config",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "laser_charge",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "cap_b": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-buf",
+        "type": "fusion_shot_buffer_op",
+        "runs_on": "buffer-node",
+        "inputs": [
+          {
+            "thing": "laser_charge",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "target_alignment",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 15,
+        "capacity_cost": {
+          "cap_c": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-s2",
+        "type": "fusion_shot_process_b",
+        "runs_on": "stage-two",
+        "inputs": [
+          {
+            "thing": "target_alignment",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "shot_event",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 12,
+        "duration_ticks": 6,
+        "deadline_ticks": 22,
+        "capacity_cost": {
+          "cap_d": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "transform-out",
+        "type": "fusion_shot_rollup",
+        "runs_on": "output-node",
+        "inputs": [
+          {
+            "thing": "shot_event",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "yield_measurement",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "cap_e": 3
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "primary-demand",
+        "type": "fusion_shot_primary",
+        "target": {
+          "type": "place",
+          "id": "stage-two"
+        },
+        "requires": [
+          "shot_event"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "high",
+        "value": 80,
+        "penalty": {
+          "score": -400,
+          "warning": "fusion_shot_primary_miss"
+        }
+      },
+      {
+        "id": "secondary-demand",
+        "type": "fusion_shot_secondary",
+        "target": {
+          "type": "place",
+          "id": "output-node"
+        },
+        "requires": [
+          "yield_measurement"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 300,
+          "start_tick": 200
+        },
+        "deadline_ticks": 400,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "fusion_shot_secondary_miss"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "pressure-surge",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 400,
+        "target": "source-node",
+        "thing": "plasma_config",
+        "multiplier": 3.0
+      },
+      {
+        "id": "pressure-quota",
+        "type": "quota_reduction",
+        "at_tick": 1400,
+        "duration_ticks": 300,
+        "target": "stage-two",
+        "capacity": "cap_d",
+        "reduction_percent": 40
+      },
+      {
+        "id": "pressure-demand",
+        "type": "demand_growth",
+        "at_tick": 1000,
+        "duration_ticks": 400,
+        "target": "primary-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-output-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "output-node",
+        "thing": "yield_measurement",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "complete-primary",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "primary-demand",
+        "max_missed": 3
+      },
+      {
+        "id": "maintain-stage2-util",
+        "type": "maintain_utilization",
+        "weight": 1,
+        "place": "stage-two",
+        "capacity": "cap_d",
+        "min_percent": 10,
+        "max_percent": 85
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "stage2-bottleneck-fail",
+        "type": "place_state",
+        "place": "stage-two",
+        "state": "bottleneck",
+        "grace_ticks": 90
+      },
+      {
+        "id": "output-stale-fail",
+        "type": "stale_target",
+        "place": "output-node",
+        "thing": "yield_measurement",
+        "threshold_ticks": 1000,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "full-run",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "s1-load",
+          "source": "place_capacity_used_percent",
+          "place": "stage-one",
+          "capacity": "cap_b"
+        },
+        {
+          "id": "s2-load",
+          "source": "place_capacity_used_percent",
+          "place": "stage-two",
+          "capacity": "cap_d"
+        },
+        {
+          "id": "out-inv",
+          "source": "place_inventory_count",
+          "place": "output-node",
+          "thing": "yield_measurement"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "fusion_shot-dash",
+          "type": "operations",
+          "depends_on": [
+            "yield_measurement",
+            "shot_event"
+          ],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "s2-critical",
+          "metric": "s2-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "out-low",
+          "metric": "out-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

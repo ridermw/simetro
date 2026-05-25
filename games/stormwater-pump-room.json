@@ -1,0 +1,716 @@
+{
+  "schema_version": 1,
+  "name": "stormwater-pump-room",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "stormwater-pump-room",
+    "title": "Stormwater Pump Room",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An urban stormwater facility where debris filters, lift stations, and retention basins must keep streets clear during flash-flood events, all while maintaining discharge compliance.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "stormwater",
+      "water",
+      "infrastructure",
+      "easy",
+      "draft"
+    ],
+    "palette_note": "Water and flood palette: dark background, neutral foreground, deep blue stormwater, teal filtered, cyan pumped, green basin, amber compliance. Evokes municipal water ops.",
+    "layout_note": "Six SL1 places form a collection-to-outfall pipeline: rain collector top-left, debris filter, pump station center, retention basin right, discharge outfall far right, operations center above.",
+    "node_language_note": "Place roles: source=rain-collector, processor=debris-filter/pump-station, buffer=retention-basin, dashboard=discharge-outfall, operator=operations-center.",
+    "mover_path_note": "No legacy movers; SL1 links carry fluid flows. Six links span collector-to-outfall plus two bidirectional control buses.",
+    "review_note": "Draft pending SL1 renderer. Schema validates. Easy difficulty adds flood-pressure events."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "rain-collector",
+        "role": "source",
+        "pos": [
+          -360,
+          -80
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "collection_capacity": 300
+        },
+        "storage": {
+          "stormwater_flow": {
+            "capacity": 800,
+            "initial": 40
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "stormwater_flow"
+        ],
+        "failure_domains": [
+          "pump-room",
+          "collection"
+        ],
+        "operating_states": {
+          "flood_risk": {
+            "when": "collection_capacity.used_percent >= 85",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "debris-filter",
+        "role": "processor",
+        "pos": [
+          -120,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "filter_slots": 40
+        },
+        "storage": {
+          "stormwater_flow": {
+            "capacity": 400,
+            "initial": 20
+          },
+          "filtered_water": {
+            "capacity": 200,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "stormwater_flow"
+        ],
+        "produces": [
+          "filtered_water"
+        ],
+        "failure_domains": [
+          "pump-room",
+          "filtration"
+        ],
+        "operating_states": {
+          "clogged": {
+            "when": "filter_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "pump-station",
+        "role": "processor",
+        "pos": [
+          80,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "pump_slots": 20
+        },
+        "storage": {
+          "filtered_water": {
+            "capacity": 200,
+            "initial": 10
+          },
+          "pumped_volume": {
+            "capacity": 100,
+            "initial": 5
+          }
+        },
+        "accepts": [
+          "filtered_water"
+        ],
+        "produces": [
+          "pumped_volume"
+        ],
+        "failure_domains": [
+          "pump-room",
+          "pumps"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "pump_slots.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "retention-basin",
+        "role": "buffer",
+        "pos": [
+          300,
+          -20
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "basin_capacity": 600
+        },
+        "storage": {
+          "pumped_volume": {
+            "capacity": 200,
+            "initial": 10
+          },
+          "treated_water": {
+            "capacity": 200,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "pumped_volume"
+        ],
+        "produces": [
+          "treated_water"
+        ],
+        "failure_domains": [
+          "pump-room",
+          "retention"
+        ],
+        "operating_states": {
+          "high_water": {
+            "when": "basin_capacity.used_percent >= 80",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "discharge-outfall",
+        "role": "dashboard",
+        "pos": [
+          520,
+          -60
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "discharge_slots": 80
+        },
+        "storage": {
+          "treated_water": {
+            "capacity": 100,
+            "initial": 5
+          },
+          "discharge_certificate": {
+            "capacity": 50,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "treated_water"
+        ],
+        "produces": [
+          "discharge_certificate"
+        ],
+        "failure_domains": [
+          "pump-room",
+          "outfall"
+        ],
+        "operating_states": {
+          "blocked": {
+            "when": "discharge_slots.used_percent >= 90",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "operations-center",
+        "role": "operator",
+        "pos": [
+          80,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "pump-room"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "collection-to-filter",
+        "type": "storm_channel",
+        "from": "rain-collector",
+        "to": "debris-filter",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 60
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "stormwater_flow"
+        ],
+        "queue_capacity": 400,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "filter-to-pump",
+        "type": "clean_channel",
+        "from": "debris-filter",
+        "to": "pump-station",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "filtered_water"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "pump-to-basin",
+        "type": "pressure_main",
+        "from": "pump-station",
+        "to": "retention-basin",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "pumped_volume"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "basin-to-outfall",
+        "type": "gravity_drain",
+        "from": "retention-basin",
+        "to": "discharge-outfall",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "treated_water"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "ops-to-pump",
+        "type": "control_bus",
+        "from": "operations-center",
+        "to": "pump-station",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "ops-to-filter",
+        "type": "control_bus",
+        "from": "operations-center",
+        "to": "debris-filter",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "stormwater_flow",
+        "kind": "fluid_stream",
+        "tags": [
+          "stormwater",
+          "runoff",
+          "rain"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "filtered_water",
+        "kind": "fluid_stream",
+        "tags": [
+          "filtered",
+          "clean",
+          "storm"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "pumped_volume",
+        "kind": "fluid_volume",
+        "tags": [
+          "pumped",
+          "pressurized",
+          "storm"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "treated_water",
+        "kind": "fluid_volume",
+        "tags": [
+          "treated",
+          "retained",
+          "release"
+        ],
+        "freshness_budget_ticks": 180
+      },
+      {
+        "id": "discharge_certificate",
+        "kind": "compliance_record",
+        "tags": [
+          "discharge",
+          "certificate",
+          "env"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "filter-stormwater",
+        "type": "mechanical_filtration",
+        "runs_on": "debris-filter",
+        "inputs": [
+          {
+            "thing": "stormwater_flow",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "filtered_water",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "filter_slots": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "pump-water",
+        "type": "lift_station",
+        "runs_on": "pump-station",
+        "inputs": [
+          {
+            "thing": "filtered_water",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "pumped_volume",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 6,
+        "duration_ticks": 3,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "pump_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "treat-water",
+        "type": "retention_treatment",
+        "runs_on": "retention-basin",
+        "inputs": [
+          {
+            "thing": "pumped_volume",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "treated_water",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 15,
+        "duration_ticks": 8,
+        "deadline_ticks": 30,
+        "capacity_cost": {
+          "basin_capacity": 20
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "issue-certificate",
+        "type": "compliance_audit",
+        "runs_on": "discharge-outfall",
+        "inputs": [
+          {
+            "thing": "treated_water",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "discharge_certificate",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "discharge_slots": 5
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "storm-discharge-demand",
+        "type": "emergency_discharge",
+        "target": {
+          "type": "place",
+          "id": "discharge-outfall"
+        },
+        "requires": [
+          "discharge_certificate"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 180,
+          "start_tick": 120
+        },
+        "deadline_ticks": 240,
+        "priority": "high",
+        "value": 100,
+        "penalty": {
+          "score": -500,
+          "warning": "flood_risk_elevated"
+        }
+      },
+      {
+        "id": "daily-compliance",
+        "type": "compliance_report",
+        "target": {
+          "type": "place",
+          "id": "discharge-outfall"
+        },
+        "requires": [
+          "discharge_certificate"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "compliance_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "heavy-rainfall",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 600,
+        "target": "rain-collector",
+        "thing": "stormwater_flow",
+        "multiplier": 4.0
+      },
+      {
+        "id": "pump-degradation",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "pump-station",
+        "capacity": "pump_slots",
+        "reduction_percent": 35
+      },
+      {
+        "id": "filter-surge",
+        "type": "demand_growth",
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "storm-discharge-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "prevent-flood",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "rain-collector",
+        "capacity": "collection_capacity",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "keep-certs-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "discharge-outfall",
+        "thing": "discharge_certificate",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "complete-emergency-discharges",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "storm-discharge-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "pump-overload-fail",
+        "type": "place_state",
+        "place": "pump-station",
+        "state": "overloaded",
+        "grace_ticks": 60
+      },
+      {
+        "id": "cert-stale-fail",
+        "type": "stale_target",
+        "place": "discharge-outfall",
+        "thing": "discharge_certificate",
+        "threshold_ticks": 900,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "storm-survived",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "collection-level",
+          "source": "place_capacity_used_percent",
+          "place": "rain-collector",
+          "capacity": "collection_capacity"
+        },
+        {
+          "id": "pump-load",
+          "source": "place_capacity_used_percent",
+          "place": "pump-station",
+          "capacity": "pump_slots"
+        },
+        {
+          "id": "basin-level",
+          "source": "place_capacity_used_percent",
+          "place": "retention-basin",
+          "capacity": "basin_capacity"
+        },
+        {
+          "id": "cert-inv",
+          "source": "place_inventory_count",
+          "place": "discharge-outfall",
+          "thing": "discharge_certificate"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "stormwater-dash",
+          "type": "operations",
+          "depends_on": [
+            "discharge_certificate",
+            "treated_water"
+          ],
+          "freshness_slo_ticks": 400
+        }
+      ],
+      "alerts": [
+        {
+          "id": "flood-critical",
+          "metric": "collection-level",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "basin-high",
+          "metric": "basin-level",
+          "predicate": {
+            "type": "gt",
+            "threshold": 80
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}
