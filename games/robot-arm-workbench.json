@@ -30,7 +30,7 @@
     "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Robot Arm Workbench colour theme.",
     "layout_note": "8 nodes forming a robotics topology. Positions span across canvas.",
     "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting robotics roles.",
-    "mover_path_note": "5 movers on distinct paths at speeds 0.90\u20131.60.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.90–1.60.",
     "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
@@ -162,6 +162,12 @@
         "from": "tool-3",
         "to": "tool-4",
         "color": 4
+      },
+      {
+        "id": "cross-56",
+        "from": "tool-5",
+        "to": "tool-6",
+        "color": 5
       }
     ],
     "movers": [

@@ -30,7 +30,7 @@
     "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Circuit Garden colour theme.",
     "layout_note": "8 nodes forming a circuit topology. Positions span across canvas.",
     "node_language_note": "Nodes use 5 distinct shapes, 3 distinct colors reflecting circuit roles.",
-    "mover_path_note": "3 movers on distinct paths at speeds 0.80\u20131.30.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.80–1.30.",
     "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
@@ -191,6 +191,16 @@
         "id": "sig-c",
         "on_path": "p-r0c0-r1c0",
         "speed": 0.8
+      },
+      {
+        "id": "sig-d",
+        "on_path": "p-r0c1-r0c2",
+        "speed": 1.1
+      },
+      {
+        "id": "sig-e",
+        "on_path": "p-r1c1-r1c2",
+        "speed": 0.9
       }
     ]
   },

@@ -30,7 +30,7 @@
     "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Archive Index Table colour theme.",
     "layout_note": "8 nodes forming a archive topology. Positions span across canvas.",
     "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting archive roles.",
-    "mover_path_note": "4 movers on distinct paths at speeds 0.80\u20131.10.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.80–1.10.",
     "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
@@ -190,6 +190,11 @@
         "id": "trolley-4",
         "on_path": "read-desk",
         "speed": 1.0
+      },
+      {
+        "id": "trolley-5",
+        "on_path": "a-a2",
+        "speed": 0.9
       }
     ]
   },

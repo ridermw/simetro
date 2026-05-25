@@ -30,7 +30,7 @@
     "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Reef Nursery colour theme.",
     "layout_note": "9 nodes forming a reef topology. Positions span across canvas.",
     "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting reef roles.",
-    "mover_path_note": "3 movers on distinct paths at speeds 0.70\u20131.10.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.70–1.10.",
     "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
@@ -194,6 +194,16 @@
         "id": "frag-c",
         "on_path": "rp-6",
         "speed": 1.1
+      },
+      {
+        "id": "frag-d",
+        "on_path": "rp-1",
+        "speed": 0.8
+      },
+      {
+        "id": "frag-e",
+        "on_path": "rp-4",
+        "speed": 1.0
       }
     ]
   },

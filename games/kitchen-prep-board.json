@@ -30,7 +30,7 @@
     "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Kitchen Prep Board colour theme.",
     "layout_note": "9 nodes forming a kitchen topology. Positions span across canvas.",
     "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting kitchen roles.",
-    "mover_path_note": "4 movers on distinct paths at speeds 0.90\u20131.50.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.90–1.50.",
     "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
   },
   "pieces": {
@@ -199,6 +199,11 @@
         "id": "ticket-d",
         "on_path": "grill-fryer",
         "speed": 1.1
+      },
+      {
+        "id": "ticket-e",
+        "on_path": "sauce-plate",
+        "speed": 1.3
       }
     ]
   },
