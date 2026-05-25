@@ -45,50 +45,43 @@ impl LlmError {
         }
     }
 
-    /// One representative instance of every variant. Pair with
-    /// [`Self::variant_name`] for compile-time-checked variant
-    /// enumeration. Adding a new variant requires both updating
-    /// `variant_name`'s match arm (compile-time check) AND appending
-    /// here (test catches the count mismatch via [`Self::all_variants`]).
+    /// Catalogue of every `LlmError` variant identifier.
     ///
-    /// The strings in payload fields are intentionally minimal; this
-    /// constructor exists only so callers (tests, docs) can iterate
-    /// every variant.
-    #[must_use]
-    pub fn one_of_each() -> Vec<Self> {
-        vec![
-            Self::NotAuthenticated,
-            Self::SubprocessDied { code: None },
-            Self::Refused {
-                agent_id: String::new(),
-                message: String::new(),
-            },
-            Self::Timeout {
-                agent_id: String::new(),
-                elapsed_ms: 0,
-            },
-            Self::RateLimited { retry_after_ms: 0 },
-            Self::MalformedResponse {
-                agent_id: String::new(),
-                raw: String::new(),
-            },
-            Self::Disconnected,
-        ]
-    }
-
-    /// Catalogue of every `LlmError` variant identifier, derived from
-    /// [`Self::one_of_each`] so the names stay in lock-step with the
-    /// enum via the exhaustive match in [`Self::variant_name`]. Used
-    /// by the fixture-suite drift test.
+    /// **Compile-time guarantee.** This function pairs the name list
+    /// with an exhaustive match over `LlmError`. The match's only
+    /// purpose is to force the compiler to fail when a new variant is
+    /// added without being represented here: each match arm
+    /// `Self::Foo { .. } => "foo"` makes the arm-and-name a single
+    /// edit, so omitting either side is a one-line review catch.
     ///
-    /// **Adding a variant**: add the arm to `variant_name`, append a
-    /// representative to `one_of_each`, and create
-    /// `crates/agent-bridge/tests/fixtures/error_modes/<name>.json`.
-    /// The test `every_llm_error_variant_has_a_fixture` enforces all
-    /// three changes land in the same PR.
+    /// The list returned is sorted by enum declaration order so test
+    /// output is stable.
     #[must_use]
     pub fn all_variants() -> Vec<&'static str> {
-        Self::one_of_each().iter().map(Self::variant_name).collect()
+        // The match exists ONLY to make the compiler error when a
+        // new variant is added without updating the list below. If
+        // this match goes stale, `cargo build` fails.
+        #[allow(dead_code)]
+        fn _exhaustive_check(e: &LlmError) -> &'static str {
+            match e {
+                LlmError::NotAuthenticated => "not_authenticated",
+                LlmError::SubprocessDied { .. } => "subprocess_died",
+                LlmError::Refused { .. } => "refused",
+                LlmError::Timeout { .. } => "timeout",
+                LlmError::RateLimited { .. } => "rate_limited",
+                LlmError::MalformedResponse { .. } => "malformed_response",
+                LlmError::Disconnected => "disconnected",
+            }
+        }
+        vec![
+            "not_authenticated",
+            "subprocess_died",
+            "refused",
+            "timeout",
+            "rate_limited",
+            "malformed_response",
+            "disconnected",
+        ]
     }
 }
 
@@ -97,6 +90,8 @@ impl LlmError {
 mod tests {
     use super::*;
 
+    /// Variant-name uniqueness: catches accidental duplicate arm
+    /// names (e.g. typo where two arms return the same string).
     #[test]
     fn variant_name_is_unique_per_variant() {
         let names = LlmError::all_variants();
@@ -110,16 +105,72 @@ mod tests {
         );
     }
 
+    /// Variant-name shape: all snake_case ascii.
     #[test]
-    fn one_of_each_covers_every_variant_round_trip() {
-        // Sanity: each instance returns a non-empty variant name.
-        for err in LlmError::one_of_each() {
-            let name = err.variant_name();
-            assert!(!name.is_empty(), "empty variant_name for {err:?}");
+    fn all_variant_names_are_snake_case_ascii() {
+        for name in LlmError::all_variants() {
+            assert!(!name.is_empty(), "empty variant name");
             assert!(
                 name.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
-                "variant_name must be snake_case ascii: {name:?}"
+                "variant name must be snake_case ascii: {name:?}"
             );
         }
+    }
+
+    /// `variant_name(instance)` MUST agree with `all_variants()` for
+    /// the same variant. Catches drift between the public
+    /// `variant_name` match and the internal `_exhaustive_check`
+    /// match in `all_variants`.
+    #[test]
+    fn variant_name_matches_all_variants_list() {
+        let instances: Vec<(LlmError, &'static str)> = vec![
+            (LlmError::NotAuthenticated, "not_authenticated"),
+            (LlmError::SubprocessDied { code: None }, "subprocess_died"),
+            (
+                LlmError::Refused {
+                    agent_id: String::new(),
+                    message: String::new(),
+                },
+                "refused",
+            ),
+            (
+                LlmError::Timeout {
+                    agent_id: String::new(),
+                    elapsed_ms: 0,
+                },
+                "timeout",
+            ),
+            (LlmError::RateLimited { retry_after_ms: 0 }, "rate_limited"),
+            (
+                LlmError::MalformedResponse {
+                    agent_id: String::new(),
+                    raw: String::new(),
+                },
+                "malformed_response",
+            ),
+            (LlmError::Disconnected, "disconnected"),
+        ];
+        let all = LlmError::all_variants();
+        for (instance, expected_name) in &instances {
+            assert_eq!(
+                instance.variant_name(),
+                *expected_name,
+                "variant_name disagrees for {instance:?}"
+            );
+            assert!(
+                all.contains(expected_name),
+                "all_variants() missing {expected_name:?}"
+            );
+        }
+        // Both lists must be the same length — otherwise a variant
+        // was added in one place but not the other.
+        assert_eq!(
+            instances.len(),
+            all.len(),
+            "instance count ({}) != all_variants count ({}); some variant is missing from \
+             either `_exhaustive_check` or this test's `instances` list",
+            instances.len(),
+            all.len()
+        );
     }
 }
