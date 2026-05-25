@@ -458,8 +458,9 @@ pub enum Sl1PressureParamsView {
 
 /// Edge-triggered pressure lifecycle events. Each pressure id emits
 /// exactly one `Activated` event at `at_tick` and exactly one
-/// `Deactivated` event at `at_tick + duration_ticks` (the inclusive
-/// end). `kind` is the canonical snake_case discriminator so UI/replay
+/// `Deactivated` event at `at_tick + duration_ticks` (the exclusive
+/// end; the pressure's last active tick is `at_tick + duration_ticks - 1`).
+/// `kind` is the canonical snake_case discriminator so UI/replay
 /// can render without re-resolving against the static payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

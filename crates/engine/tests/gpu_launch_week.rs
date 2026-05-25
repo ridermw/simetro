@@ -1,25 +1,27 @@
-//! PR 6 — GPU Launch Week scene v0.
+//! GPU Launch Week scene integration test (PR 6 + PR 7).
 //!
 //! The dedicated scene under `games/gpu-launch-week.json` is the first
 //! `scenario_language_v1` world to ship in the polished `games/`
-//! catalog. PR 6 v0 only uses primitives shipped in PRs 0-5:
-//! places, links, things, transforms, demand.
+//! catalog. PR 6 established the base scene (places, links, things,
+//! transforms, demand); PR 7 appended two pressure entries
+//! (`gpu-fault-storm` at tick 1500 and `dashboard-storm` at tick 2400).
 //!
-//! Per the rubber-duck design review on this PR, this test does NOT
-//! commit a state-hash baseline yet. The scene is explicitly expected
-//! to grow pressure (PR 7), objectives (PR 8), observability (PR 9),
-//! agents (PR 10), and milestones (PR 11) — baselining the hash now
-//! would create maintenance noise rather than a useful determinism
-//! gate. The hash baseline is locked in at PR 12 (scene polish).
+//! This test does NOT commit a state-hash baseline yet. The scene is
+//! expected to grow further with objectives (PR 8), observability
+//! (PR 9), agents (PR 10), and milestones (PR 11) — baselining the
+//! hash now would create maintenance noise rather than a useful
+//! determinism gate. The hash baseline is locked in at PR 12 (scene
+//! polish).
 //!
-//! Instead, this test asserts the v0 contract:
+//! Instead, this test asserts the contract across PRs 0-7:
 //!
 //! - the file loads cleanly via the SL1 loader,
 //! - the deterministic single-place pipeline runs for 600 ticks with
 //!   zero warnings (no starvation, no blocked transforms, no demand
-//!   drops, no backlog overflow),
+//!   drops, no backlog overflow) — the two pressures both activate
+//!   after tick 600 so this window stays clean,
 //! - the protocol static payload exposes the expected SL1 metadata
-//!   counts (places, links, things, transforms, demand),
+//!   counts (places, links, things, transforms, demand, pressure),
 //! - the demand `exec-dashboard-refresh` actually fulfills on its
 //!   scheduled cadence — proving the inventory wiring is real, not
 //!   just declarative.
