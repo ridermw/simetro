@@ -814,6 +814,262 @@ fn transform_snapshot_carries_runtime_state() {
     assert_eq!(snap.sl1_transform_states[0].transform_id, "t");
 }
 
+#[test]
+fn transform_retry_then_warn_succeeds_on_attempt_2_after_contention() {
+    // Two transforms share `m: 2` capacity bucket. Both fire at tick
+    // 1000: "a" wins by stable id order; "b" Blocked. After "a"
+    // completes and frees capacity, "b" breaches its original deadline
+    // and transitions to Late. The advance_late path tries try_start
+    // FIRST with a FRESH scheduled_at, so its retry gets a full
+    // deadline budget and completes — producing 1 widget and emitting
+    // ZERO Failed warnings.
+    let json = scene_with(
+        r#"[{
+            "id": "p", "role": "x", "pos": [0,0],
+            "capacity": {"m": 2},
+            "storage": {
+                "raw": {"capacity": 100, "initial": 100},
+                "widget": {"capacity": 100, "initial": 0}
+            },
+            "accepts": ["raw"], "produces": ["widget"]
+        }]"#,
+        r#"[
+            {"id": "raw", "kind": "i", "tags": []},
+            {"id": "widget", "kind": "o", "tags": []}
+        ]"#,
+        r#"[
+            {
+                "id": "a", "type": "x", "runs_on": "p",
+                "inputs": [{"thing": "raw", "amount": 1}],
+                "outputs": [{"thing": "widget", "amount": 1}],
+                "cadence_ticks": 1000, "duration_ticks": 5, "deadline_ticks": 5,
+                "capacity_cost": {"m": 2},
+                "failure_policy": "drop"
+            },
+            {
+                "id": "b", "type": "x", "runs_on": "p",
+                "inputs": [{"thing": "raw", "amount": 1}],
+                "outputs": [{"thing": "widget", "amount": 1}],
+                "cadence_ticks": 1000, "duration_ticks": 3, "deadline_ticks": 3,
+                "capacity_cost": {"m": 2},
+                "failure_policy": "retry_then_warn", "max_attempts": 5
+            }
+        ]"#,
+    );
+    let (_, world, messages) = load_and_tick(&json, 1100);
+    let failed_b = count_warnings(&messages, "b", Sl1TransformWarningKind::Failed);
+    assert_eq!(
+        failed_b, 0,
+        "expected zero Failed warnings for `b` after successful retry, got {failed_b}"
+    );
+    let runtime = world.sl1_runtime.as_ref().expect("runtime present");
+    let widget = runtime
+        .inventories
+        .get("p")
+        .and_then(|inv| inv.get("widget"))
+        .copied()
+        .unwrap_or(0);
+    // Both `a` (first attempt) and `b` (retry attempt 2) should each
+    // produce one widget = 2 total.
+    assert_eq!(widget, 2, "expected 2 widgets produced total, got {widget}");
+}
+
+#[test]
+fn transform_drop_does_not_retry_emits_one_failed_per_cadence_slot() {
+    // Drop with starved inputs: each cadence slot produces exactly one
+    // Failed warning (no spurious retries between slots).
+    let json = scene_with(
+        r#"[{
+            "id": "p", "role": "x", "pos": [0,0],
+            "capacity": {"m": 4},
+            "storage": {
+                "raw": {"capacity": 100, "initial": 0},
+                "widget": {"capacity": 50, "initial": 0}
+            },
+            "accepts": ["raw"], "produces": ["widget"]
+        }]"#,
+        r#"[
+            {"id": "raw", "kind": "i", "tags": []},
+            {"id": "widget", "kind": "o", "tags": []}
+        ]"#,
+        r#"[{
+            "id": "t", "type": "x", "runs_on": "p",
+            "inputs": [{"thing": "raw", "amount": 1}],
+            "outputs": [{"thing": "widget", "amount": 1}],
+            "cadence_ticks": 10, "duration_ticks": 2, "deadline_ticks": 3,
+            "failure_policy": "drop"
+        }]"#,
+    );
+    // Cadence fires at ticks 10, 20, 30. Each fires → Starved → at tick
+    // scheduled+3+1 = breach → Failed → Idle. So 3 Failed warnings.
+    let (_, _, messages) = load_and_tick(&json, 35);
+    let failed = count_warnings(&messages, "t", Sl1TransformWarningKind::Failed);
+    assert_eq!(
+        failed, 3,
+        "drop policy should emit exactly one Failed per cadence slot, got {failed}"
+    );
+}
+
+#[test]
+fn transform_slot_missed_emitted_once_per_overlapping_cadence_tick() {
+    // cadence=5, duration=20: transform runs from tick 5 through tick 25.
+    // Cadence fires at ticks 10, 15, 20 while the transform is still
+    // Running → 3 SlotMissed warnings. At tick 25 the transform's
+    // completion runs first in `run()`, so the cadence at tick 25 finds
+    // Idle and starts a new attempt (no SlotMissed at tick 25).
+    let json = scene_with(
+        r#"[{
+            "id": "p", "role": "x", "pos": [0,0],
+            "capacity": {"m": 4},
+            "storage": {
+                "raw": {"capacity": 100, "initial": 100},
+                "widget": {"capacity": 100, "initial": 0}
+            },
+            "accepts": ["raw"], "produces": ["widget"]
+        }]"#,
+        r#"[
+            {"id": "raw", "kind": "i", "tags": []},
+            {"id": "widget", "kind": "o", "tags": []}
+        ]"#,
+        r#"[{
+            "id": "t", "type": "x", "runs_on": "p",
+            "inputs": [{"thing": "raw", "amount": 1}],
+            "outputs": [{"thing": "widget", "amount": 1}],
+            "cadence_ticks": 5, "duration_ticks": 20, "deadline_ticks": 20,
+            "failure_policy": "drop"
+        }]"#,
+    );
+    let (_, _, messages) = load_and_tick(&json, 25);
+    let missed = count_warnings(&messages, "t", Sl1TransformWarningKind::SlotMissed);
+    assert_eq!(
+        missed, 3,
+        "expected 3 SlotMissed warnings at ticks 10/15/20, got {missed}"
+    );
+}
+
+#[test]
+fn transform_cadence_ticks_out_of_range_rejected() {
+    let json = scene_with(
+        default_places(),
+        default_things(),
+        &format!(
+            r#"[{{
+                "id": "t", "type": "x", "runs_on": "factory",
+                "inputs": [{{"thing": "raw", "amount": 1}}],
+                "outputs": [{{"thing": "widget", "amount": 1}}],
+                "cadence_ticks": {over}, "duration_ticks": 1, "deadline_ticks": 1,
+                "failure_policy": "drop"
+            }}]"#,
+            over = simetro_engine::MAX_TRANSFORM_TICKS + 1
+        ),
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(
+            err,
+            Sl1LoadError::TransformTicksOutOfRange { field, .. } if field == "cadence_ticks"
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn transform_duration_ticks_out_of_range_rejected() {
+    let json = scene_with(
+        default_places(),
+        default_things(),
+        &format!(
+            r#"[{{
+                "id": "t", "type": "x", "runs_on": "factory",
+                "inputs": [{{"thing": "raw", "amount": 1}}],
+                "outputs": [{{"thing": "widget", "amount": 1}}],
+                "cadence_ticks": 1, "duration_ticks": {over}, "deadline_ticks": 1,
+                "failure_policy": "drop"
+            }}]"#,
+            over = simetro_engine::MAX_TRANSFORM_TICKS + 1
+        ),
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(
+            err,
+            Sl1LoadError::TransformTicksOutOfRange { field, .. } if field == "duration_ticks"
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn transform_io_amount_out_of_range_rejected() {
+    let json = scene_with(
+        default_places(),
+        default_things(),
+        &format!(
+            r#"[{{
+                "id": "t", "type": "x", "runs_on": "factory",
+                "inputs": [{{"thing": "raw", "amount": {over}}}],
+                "outputs": [{{"thing": "widget", "amount": 1}}],
+                "cadence_ticks": 1, "duration_ticks": 1, "deadline_ticks": 1,
+                "failure_policy": "drop"
+            }}]"#,
+            over = simetro_engine::MAX_TRANSFORM_AMOUNT + 1
+        ),
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::TransformIoAmountOutOfRange { .. }),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn transform_capacity_cost_out_of_range_rejected() {
+    let json = scene_with(
+        default_places(),
+        default_things(),
+        &format!(
+            r#"[{{
+                "id": "t", "type": "x", "runs_on": "factory",
+                "inputs": [{{"thing": "raw", "amount": 1}}],
+                "outputs": [{{"thing": "widget", "amount": 1}}],
+                "cadence_ticks": 1, "duration_ticks": 1, "deadline_ticks": 1,
+                "capacity_cost": {{"machine_hours": {over}}},
+                "failure_policy": "drop"
+            }}]"#,
+            over = simetro_engine::MAX_TRANSFORM_CAPACITY_COST + 1
+        ),
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::TransformCapacityCostOutOfRange { .. }),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn transform_max_attempts_out_of_range_rejected() {
+    let json = scene_with(
+        default_places(),
+        default_things(),
+        &format!(
+            r#"[{{
+                "id": "t", "type": "x", "runs_on": "factory",
+                "inputs": [{{"thing": "raw", "amount": 1}}],
+                "outputs": [{{"thing": "widget", "amount": 1}}],
+                "cadence_ticks": 1, "duration_ticks": 1, "deadline_ticks": 1,
+                "failure_policy": "retry_then_warn",
+                "max_attempts": {over}
+            }}]"#,
+            over = simetro_engine::MAX_TRANSFORM_MAX_ATTEMPTS + 1
+        ),
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::TransformMaxAttemptsOutOfRange { .. }),
+        "got {err:?}"
+    );
+}
+
 // -------------------------------------------------------------------
 // Fixture + deterministic hash baseline
 // -------------------------------------------------------------------

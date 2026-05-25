@@ -339,30 +339,38 @@ fn advance_late(
             Sl1TransformState::Idle
         }
         Sl1FailurePolicy::RetryThenWarn => {
-            if attempt >= def.max_attempts {
-                emit_warning(
-                    messages,
-                    id,
-                    Sl1TransformWarningKind::Failed,
-                    now,
-                    Some(attempt),
-                );
-                return Sl1TransformState::Idle;
-            }
-            // Try to recover: re-attempt start. If it succeeds we go
-            // back to Running; otherwise increment attempt and stay
-            // Late until next tick.
+            // Try to recover first: re-attempt start. If it succeeds we
+            // go back to Running with a FRESH scheduled_at/started_at so
+            // the retry gets a full deadline budget (otherwise a retry
+            // for any `duration_ticks > 1` would immediately breach the
+            // already-passed original deadline). If start fails, count
+            // this tick as a consumed retry: increment attempt; if we
+            // now exceed `max_attempts`, emit Failed and reset to Idle.
             match try_start(def, runtime, storage_caps, place_caps) {
                 StartResult::Started => Sl1TransformState::Running {
-                    scheduled_at,
+                    scheduled_at: now,
                     started_at: now,
                     attempt,
                 },
-                _ => Sl1TransformState::Late {
-                    scheduled_at,
-                    attempt: attempt.saturating_add(1),
-                    since,
-                },
+                _ => {
+                    let next_attempt = attempt.saturating_add(1);
+                    if next_attempt > def.max_attempts {
+                        emit_warning(
+                            messages,
+                            id,
+                            Sl1TransformWarningKind::Failed,
+                            now,
+                            Some(attempt),
+                        );
+                        Sl1TransformState::Idle
+                    } else {
+                        Sl1TransformState::Late {
+                            scheduled_at,
+                            attempt: next_attempt,
+                            since,
+                        }
+                    }
+                }
             }
         }
     }

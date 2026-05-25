@@ -54,7 +54,9 @@ pub use scenario_language_v1::{
     Sl1FailurePolicy, Sl1Fault, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1LinkRenderHint,
     Sl1LoadError, Sl1Milestone, Sl1Objective, Sl1Observability, Sl1Place, Sl1Pressure,
     Sl1RuntimeState, Sl1Scene, Sl1Thing, Sl1ThingQualityContract, Sl1ThingRenderHint, Sl1Transform,
-    Sl1TransformIo, Sl1TransformState, Sl1Warning, SL1_SCHEMA_VERSION,
+    Sl1TransformIo, Sl1TransformState, Sl1Warning, MAX_TRANSFORM_AMOUNT,
+    MAX_TRANSFORM_CAPACITY_COST, MAX_TRANSFORM_MAX_ATTEMPTS, MAX_TRANSFORM_TICKS,
+    SL1_SCHEMA_VERSION,
 };
 pub use snapshot::{color_batches, encode_snapshot, encode_static, encode_static_parts};
 pub use state_hash::{hash_run, hash_world};

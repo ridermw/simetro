@@ -425,7 +425,7 @@ that turns inventories into game pressure.
 | `deadline_ticks` | yes | `u64` | > 0 and ≥ `duration_ticks`. Measured from `scheduled_at`. |
 | `capacity_cost` | no | `{string: u64}` | Keys must be capacity buckets declared on `runs_on`. |
 | `failure_policy` | yes | `retry_then_warn` \| `drop` | PR 4 supports these two. `degrade_quality` is reserved for PR 8 and rejected at load until then. |
-| `max_attempts` | conditional | `u32` | Required for `retry_then_warn`; must be > 0. |
+| `max_attempts` | no | `u32` | Default `1` (single attempt). For `retry_then_warn`, set to `>1` to allow retries. Must be > 0 and ≤ `MAX_TRANSFORM_MAX_ATTEMPTS`. |
 
 Unknown fields on a transform or on an io entry fail the load with
 `Sl1LoadError::Parse`. `inputs` and `outputs` may not repeat the same
@@ -434,21 +434,22 @@ thing — sum amounts in JSON instead.
 ### State machine
 
 ```
-                        cadence fires (now>0, now%cadence==0)
-   ┌───────────────────────────────────────────────┐
-   │                                               │
-   ▼                                               │
- Idle ──start_attempt──▶ Running ──completion──▶ Idle
+                       cadence fires (now>0, now%cadence==0)
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   ▼                                                      │
+ Idle ──start_attempt──▶ Running ───completion──────────▶ Idle
    │                       │
-   │                       │ now > deadline
-   │                       ▼
-   │   inputs missing    Late ──RetryThenWarn(attempt<max)──▶ retry
-   ├──────────────────▶ Starved ──deadline──▶ Late ─────┐
-   │                                                     │
-   │   capacity/output  Blocked ──deadline──▶ Late       │
-   └──────────────────▶                                  ▼
-                                                  Drop / max_attempts
-                                                  ───emit Failed──▶ Idle
+   │ start fails           │ now > deadline
+   ▼                       ▼
+ Starved / Blocked    Late (RetryThenWarn only)
+   │                       │
+   │ now > deadline        ├── try_start succeeds ──▶ Running (fresh deadline)
+   ▼                       │                              (attempt counter unchanged)
+ (failure path)            ├── try_start fails, attempt+1 ≤ max ──▶ Late (incremented)
+                           └── try_start fails, attempt+1 > max  ──▶ emit Failed → Idle
+
+Drop on deadline breach   ──▶ emit Failed → Idle (no Late transition)
 ```
 
 `Failed` is **not** a persistent state — it is an event surfaced as
@@ -458,12 +459,21 @@ keep firing.
 
 ### Failure policies
 
-- `drop`: a single attempt. If the transform is starved/blocked and
-  the deadline passes, emit `Failed` once and reset to `Idle`.
-- `retry_then_warn`: each Late tick is a retry. If `try_start`
-  succeeds while Late, transition back to `Running`. Otherwise
-  increment `attempt`. When `attempt >= max_attempts`, emit `Failed`
-  and reset to `Idle`.
+- `drop`: a single attempt per cadence slot. If the running attempt
+  breaches the deadline, emit `Failed` once and reset to `Idle`. Drop
+  never visits `Late`.
+- `retry_then_warn`: on deadline breach the transform enters `Late`.
+  Each Late tick `advance_late` first calls `try_start`:
+  - If `try_start` succeeds, transition to `Running` with a **fresh**
+    `scheduled_at = now` so the retry receives a full deadline budget
+    (required for any `duration_ticks > 1` retry to be able to
+    complete).
+  - If `try_start` fails, increment `attempt`. When `attempt`
+    exceeds `max_attempts`, emit `Failed` and reset to `Idle`.
+
+The capacity reserved by a failed Running attempt is released before
+the failure-policy decision so that retries (and other transforms
+sharing the bucket) can immediately compete for it.
 
 ### Capacity contention
 
