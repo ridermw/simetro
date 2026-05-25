@@ -353,6 +353,22 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-pressure static fingerprint (PR 7). Sorted by id at validation
+    // time. Gated on `!pressure.is_empty()` so existing baselines
+    // (sl1-empty, sl1-places, sl1-links, sl1-things, sl1-transforms,
+    // sl1-demand) remain stable.
+    if !sl1.pressure.is_empty() {
+        for p in &sl1.pressure {
+            h.update(b"sl1.pressure.v1");
+            feed_str(h, &p.id);
+            h.update([pressure_kind_tag(p.kind)]);
+            h.update(p.at_tick.to_le_bytes());
+            h.update(p.duration_ticks.to_le_bytes());
+            feed_str(h, &p.target);
+            feed_pressure_params(h, &p.params);
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -660,6 +676,28 @@ fn feed_event(h: &mut Sha256, e: &SimEvent) {
             h.update([0x16]);
             h.update(tick.to_le_bytes());
         }
+        SimEvent::Sl1PressureLifecycle {
+            pressure_id,
+            pressure_kind,
+            event,
+            tick,
+        } => {
+            h.update([0x17]);
+            h.update((pressure_id.len() as u64).to_le_bytes());
+            h.update(pressure_id.as_bytes());
+            h.update((pressure_kind.len() as u64).to_le_bytes());
+            h.update(pressure_kind.as_bytes());
+            h.update([sl1_pressure_event_tag(*event)]);
+            h.update(tick.to_le_bytes());
+        }
+    }
+}
+
+fn sl1_pressure_event_tag(event: simetro_protocol::Sl1PressureEventKind) -> u8 {
+    use simetro_protocol::Sl1PressureEventKind as K;
+    match event {
+        K::Activated => 0x01,
+        K::Deactivated => 0x02,
     }
 }
 
@@ -800,6 +838,20 @@ fn feed_warning(h: &mut Sha256, w: &WarningPayload) {
                 None => h.update([0x00]),
             }
         }
+        WarningPayload::Sl1Pressure {
+            pressure_id,
+            event,
+            pressure_kind,
+            tick,
+        } => {
+            h.update([0x36]);
+            h.update((pressure_id.len() as u64).to_le_bytes());
+            h.update(pressure_id.as_bytes());
+            h.update([sl1_pressure_warning_tag(*event)]);
+            h.update((pressure_kind.len() as u64).to_le_bytes());
+            h.update(pressure_kind.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
     }
 }
 
@@ -819,6 +871,60 @@ fn sl1_demand_warning_tag(event: simetro_protocol::Sl1DemandWarningKind) -> u8 {
     match event {
         K::Dropped => 0x01,
         K::BacklogOverflow => 0x02,
+    }
+}
+
+fn sl1_pressure_warning_tag(event: simetro_protocol::Sl1PressureWarningKind) -> u8 {
+    use simetro_protocol::Sl1PressureWarningKind as K;
+    match event {
+        K::UnsupportedInThisPr => 0x01,
+    }
+}
+
+fn pressure_kind_tag(kind: crate::scenario_language_v1::Sl1PressureKind) -> u8 {
+    use crate::scenario_language_v1::Sl1PressureKind as K;
+    match kind {
+        K::SourceMultiplier => 0x01,
+        K::DemandGrowth => 0x02,
+        K::QuotaReduction => 0x03,
+        K::PathOutage => 0x04,
+        K::SchemaDrift => 0x05,
+        K::DashboardStorm => 0x06,
+        K::SpotEvictionWave => 0x07,
+        K::StorageMetadataStorm => 0x08,
+        K::CoolingDegradation => 0x09,
+    }
+}
+
+fn feed_pressure_params(h: &mut Sha256, p: &crate::scenario_language_v1::Sl1PressureParams) {
+    use crate::scenario_language_v1::Sl1PressureParams as P;
+    match p {
+        P::SourceMultiplier {
+            thing,
+            multiplier_milli,
+        } => {
+            h.update([0x01]);
+            feed_str(h, thing);
+            h.update(multiplier_milli.to_le_bytes());
+        }
+        P::DemandGrowth { spawn_multiplier } => {
+            h.update([0x02]);
+            h.update(spawn_multiplier.to_le_bytes());
+        }
+        P::QuotaReduction {
+            capacity,
+            reduction_percent,
+        } => {
+            h.update([0x03]);
+            feed_str(h, capacity);
+            h.update([*reduction_percent]);
+        }
+        P::PathOutage => {
+            h.update([0x04]);
+        }
+        P::UnsupportedInThisPr => {
+            h.update([0x05]);
+        }
     }
 }
 

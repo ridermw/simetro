@@ -25,6 +25,7 @@ pub mod loader;
 pub mod redactor;
 pub mod rng;
 pub mod scenario_language_v1;
+pub mod sl1_pressure;
 pub mod sl1_runtime;
 pub mod snapshot;
 pub mod state_hash;

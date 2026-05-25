@@ -108,6 +108,27 @@ pub const MAX_DEMAND_REQUIRES: usize = 64;
 /// before spawning is paused. See [`Sl1Warning::DemandBacklogOverflow`].
 pub const MAX_DEMAND_OUTSTANDING: usize = 10_000;
 
+// ---- Pressure bounds (PR 7) -----------------------------------------------
+
+/// Upper bound for `Sl1Pressure.at_tick` and `duration_ticks`. Same
+/// human-meaningful range as the other SL1 tick bounds.
+pub const MAX_PRESSURE_TICKS: u64 = 1_000_000_000;
+/// Upper bound for an `Sl1Pressure::SourceMultiplier.multiplier`. We
+/// store the multiplier scaled to milli-units to keep the runtime
+/// deterministic without floating-point arithmetic. `1.0x` is
+/// represented as `1_000`. Bound matches `MAX_PRESSURE_TICKS` to keep
+/// per-tick injection rates well within `u64`.
+pub const MAX_PRESSURE_MULTIPLIER_MILLI: u64 = 1_000_000;
+/// Upper bound for an `Sl1Pressure::DemandGrowth.spawn_multiplier`.
+/// `2..=64` is the human-meaningful range; the cap is well past any
+/// sensible authoring choice. A multiplier of `1` is rejected at load
+/// because it would be a no-op pressure.
+pub const MAX_PRESSURE_SPAWN_MULTIPLIER: u32 = 64;
+/// Upper bound for an `Sl1Pressure::QuotaReduction.reduction_percent`.
+/// `100` means "reduce capacity to zero". `0` is rejected at load
+/// because it would be a no-op pressure.
+pub const MAX_PRESSURE_REDUCTION_PERCENT: u8 = 100;
+
 // ---------------------------------------------------------------------------
 // Raw (post-serde, pre-validation) SL1 scene block.
 // ---------------------------------------------------------------------------
@@ -138,7 +159,7 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub demand: Vec<RawSl1Demand>,
     #[serde(default)]
-    pub pressure: Vec<serde_json::Value>,
+    pub pressure: Vec<RawSl1Pressure>,
     #[serde(default)]
     pub objectives: Vec<serde_json::Value>,
     #[serde(default)]
@@ -747,9 +768,163 @@ pub struct Sl1Demand {
     pub penalty: Sl1DemandPenalty,
 }
 
-/// Placeholder loaded `pressure`. Populated in PR 7.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Pressure;
+/// Raw, post-serde representation of a `pressure[]` entry. Strict
+/// schema (`#[serde(deny_unknown_fields)]`) at this layer rejects any
+/// nested typo, then [`validate_pressure`] does typed per-variant
+/// parameter validation. The discriminator is a free string so unknown
+/// `type` values surface as a typed
+/// [`Sl1LoadError::PressureUnknownType`] instead of serde's generic
+/// "unknown variant" error.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Pressure {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub at_tick: u64,
+    pub duration_ticks: u64,
+    pub target: String,
+    /// Required for `source_multiplier`. Names the `thing` id whose
+    /// inventory is injected at the target place during the active
+    /// window.
+    #[serde(default)]
+    pub thing: Option<String>,
+    /// Required for `source_multiplier`. Authoring uses `f64` for
+    /// human readability (e.g. `4.0`, `0.5`); validation converts to
+    /// milli-units (`4000`, `500`) and stores integers for
+    /// deterministic runtime arithmetic.
+    #[serde(default)]
+    pub multiplier: Option<f64>,
+    /// Required for `demand_growth`. How many additional demand
+    /// instances to enqueue per scheduled spawn while active.
+    /// Effective spawn count = `1 + spawn_multiplier`; the raw author
+    /// number is the multiplier itself (1 = double, 2 = triple, …).
+    #[serde(default)]
+    pub spawn_multiplier: Option<u32>,
+    /// Required for `quota_reduction`. Names the place's capacity
+    /// bucket key (matches `places[*].capacity` key set).
+    #[serde(default)]
+    pub capacity: Option<String>,
+    /// Required for `quota_reduction`. Percent reduction in `1..=100`.
+    #[serde(default)]
+    pub reduction_percent: Option<u8>,
+}
+
+/// Closed enum of all pressure variants accepted in PR 7. The
+/// discriminator is open-string at the raw layer so unknown types
+/// surface as a typed load error; here we lock the variants to ensure
+/// downstream systems can pattern-match exhaustively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1PressureKind {
+    SourceMultiplier,
+    DemandGrowth,
+    QuotaReduction,
+    PathOutage,
+    // The following five variants are recognized by the schema in PR 7
+    // but do not have runtime effects yet. They emit a typed
+    // [`Sl1Warning::PressureUnsupportedInThisPr`] at activation so
+    // authors are never misled into thinking they are silently active.
+    SchemaDrift,
+    DashboardStorm,
+    SpotEvictionWave,
+    StorageMetadataStorm,
+    CoolingDegradation,
+}
+
+impl Sl1PressureKind {
+    /// Canonical string form used in the loader, protocol, and hash.
+    /// Stable across builds; do not rename without bumping the hash
+    /// baseline.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceMultiplier => "source_multiplier",
+            Self::DemandGrowth => "demand_growth",
+            Self::QuotaReduction => "quota_reduction",
+            Self::PathOutage => "path_outage",
+            Self::SchemaDrift => "schema_drift",
+            Self::DashboardStorm => "dashboard_storm",
+            Self::SpotEvictionWave => "spot_eviction_wave",
+            Self::StorageMetadataStorm => "storage_metadata_storm",
+            Self::CoolingDegradation => "cooling_degradation",
+        }
+    }
+
+    /// Whether PR 7 wires a runtime effect for this kind. The four
+    /// "supported" kinds (`source_multiplier`, `demand_growth`,
+    /// `quota_reduction`, `path_outage`) drive overlay state read by
+    /// downstream systems; the rest emit
+    /// [`Sl1Warning::PressureUnsupportedInThisPr`] at activation.
+    #[must_use]
+    pub const fn has_runtime_effect_in_pr7(self) -> bool {
+        matches!(
+            self,
+            Self::SourceMultiplier | Self::DemandGrowth | Self::QuotaReduction | Self::PathOutage,
+        )
+    }
+}
+
+/// Per-variant typed parameters. Each variant only carries the fields
+/// that variant actually uses, so downstream pattern matches cannot
+/// observe stale/nonsensical parameters from other variants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1PressureParams {
+    /// Inject inventory into `target` place's storage of `thing` while
+    /// active. `multiplier_milli` is the author's `multiplier` value
+    /// scaled by 1000 (e.g. `4.0` → `4000`). The runtime computes
+    /// per-tick inflow as `multiplier_milli / 1000` rounded toward
+    /// zero (so `2.5x` → 2 per tick), clamped by storage capacity.
+    SourceMultiplier {
+        thing: String,
+        multiplier_milli: u64,
+    },
+    /// While active, multiply the demand's per-spawn count by
+    /// `1 + spawn_multiplier`. `target` is the demand id.
+    DemandGrowth { spawn_multiplier: u32 },
+    /// While active, reduce the named capacity bucket on `target`
+    /// place by `reduction_percent`. Effective capacity is
+    /// `floor(base * (100 - reduction_percent) / 100)`.
+    QuotaReduction {
+        capacity: String,
+        reduction_percent: u8,
+    },
+    /// While active, mark `target` link as outaged. Link transport is
+    /// not yet implemented in PRs 0–6, so PR 7's runtime only records
+    /// the outage in overlay state and surfaces it via the snapshot;
+    /// transport gating lands when links transport inventory.
+    PathOutage,
+    /// Recognized but not yet wired to a runtime effect. Activation
+    /// emits [`Sl1Warning::PressureUnsupportedInThisPr`] once per
+    /// pressure id, then deactivation proceeds normally.
+    UnsupportedInThisPr,
+}
+
+/// Validated `pressure` primitive (PR 7). Common fields plus
+/// variant-specific [`Sl1PressureParams`]. Scenes carry a stable,
+/// id-sorted `Vec<Sl1Pressure>` so the runtime can iterate
+/// deterministically.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Pressure {
+    pub id: String,
+    pub kind: Sl1PressureKind,
+    pub at_tick: u64,
+    pub duration_ticks: u64,
+    pub target: String,
+    pub params: Sl1PressureParams,
+}
+
+impl Sl1Pressure {
+    /// Last tick (inclusive) during which the pressure is active.
+    /// The active interval is `[at_tick, at_tick + duration_ticks)`,
+    /// so the inclusive last tick is `at_tick + duration_ticks - 1`
+    /// for `duration_ticks > 0`. A `duration_ticks == 0` pressure is
+    /// rejected at load (see [`validate_pressure`]) so this is always
+    /// well-defined.
+    #[must_use]
+    pub fn end_tick(&self) -> u64 {
+        self.at_tick.saturating_add(self.duration_ticks)
+    }
+}
 
 /// Placeholder loaded `objective`. Populated in PR 8.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1508,6 +1683,145 @@ pub enum Sl1LoadError {
          must be non-empty when present"
     )]
     DemandPenaltyWarningEmpty { id: String },
+
+    // ---- Pressure primitive (PR 7) ----------------------------------------
+    /// A pressure `id` is empty, too long, or contains characters outside
+    /// the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.pressure: invalid id {id:?}")]
+    PressureInvalidId { id: String },
+
+    /// Two `pressure[]` entries declared the same `id`.
+    #[error("scenario_language_v1.pressure: duplicate id {id:?}")]
+    PressureDuplicateId { id: String },
+
+    /// The `type` discriminator did not match a known pressure kind.
+    /// Lists the known kinds via [`Sl1PressureKind::as_str`] in the
+    /// error message ordering so authors can copy/paste a valid value.
+    #[error("scenario_language_v1.pressure[{id:?}].type: unknown pressure type {kind:?}")]
+    PressureUnknownType { id: String, kind: String },
+
+    /// A required type-specific field was missing for the chosen
+    /// pressure type. `field` names the missing key; `kind` names the
+    /// pressure type for which the field is required.
+    #[error("scenario_language_v1.pressure[{id:?}]: type {kind:?} requires field {field:?}")]
+    PressureMissingField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// A type-specific field was supplied that the chosen pressure
+    /// type does not consume. Surfaced rather than silently ignored so
+    /// authors are not misled into thinking the parameter takes effect.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}]: type {kind:?} does not accept field {field:?}"
+    )]
+    PressureUnexpectedField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// `duration_ticks` was zero. A zero-duration pressure would
+    /// activate and immediately deactivate on the same tick, which is
+    /// almost certainly an authoring mistake.
+    #[error("scenario_language_v1.pressure[{id:?}].duration_ticks: must be > 0")]
+    PressureDurationZero { id: String },
+
+    /// `at_tick` exceeded the SL1 tick clamp.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}].at_tick: \
+         {value} exceeds max {max}"
+    )]
+    PressureAtTickOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `duration_ticks` exceeded the SL1 tick clamp.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}].duration_ticks: \
+         {value} exceeds max {max}"
+    )]
+    PressureDurationOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `at_tick + duration_ticks` overflowed `u64` or exceeded
+    /// `MAX_PRESSURE_TICKS`. Either way the pressure cannot be
+    /// scheduled deterministically.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}]: \
+         at_tick {at_tick} + duration_ticks {duration_ticks} overflows max {max}"
+    )]
+    PressureEndOverflow {
+        id: String,
+        at_tick: u64,
+        duration_ticks: u64,
+        max: u64,
+    },
+
+    /// The `target` string did not match any declared id of the kind
+    /// expected by this pressure type (place, demand, or link).
+    #[error(
+        "scenario_language_v1.pressure[{id:?}].target: \
+         unknown {expected} {target:?}"
+    )]
+    PressureUnknownTarget {
+        id: String,
+        expected: &'static str,
+        target: String,
+    },
+
+    /// `source_multiplier.thing` named an undeclared thing id.
+    #[error("scenario_language_v1.pressure[{id:?}].thing: unknown thing {thing:?}")]
+    PressureUnknownThing { id: String, thing: String },
+
+    /// `source_multiplier.thing` was not declared in the target
+    /// place's `storage` map. Without a matching storage slot the
+    /// runtime has nowhere to inject inventory.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}]: \
+         target place {place:?} has no storage slot for thing {thing:?}"
+    )]
+    PressureNoStorageSlot {
+        id: String,
+        place: String,
+        thing: String,
+    },
+
+    /// `quota_reduction.capacity` named a capacity bucket that is not
+    /// declared in the target place's `capacity` map.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}]: \
+         target place {place:?} has no capacity bucket {capacity:?}"
+    )]
+    PressureUnknownCapacityBucket {
+        id: String,
+        place: String,
+        capacity: String,
+    },
+
+    /// `multiplier` is non-finite (NaN/inf), zero, negative, or
+    /// exceeds the milli-unit cap.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}].multiplier: \
+         {value} out of allowed range (0, {max_milli} milli-units]"
+    )]
+    PressureMultiplierOutOfRange {
+        id: String,
+        value: String,
+        max_milli: u64,
+    },
+
+    /// `spawn_multiplier` is zero or exceeds the spawn-multiplier cap.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}].spawn_multiplier: \
+         {value} out of allowed range [1, {max}]"
+    )]
+    PressureSpawnMultiplierOutOfRange { id: String, value: u32, max: u32 },
+
+    /// `reduction_percent` is zero or exceeds 100.
+    #[error(
+        "scenario_language_v1.pressure[{id:?}].reduction_percent: \
+         {value} out of allowed range [1, {max}]"
+    )]
+    PressureReductionPercentOutOfRange { id: String, value: u8, max: u8 },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -1585,6 +1899,22 @@ pub enum Sl1Warning {
     /// re-entry) when outstanding drops below the cap.
     #[error("demand {demand_id:?} backlog overflow at tick {tick}")]
     DemandBacklogOverflow { demand_id: String, tick: u64 },
+
+    /// A pressure activated, but its variant has no runtime effect in
+    /// this build. Emitted exactly once per pressure instance, at the
+    /// activation tick, so authors are never misled into thinking a
+    /// scheduled pressure is silently driving behavior. Surfaces for
+    /// `schema_drift`, `dashboard_storm`, `spot_eviction_wave`,
+    /// `storage_metadata_storm`, and `cooling_degradation` in PR 7.
+    #[error(
+        "pressure {pressure_id:?} ({kind:?}) activated at tick {tick} \
+         but no runtime effect is wired in this build"
+    )]
+    PressureUnsupportedInThisPr {
+        pressure_id: String,
+        kind: &'static str,
+        tick: u64,
+    },
 }
 
 /// Fatal SL1 engine faults. Populated in later PRs. PR 0 emits none.
@@ -1674,6 +2004,52 @@ pub struct Sl1RuntimeState {
     /// optimization), and a one-shot overflow flag so backlog
     /// warnings are not re-emitted every tick.
     pub demand: std::collections::BTreeMap<String, Sl1DemandRuntime>,
+    /// Per-tick pressure overlay state (PR 7). Rebuilt at the start of
+    /// every tick by `crate::sl1_pressure::run` before transforms and
+    /// demand fire, so downstream systems read the overlay (effective
+    /// capacity, effective demand spawn count, outaged links) instead
+    /// of mutating the immutable base scene.
+    pub pressure: Sl1PressureRuntime,
+}
+
+/// Per-tick pressure overlay (PR 7).
+///
+/// `active` is the source of truth for which pressures are currently
+/// firing; the other maps are derived overlays rebuilt from `active`
+/// at the start of every tick. `source_inject_carry_milli` and
+/// `unsupported_warned` persist across ticks because they encode
+/// runtime state (fractional injection accumulators and one-shot
+/// edge-triggered warnings) that derived-each-tick overlays cannot.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Sl1PressureRuntime {
+    /// Currently active pressure id → activation tick. Stable order via
+    /// `BTreeMap`.
+    pub active: std::collections::BTreeMap<String, u64>,
+    /// Effective spawn multiplier per demand id from active
+    /// `demand_growth` pressures. Final spawn count per scheduled
+    /// firing is `1 + sum(multipliers)`.
+    pub demand_spawn_multiplier: std::collections::BTreeMap<String, u32>,
+    /// Effective capacity reduction percent per (place_id,
+    /// capacity_bucket). Sum is capped at 100 to keep the effective
+    /// capacity well-defined.
+    pub quota_reduction: std::collections::BTreeMap<(String, String), u8>,
+    /// Set of currently outaged link ids.
+    pub outaged_links: std::collections::BTreeSet<String>,
+    /// Per-(pressure_id, place_id, thing_id) fractional injection
+    /// accumulator in milli-units. `run_pressure` adds the active
+    /// pressure's `multiplier_milli` each tick and flushes whole units
+    /// (≥ 1000) into `runtime.inventories`, clamping by the storage
+    /// capacity. The remainder carries forward so fractional rates
+    /// (e.g. 2.5x) stay deterministic across the entire active window.
+    /// **Keying by pressure_id is essential** so a deactivated pressure's
+    /// leftover carry cannot leak into a later, distinct pressure
+    /// targeting the same (place, thing) — deactivation must remove
+    /// all entries with that pressure_id.
+    pub source_inject_carry_milli: std::collections::BTreeMap<(String, String, String), u64>,
+    /// Pressure ids whose `PressureUnsupportedInThisPr` warning has
+    /// already been emitted. Edge-triggered: cleared on deactivation
+    /// so re-scheduled pressures (future PRs) re-arm the warning.
+    pub unsupported_warned: std::collections::BTreeSet<String>,
 }
 
 /// Per-demand live state (PR 5).
@@ -1826,6 +2202,7 @@ impl Sl1RuntimeState {
             place_capacity_used,
             pending_outputs: std::collections::BTreeMap::new(),
             demand,
+            pressure: Sl1PressureRuntime::default(),
         }
     }
 }
@@ -1932,7 +2309,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.pressure, "pressure");
     reject_non_empty!(raw.objectives, "objectives");
     reject_non_empty!(raw.failure_conditions, "failure_conditions");
     reject_non_empty!(raw.agents, "agents");
@@ -2068,6 +2444,31 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     }
     demand.sort_by(|a, b| a.id.cmp(&b.id));
 
+    // Validate pressure (PR 7). Cross-validates targets against
+    // declared place / demand / link ids (per-variant), and
+    // type-specific parameters such as multiplier / spawn_multiplier /
+    // reduction_percent / capacity bucket / storage slot.
+    let link_ids: std::collections::BTreeSet<String> = links.iter().map(|l| l.id.clone()).collect();
+    let demand_ids: std::collections::BTreeSet<String> =
+        demand.iter().map(|d| d.id.clone()).collect();
+    let mut pressure: Vec<Sl1Pressure> = Vec::with_capacity(raw.pressure.len());
+    let mut seen_pressure_ids: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for raw_pressure in raw.pressure {
+        let p = validate_pressure(
+            raw_pressure,
+            &places_by_id,
+            &thing_ids,
+            &demand_ids,
+            &link_ids,
+        )?;
+        if !seen_pressure_ids.insert(p.id.clone()) {
+            return Err(Sl1LoadError::PressureDuplicateId { id: p.id });
+        }
+        pressure.push(p);
+    }
+    pressure.sort_by(|a, b| a.id.cmp(&b.id));
+
     // The optional observability block must be an empty object until
     // PR 9 implements its schema.
     let observability = if let Some(value) = raw.observability {
@@ -2098,7 +2499,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         things,
         transforms,
         demand,
-        pressure: Vec::new(),
+        pressure,
         objectives: Vec::new(),
         failure_conditions: Vec::new(),
         agents: Vec::new(),
@@ -3170,6 +3571,341 @@ fn validate_demand_penalty(
 }
 
 // ---------------------------------------------------------------------------
+// Pressure validation (PR 7).
+// ---------------------------------------------------------------------------
+
+fn validate_pressure(
+    raw: RawSl1Pressure,
+    places_by_id: &std::collections::BTreeMap<&str, &Sl1Place>,
+    thing_ids: &std::collections::BTreeSet<String>,
+    demand_ids: &std::collections::BTreeSet<String>,
+    link_ids: &std::collections::BTreeSet<String>,
+) -> Result<Sl1Pressure, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::PressureInvalidId { id: raw.id });
+    }
+    if raw.duration_ticks == 0 {
+        return Err(Sl1LoadError::PressureDurationZero { id: raw.id });
+    }
+    if raw.at_tick > MAX_PRESSURE_TICKS {
+        return Err(Sl1LoadError::PressureAtTickOutOfRange {
+            id: raw.id,
+            value: raw.at_tick,
+            max: MAX_PRESSURE_TICKS,
+        });
+    }
+    if raw.duration_ticks > MAX_PRESSURE_TICKS {
+        return Err(Sl1LoadError::PressureDurationOutOfRange {
+            id: raw.id,
+            value: raw.duration_ticks,
+            max: MAX_PRESSURE_TICKS,
+        });
+    }
+    let end = raw.at_tick.checked_add(raw.duration_ticks);
+    match end {
+        None => {
+            return Err(Sl1LoadError::PressureEndOverflow {
+                id: raw.id,
+                at_tick: raw.at_tick,
+                duration_ticks: raw.duration_ticks,
+                max: MAX_PRESSURE_TICKS,
+            });
+        }
+        Some(e) if e > MAX_PRESSURE_TICKS => {
+            return Err(Sl1LoadError::PressureEndOverflow {
+                id: raw.id,
+                at_tick: raw.at_tick,
+                duration_ticks: raw.duration_ticks,
+                max: MAX_PRESSURE_TICKS,
+            });
+        }
+        Some(_) => {}
+    }
+
+    // Resolve the typed kind via canonical string. Unknown kinds
+    // surface a dedicated load error rather than serde's generic
+    // "unknown variant" message.
+    let kind = match raw.kind.as_str() {
+        "source_multiplier" => Sl1PressureKind::SourceMultiplier,
+        "demand_growth" => Sl1PressureKind::DemandGrowth,
+        "quota_reduction" => Sl1PressureKind::QuotaReduction,
+        "path_outage" => Sl1PressureKind::PathOutage,
+        "schema_drift" => Sl1PressureKind::SchemaDrift,
+        "dashboard_storm" => Sl1PressureKind::DashboardStorm,
+        "spot_eviction_wave" => Sl1PressureKind::SpotEvictionWave,
+        "storage_metadata_storm" => Sl1PressureKind::StorageMetadataStorm,
+        "cooling_degradation" => Sl1PressureKind::CoolingDegradation,
+        other => {
+            return Err(Sl1LoadError::PressureUnknownType {
+                id: raw.id,
+                kind: other.to_string(),
+            });
+        }
+    };
+
+    // Target must be non-empty regardless of variant — the runtime
+    // always reports the pressure in events keyed by `(id, target)`.
+    if raw.target.trim().is_empty() {
+        return Err(Sl1LoadError::PressureMissingField {
+            id: raw.id,
+            kind: kind.as_str(),
+            field: "target",
+        });
+    }
+
+    // Per-variant parameter validation. We also reject parameters
+    // that this variant does not consume to catch authoring typos
+    // (e.g. setting `multiplier` on a `quota_reduction`).
+    let params = match kind {
+        Sl1PressureKind::SourceMultiplier => {
+            // Disallow stray fields for other variants.
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "spawn_multiplier",
+                raw.spawn_multiplier.is_some(),
+            )?;
+            reject_pressure_field(&raw.id, kind.as_str(), "capacity", raw.capacity.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "reduction_percent",
+                raw.reduction_percent.is_some(),
+            )?;
+
+            let thing = require_pressure_field(&raw.id, kind.as_str(), "thing", raw.thing.clone())?;
+            if !thing_ids.contains(&thing) {
+                return Err(Sl1LoadError::PressureUnknownThing { id: raw.id, thing });
+            }
+            let place = places_by_id.get(raw.target.as_str()).ok_or_else(|| {
+                Sl1LoadError::PressureUnknownTarget {
+                    id: raw.id.clone(),
+                    expected: "place",
+                    target: raw.target.clone(),
+                }
+            })?;
+            if !place.storage.contains_key(&thing) {
+                return Err(Sl1LoadError::PressureNoStorageSlot {
+                    id: raw.id,
+                    place: raw.target,
+                    thing,
+                });
+            }
+            let multiplier =
+                require_pressure_field(&raw.id, kind.as_str(), "multiplier", raw.multiplier)?;
+            // Convert to milli-units. Reject non-finite or
+            // non-positive values; cap at MAX_PRESSURE_MULTIPLIER_MILLI.
+            if !multiplier.is_finite() || multiplier <= 0.0 {
+                return Err(Sl1LoadError::PressureMultiplierOutOfRange {
+                    id: raw.id,
+                    value: format!("{multiplier}"),
+                    max_milli: MAX_PRESSURE_MULTIPLIER_MILLI,
+                });
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let milli = (multiplier * 1000.0).round() as u64;
+            if milli == 0 || milli > MAX_PRESSURE_MULTIPLIER_MILLI {
+                return Err(Sl1LoadError::PressureMultiplierOutOfRange {
+                    id: raw.id,
+                    value: format!("{multiplier}"),
+                    max_milli: MAX_PRESSURE_MULTIPLIER_MILLI,
+                });
+            }
+            Sl1PressureParams::SourceMultiplier {
+                thing,
+                multiplier_milli: milli,
+            }
+        }
+        Sl1PressureKind::DemandGrowth => {
+            reject_pressure_field(&raw.id, kind.as_str(), "thing", raw.thing.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "multiplier",
+                raw.multiplier.is_some(),
+            )?;
+            reject_pressure_field(&raw.id, kind.as_str(), "capacity", raw.capacity.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "reduction_percent",
+                raw.reduction_percent.is_some(),
+            )?;
+            if !demand_ids.contains(&raw.target) {
+                return Err(Sl1LoadError::PressureUnknownTarget {
+                    id: raw.id,
+                    expected: "demand",
+                    target: raw.target,
+                });
+            }
+            let spawn = require_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "spawn_multiplier",
+                raw.spawn_multiplier,
+            )?;
+            if spawn == 0 || spawn > MAX_PRESSURE_SPAWN_MULTIPLIER {
+                return Err(Sl1LoadError::PressureSpawnMultiplierOutOfRange {
+                    id: raw.id,
+                    value: spawn,
+                    max: MAX_PRESSURE_SPAWN_MULTIPLIER,
+                });
+            }
+            Sl1PressureParams::DemandGrowth {
+                spawn_multiplier: spawn,
+            }
+        }
+        Sl1PressureKind::QuotaReduction => {
+            reject_pressure_field(&raw.id, kind.as_str(), "thing", raw.thing.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "multiplier",
+                raw.multiplier.is_some(),
+            )?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "spawn_multiplier",
+                raw.spawn_multiplier.is_some(),
+            )?;
+            let place = places_by_id.get(raw.target.as_str()).ok_or_else(|| {
+                Sl1LoadError::PressureUnknownTarget {
+                    id: raw.id.clone(),
+                    expected: "place",
+                    target: raw.target.clone(),
+                }
+            })?;
+            let capacity =
+                require_pressure_field(&raw.id, kind.as_str(), "capacity", raw.capacity.clone())?;
+            if !place.capacity.contains_key(&capacity) {
+                return Err(Sl1LoadError::PressureUnknownCapacityBucket {
+                    id: raw.id,
+                    place: raw.target,
+                    capacity,
+                });
+            }
+            let reduction = require_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "reduction_percent",
+                raw.reduction_percent,
+            )?;
+            if reduction == 0 || reduction > MAX_PRESSURE_REDUCTION_PERCENT {
+                return Err(Sl1LoadError::PressureReductionPercentOutOfRange {
+                    id: raw.id,
+                    value: reduction,
+                    max: MAX_PRESSURE_REDUCTION_PERCENT,
+                });
+            }
+            Sl1PressureParams::QuotaReduction {
+                capacity,
+                reduction_percent: reduction,
+            }
+        }
+        Sl1PressureKind::PathOutage => {
+            reject_pressure_field(&raw.id, kind.as_str(), "thing", raw.thing.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "multiplier",
+                raw.multiplier.is_some(),
+            )?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "spawn_multiplier",
+                raw.spawn_multiplier.is_some(),
+            )?;
+            reject_pressure_field(&raw.id, kind.as_str(), "capacity", raw.capacity.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "reduction_percent",
+                raw.reduction_percent.is_some(),
+            )?;
+            if !link_ids.contains(&raw.target) {
+                return Err(Sl1LoadError::PressureUnknownTarget {
+                    id: raw.id,
+                    expected: "link",
+                    target: raw.target,
+                });
+            }
+            Sl1PressureParams::PathOutage
+        }
+        // Recognized-but-unsupported. These accept the common fields
+        // but reject all type-specific fields so the schema stays
+        // honest and authors are warned that nothing happens at run
+        // time. Activation emits Sl1Warning::PressureUnsupportedInThisPr.
+        Sl1PressureKind::SchemaDrift
+        | Sl1PressureKind::DashboardStorm
+        | Sl1PressureKind::SpotEvictionWave
+        | Sl1PressureKind::StorageMetadataStorm
+        | Sl1PressureKind::CoolingDegradation => {
+            reject_pressure_field(&raw.id, kind.as_str(), "thing", raw.thing.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "multiplier",
+                raw.multiplier.is_some(),
+            )?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "spawn_multiplier",
+                raw.spawn_multiplier.is_some(),
+            )?;
+            reject_pressure_field(&raw.id, kind.as_str(), "capacity", raw.capacity.is_some())?;
+            reject_pressure_field(
+                &raw.id,
+                kind.as_str(),
+                "reduction_percent",
+                raw.reduction_percent.is_some(),
+            )?;
+            Sl1PressureParams::UnsupportedInThisPr
+        }
+    };
+
+    Ok(Sl1Pressure {
+        id: raw.id,
+        kind,
+        at_tick: raw.at_tick,
+        duration_ticks: raw.duration_ticks,
+        target: raw.target,
+        params,
+    })
+}
+
+fn require_pressure_field<T>(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    value: Option<T>,
+) -> Result<T, Sl1LoadError> {
+    value.ok_or_else(|| Sl1LoadError::PressureMissingField {
+        id: id.to_string(),
+        kind,
+        field,
+    })
+}
+
+fn reject_pressure_field(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    present: bool,
+) -> Result<(), Sl1LoadError> {
+    if present {
+        return Err(Sl1LoadError::PressureUnexpectedField {
+            id: id.to_string(),
+            kind,
+            field,
+        });
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests.
 // ---------------------------------------------------------------------------
 
@@ -3272,14 +4008,14 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 7-11 have no behavior for their primitive — even a
+        // PRs 8-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
         // proto-SL1 scene would silently no-op. PR 1 removed `places`,
         // PR 2 removed `links`, PR 3 removed `things`, PR 4 removed
-        // `transforms`, and PR 5 removed `demand` from this guard
-        // because all five are now typed and validated.
+        // `transforms`, PR 5 removed `demand`, and PR 7 removed
+        // `pressure` from this guard because all six are now typed
+        // and validated.
         for (json, expected_section) in [
-            (r#"{"pressure": [{}]}"#, "pressure"),
             (r#"{"objectives": [{}]}"#, "objectives"),
             (r#"{"failure_conditions": [{}]}"#, "failure_conditions"),
             (r#"{"agents": [{}]}"#, "agents"),

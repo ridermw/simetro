@@ -137,6 +137,13 @@ pub struct StaticPayload {
     /// for deterministic ordering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_demand: Vec<Sl1DemandView>,
+    /// SL1 pressure definitions for this scene. PR 7. Static metadata
+    /// only — activation/deactivation occur via [`SimEvent`] and the
+    /// "unsupported in this build" surface goes through
+    /// [`WarningPayload`]. Empty for non-SL1 scenes and for SL1 scenes
+    /// with no `pressure`. Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_pressure: Vec<Sl1PressureView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -409,6 +416,58 @@ pub struct Sl1DemandPenaltyView {
     pub warning: Option<String>,
 }
 
+/// Wire-level view of one validated SL1 pressure (PR 7). Mirrors
+/// `engine::scenario_language_v1::Sl1Pressure` 1:1. `kind` is the
+/// canonical snake_case discriminator
+/// ([`Sl1PressureKind::as_str`](../engine/scenario_language_v1/enum.Sl1PressureKind.html));
+/// `params` carries the per-variant typed parameters or
+/// `unsupported_in_this_pr` for recognized-but-inert kinds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1PressureView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub at_tick: u64,
+    pub duration_ticks: u64,
+    pub target: String,
+    pub params: Sl1PressureParamsView,
+}
+
+/// Wire-level pressure parameter payload, tagged by `kind` so unknown
+/// variants in older clients surface as a parse error instead of a
+/// silent default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1PressureParamsView {
+    SourceMultiplier {
+        thing: String,
+        /// Multiplier expressed in milli-units (e.g. `4.0x` is
+        /// `4000`). Wire format avoids floating-point round-tripping.
+        multiplier_milli: u64,
+    },
+    DemandGrowth {
+        spawn_multiplier: u32,
+    },
+    QuotaReduction {
+        capacity: String,
+        reduction_percent: u8,
+    },
+    PathOutage,
+    UnsupportedInThisPr,
+}
+
+/// Edge-triggered pressure lifecycle events. Each pressure id emits
+/// exactly one `Activated` event at `at_tick` and exactly one
+/// `Deactivated` event at `at_tick + duration_ticks` (the inclusive
+/// end). `kind` is the canonical snake_case discriminator so UI/replay
+/// can render without re-resolving against the static payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1PressureEventKind {
+    Activated,
+    Deactivated,
+}
+
 /// Wire-level snapshot of one demand's runtime state for a tick. PR 5.
 /// `outstanding` = current Pending instances. `fulfilled_count` and
 /// `dropped_count` are cumulative monotonic counters since scene
@@ -520,6 +579,17 @@ pub enum SimEvent {
         /// downstream consumers can correlate with [`AgentReport`].
         agent_id: String,
         action: ActionTag,
+    },
+    /// A scheduled SL1 pressure crossed an activation boundary.
+    /// `event` distinguishes start vs end; the engine emits exactly
+    /// one of each per pressure id per scheduled occurrence.
+    /// `pressure_kind` is the canonical snake_case discriminator so
+    /// consumers do not have to re-resolve against the static payload.
+    Sl1PressureLifecycle {
+        pressure_id: String,
+        pressure_kind: String,
+        event: Sl1PressureEventKind,
+        tick: u64,
     },
 }
 
@@ -666,6 +736,20 @@ pub enum WarningPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         penalty_warning: Option<String>,
     },
+    /// SL1 pressure observability warning (PR 7). Currently used to
+    /// surface "pressure activated but no runtime effect is wired in
+    /// this build" once per pressure id, so authors are never misled
+    /// into thinking a scheduled `dashboard_storm` / `schema_drift` /
+    /// `spot_eviction_wave` / `storage_metadata_storm` /
+    /// `cooling_degradation` is silently driving behavior. Future PRs
+    /// add `EffectClamped` and similar variants as the runtime grows.
+    Sl1Pressure {
+        pressure_id: String,
+        event: Sl1PressureWarningKind,
+        /// Canonical snake_case pressure kind ([`Sl1PressureView::kind`]).
+        pressure_kind: String,
+        tick: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -687,6 +771,18 @@ pub enum Sl1TransformWarningKind {
 pub enum Sl1DemandWarningKind {
     Dropped,
     BacklogOverflow,
+}
+
+/// SL1 pressure observability warning (PR 7).
+///
+/// `UnsupportedInThisPr` fires exactly once per pressure id at the
+/// activation tick when the variant is recognized by the schema but
+/// has no runtime effect wired in the current build. Future PRs add
+/// `EffectClamped` etc.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1PressureWarningKind {
+    UnsupportedInThisPr,
 }
 
 // =====================================================================
@@ -1018,6 +1114,7 @@ mod tests {
             sl1_things: Vec::new(),
             sl1_transforms: Vec::new(),
             sl1_demand: Vec::new(),
+            sl1_pressure: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -1112,6 +1209,7 @@ mod tests {
             sl1_things: Vec::new(),
             sl1_transforms: Vec::new(),
             sl1_demand: Vec::new(),
+            sl1_pressure: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -1144,6 +1242,7 @@ mod tests {
             sl1_things: vec![],
             sl1_transforms: vec![],
             sl1_demand: vec![],
+            sl1_pressure: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -1202,6 +1301,7 @@ mod tests {
             sl1_things: vec![],
             sl1_transforms: vec![],
             sl1_demand: vec![],
+            sl1_pressure: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);

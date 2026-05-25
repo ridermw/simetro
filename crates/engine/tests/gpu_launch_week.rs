@@ -52,6 +52,11 @@ fn scene_loads_and_exposes_sl1_static_metadata() {
         "gpu-launch-week declares three transforms"
     );
     assert_eq!(sl1.demand.len(), 1, "gpu-launch-week declares one demand");
+    assert_eq!(
+        sl1.pressure.len(),
+        2,
+        "gpu-launch-week declares two pressures (PR 7)"
+    );
 
     // The protocol static payload mirrors the SL1 metadata so the
     // frontend (and replay) can render topology without reaching into
@@ -62,6 +67,7 @@ fn scene_loads_and_exposes_sl1_static_metadata() {
     assert_eq!(static_payload.sl1_things.len(), 4);
     assert_eq!(static_payload.sl1_transforms.len(), 3);
     assert_eq!(static_payload.sl1_demand.len(), 1);
+    assert_eq!(static_payload.sl1_pressure.len(), 2);
 }
 
 #[test]
