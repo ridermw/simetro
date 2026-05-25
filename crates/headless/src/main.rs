@@ -753,7 +753,7 @@ fn package_bundle_tar(
     // HeaderMode::Complete which records the live filesystem
     // mtime/uid/gid. That breaks byte-for-byte reproducibility
     // across runs/machines. Deterministic mode zeroes those fields.
-    builder.mode(tar::HeaderMode::Deterministic);
+    // builder.mode(tar::HeaderMode::Deterministic);
     let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(bundle_dir)?
         .filter_map(Result::ok)
         .map(|e| e.path())
