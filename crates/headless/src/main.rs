@@ -949,26 +949,43 @@ mod tests {
         let _ = std::fs::remove_file(&tar_path);
     }
 
-    /// Per Codex PR #24 R1 P1: building the same directory contents
-    /// twice MUST produce identical tar bytes. With the default
-    /// `HeaderMode::Complete` this fails (mtime/uid differ). With
-    /// `HeaderMode::Deterministic` the headers are zeroed.
+    /// Per Codex PR #24 R1 P1 + R2: building the same directory
+    /// contents twice MUST produce identical tar bytes. With the
+    /// default `HeaderMode::Complete` this fails (mtime/uid differ).
+    /// With `HeaderMode::Deterministic` the headers are zeroed.
+    ///
+    /// R2 caught that an earlier version of this test was
+    /// tautological: tar-ing the same on-disk files twice reads
+    /// identical mtimes. We now RECREATE the files between runs
+    /// (with a sleep to force a different on-disk mtime), so the
+    /// assertion genuinely fails under `HeaderMode::Complete`.
     #[test]
     fn package_bundle_tar_is_byte_for_byte_reproducible() {
         let tmp = std::env::temp_dir().join(format!("simetro-tar-determ-{}", std::process::id()));
+        let tar1 = tmp.with_extension("tar.1");
+        let tar2 = tmp.with_extension("tar.2");
         let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&tar1);
+        let _ = std::fs::remove_file(&tar2);
+
+        // First build: create dir + files, tar, tear down.
         std::fs::create_dir_all(&tmp).unwrap();
         std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
         std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
-
-        let tar1 = tmp.with_extension("tar.1");
-        let tar2 = tmp.with_extension("tar.2");
-        let _ = std::fs::remove_file(&tar1);
-        let _ = std::fs::remove_file(&tar2);
         super::package_bundle_tar(&tmp, &tar1).unwrap();
-        // Sleep so any mtime-recording variant produces a different
-        // timestamp between the two builds.
+        std::fs::remove_dir_all(&tmp).unwrap();
+
+        // Sleep past the per-second mtime resolution of common
+        // filesystems (ext4/HFS+/NTFS).
         std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // Second build: identical content but fresh on-disk mtimes.
+        // Under HeaderMode::Complete the tar headers would reflect
+        // the new mtime → tarballs would differ. Under
+        // HeaderMode::Deterministic they're zeroed → identical bytes.
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
         super::package_bundle_tar(&tmp, &tar2).unwrap();
 
         let bytes1 = std::fs::read(&tar1).unwrap();
@@ -976,7 +993,8 @@ mod tests {
         assert_eq!(
             bytes1, bytes2,
             "tarballs must be byte-for-byte identical across runs \
-             (HeaderMode::Deterministic should zero mtime/uid/gid)"
+             with fresh on-disk mtimes (HeaderMode::Deterministic \
+             should zero mtime/uid/gid)"
         );
 
         let _ = std::fs::remove_dir_all(&tmp);
