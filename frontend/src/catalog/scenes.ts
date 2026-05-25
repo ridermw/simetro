@@ -1081,8 +1081,6 @@ export const SCENE_CATALOG = [
     ],
     status: "ready",
   }),
-    status: "draft",
-  }),
   defineScene({
     id: "sandwich-shop",
     title: "Sandwich Shop",
@@ -1216,10 +1214,6 @@ export const SCENE_CATALOG = [
     ],
     status: "draft",
   }),
-] as const satisfies readonly SceneCatalogEntry[];
-
-export type SceneCatalogId = (typeof SCENE_CATALOG)[number]["id"];
-
 ] as const satisfies readonly SceneCatalogEntry[];
 
 export type SceneCatalogId = (typeof SCENE_CATALOG)[number]["id"];
