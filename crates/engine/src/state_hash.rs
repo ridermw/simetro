@@ -324,6 +324,35 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-demand static fingerprint (PR 5). Demands are sorted by id
+    // at validation time. Gated on `!demand.is_empty()` so existing
+    // baselines (sl1-empty, sl1-places, sl1-links, sl1-things,
+    // sl1-transforms) remain stable.
+    if !sl1.demand.is_empty() {
+        for d in &sl1.demand {
+            h.update(b"sl1.demand.v1");
+            feed_str(h, &d.id);
+            feed_str(h, &d.kind);
+            feed_demand_target(h, &d.target);
+            h.update((d.requires.len() as u64).to_le_bytes());
+            for r in &d.requires {
+                feed_str(h, r);
+            }
+            feed_demand_schedule(h, &d.spawn_schedule);
+            h.update(d.deadline_ticks.to_le_bytes());
+            h.update([demand_priority_tag(d.priority)]);
+            h.update(d.value.to_le_bytes());
+            h.update(d.penalty.score.to_le_bytes());
+            match &d.penalty.warning {
+                Some(w) => {
+                    h.update([0x01]);
+                    feed_str(h, w);
+                }
+                None => h.update([0x00]),
+            }
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -367,6 +396,67 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
                 }
             }
         }
+        // Per-tick demand runtime fingerprint (PR 5). Gated on demand
+        // being present so older baselines stay stable.
+        if !sl1.demand.is_empty() {
+            h.update(b"sl1.runtime.demand.v1");
+            h.update((runtime.demand.len() as u64).to_le_bytes());
+            for (did, dr) in &runtime.demand {
+                feed_str(h, did);
+                h.update(dr.next_sequence.to_le_bytes());
+                h.update(dr.fulfilled_count.to_le_bytes());
+                h.update(dr.dropped_count.to_le_bytes());
+                h.update((dr.scripted_cursor as u64).to_le_bytes());
+                h.update([if dr.overflow { 1u8 } else { 0u8 }]);
+                h.update((dr.pending.len() as u64).to_le_bytes());
+                for instance in &dr.pending {
+                    h.update(instance.sequence.to_le_bytes());
+                    h.update(instance.spawned_at.to_le_bytes());
+                    h.update(instance.deadline_tick.to_le_bytes());
+                }
+            }
+        }
+    }
+}
+
+fn feed_demand_target(h: &mut Sha256, t: &crate::scenario_language_v1::Sl1DemandTarget) {
+    use crate::scenario_language_v1::Sl1DemandTarget::*;
+    match t {
+        Place(id) => {
+            h.update([0x01]);
+            feed_str(h, id);
+        }
+    }
+}
+
+fn feed_demand_schedule(h: &mut Sha256, s: &crate::scenario_language_v1::Sl1DemandSchedule) {
+    use crate::scenario_language_v1::Sl1DemandSchedule::*;
+    match s {
+        Fixed {
+            every_ticks,
+            start_tick,
+        } => {
+            h.update([0x01]);
+            h.update(every_ticks.to_le_bytes());
+            h.update(start_tick.to_le_bytes());
+        }
+        Scripted { ticks } => {
+            h.update([0x02]);
+            h.update((ticks.len() as u64).to_le_bytes());
+            for t in ticks {
+                h.update(t.to_le_bytes());
+            }
+        }
+    }
+}
+
+fn demand_priority_tag(p: crate::scenario_language_v1::Sl1DemandPriority) -> u8 {
+    use crate::scenario_language_v1::Sl1DemandPriority::*;
+    match p {
+        Low => 1,
+        Normal => 2,
+        High => 3,
+        Critical => 4,
     }
 }
 
@@ -656,6 +746,41 @@ fn feed_warning(h: &mut Sha256, w: &WarningPayload) {
                 None => h.update([0x00]),
             }
         }
+        WarningPayload::Sl1Demand {
+            demand_id,
+            event,
+            tick,
+            sequence,
+            value,
+            penalty_score,
+        } => {
+            h.update([0x35]);
+            h.update((demand_id.len() as u64).to_le_bytes());
+            h.update(demand_id.as_bytes());
+            h.update([sl1_demand_warning_tag(*event)]);
+            h.update(tick.to_le_bytes());
+            match sequence {
+                Some(s) => {
+                    h.update([0x01]);
+                    h.update(s.to_le_bytes());
+                }
+                None => h.update([0x00]),
+            }
+            match value {
+                Some(v) => {
+                    h.update([0x01]);
+                    h.update(v.to_le_bytes());
+                }
+                None => h.update([0x00]),
+            }
+            match penalty_score {
+                Some(p) => {
+                    h.update([0x01]);
+                    h.update(p.to_le_bytes());
+                }
+                None => h.update([0x00]),
+            }
+        }
     }
 }
 
@@ -667,6 +792,14 @@ fn sl1_transform_warning_tag(event: simetro_protocol::Sl1TransformWarningKind) -
         K::Late => 0x03,
         K::Failed => 0x04,
         K::SlotMissed => 0x05,
+    }
+}
+
+fn sl1_demand_warning_tag(event: simetro_protocol::Sl1DemandWarningKind) -> u8 {
+    use simetro_protocol::Sl1DemandWarningKind as K;
+    match event {
+        K::Dropped => 0x01,
+        K::BacklogOverflow => 0x02,
     }
 }
 

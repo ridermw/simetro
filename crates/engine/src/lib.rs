@@ -50,11 +50,14 @@ pub use loader::{load_scene_str, AgentSpec, Goal, IdMap, LoadedScene, Theme};
 pub use rng::SimRng;
 pub use scenario_language_v1::{
     load_str as load_sl1_str, load_value as load_sl1_value, validate as validate_sl1,
-    FreshnessState, GameOutcome, RawSl1Scene, Sl1Agent, Sl1Demand, Sl1FailureCondition,
-    Sl1FailurePolicy, Sl1Fault, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1LinkRenderHint,
-    Sl1LoadError, Sl1Milestone, Sl1Objective, Sl1Observability, Sl1Place, Sl1Pressure,
-    Sl1RuntimeState, Sl1Scene, Sl1Thing, Sl1ThingQualityContract, Sl1ThingRenderHint, Sl1Transform,
-    Sl1TransformIo, Sl1TransformState, Sl1Warning, MAX_TRANSFORM_AMOUNT,
+    FreshnessState, GameOutcome, RawSl1Scene, Sl1Agent, Sl1Demand, Sl1DemandInstance,
+    Sl1DemandPenalty, Sl1DemandPriority, Sl1DemandRuntime, Sl1DemandSchedule, Sl1DemandTarget,
+    Sl1FailureCondition, Sl1FailurePolicy, Sl1Fault, Sl1Link, Sl1LinkBackpressure,
+    Sl1LinkDirection, Sl1LinkRenderHint, Sl1LoadError, Sl1Milestone, Sl1Objective,
+    Sl1Observability, Sl1Place, Sl1Pressure, Sl1RuntimeState, Sl1Scene, Sl1Thing,
+    Sl1ThingQualityContract, Sl1ThingRenderHint, Sl1Transform, Sl1TransformIo, Sl1TransformState,
+    Sl1Warning, MAX_DEMAND_OUTSTANDING, MAX_DEMAND_PENALTY_SCORE, MAX_DEMAND_REQUIRES,
+    MAX_DEMAND_SCRIPTED_TICKS, MAX_DEMAND_TICKS, MAX_DEMAND_VALUE, MAX_TRANSFORM_AMOUNT,
     MAX_TRANSFORM_CAPACITY_COST, MAX_TRANSFORM_MAX_ATTEMPTS, MAX_TRANSFORM_TICKS,
     SL1_SCHEMA_VERSION,
 };

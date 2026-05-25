@@ -130,6 +130,13 @@ pub struct StaticPayload {
     /// for deterministic ordering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_transforms: Vec<Sl1TransformView>,
+    /// SL1 demand definitions for this scene. PR 5. Static
+    /// metadata only; per-tick outstanding/fulfilled/dropped counts
+    /// go in [`SnapshotPayload::sl1_demand_states`]. Empty for non-SL1
+    /// scenes and for SL1 scenes with no `demand`. Sorted by `id`
+    /// for deterministic ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_demand: Vec<Sl1DemandView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -354,6 +361,67 @@ pub struct Sl1TransformRuntimeView {
     pub state: Sl1TransformStateView,
 }
 
+/// Wire-level view of one validated SL1 demand definition. Mirrors
+/// `engine::scenario_language_v1::Sl1Demand` 1:1. PR 5.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1DemandView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub target: Sl1DemandTargetView,
+    pub requires: Vec<String>,
+    pub spawn_schedule: Sl1DemandScheduleView,
+    pub deadline_ticks: u64,
+    pub priority: Sl1DemandPriorityView,
+    pub value: u64,
+    pub penalty: Sl1DemandPenaltyView,
+}
+
+/// Wire-level demand target. PR 5 supports `place` only; future PRs
+/// add other variants.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Sl1DemandTargetView {
+    Place { id: String },
+}
+
+/// Wire-level demand schedule. PR 5 supports `fixed` and `scripted`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Sl1DemandScheduleView {
+    Fixed { every_ticks: u64, start_tick: u64 },
+    Scripted { ticks: Vec<u64> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1DemandPriorityView {
+    Low,
+    Normal,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1DemandPenaltyView {
+    pub score: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// Wire-level snapshot of one demand's runtime state for a tick. PR 5.
+/// `outstanding` = current Pending instances. `fulfilled_count` and
+/// `dropped_count` are cumulative monotonic counters since scene
+/// start. `next_sequence` is the next sequence number to assign.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1DemandRuntimeView {
+    pub demand_id: String,
+    pub outstanding: u32,
+    pub fulfilled_count: u64,
+    pub dropped_count: u64,
+    pub next_sequence: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -397,6 +465,11 @@ pub struct SnapshotPayload {
     /// non-SL1 scenes and for SL1 scenes with no `transforms`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_transform_states: Vec<Sl1TransformRuntimeView>,
+    /// SL1 per-demand runtime state for this tick (PR 5). Emitted once
+    /// per declared demand (sorted by `demand_id`). Empty for non-SL1
+    /// scenes and for SL1 scenes with no `demand`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_demand_states: Vec<Sl1DemandRuntimeView>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -574,6 +647,21 @@ pub enum WarningPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         attempt: Option<u32>,
     },
+    /// SL1 demand observability warning (PR 5). `sequence` identifies
+    /// the Dropped instance; `BacklogOverflow` leaves it `None`.
+    /// `value` and `penalty_score` are surfaced on Dropped so PR 8 can
+    /// wire score arithmetic without protocol changes.
+    Sl1Demand {
+        demand_id: String,
+        event: Sl1DemandWarningKind,
+        tick: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sequence: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        penalty_score: Option<i64>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -584,6 +672,17 @@ pub enum Sl1TransformWarningKind {
     Late,
     Failed,
     SlotMissed,
+}
+
+/// SL1 demand observability warning (PR 5). Emitted once per
+/// terminal demand transition (Dropped) and once per backlog
+/// overflow entry. `sequence` identifies the demand instance for
+/// Dropped events; backlog overflow leaves it `None`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1DemandWarningKind {
+    Dropped,
+    BacklogOverflow,
 }
 
 // =====================================================================
@@ -876,6 +975,7 @@ mod tests {
             }],
             sl1_place_inventories: Vec::new(),
             sl1_transform_states: Vec::new(),
+            sl1_demand_states: Vec::new(),
         };
         let back: SnapshotPayload = roundtrip(&snap);
         assert_eq!(back.tick, 100);
@@ -913,6 +1013,7 @@ mod tests {
             sl1_links: Vec::new(),
             sl1_things: Vec::new(),
             sl1_transforms: Vec::new(),
+            sl1_demand: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -1006,6 +1107,7 @@ mod tests {
             sl1_links: Vec::new(),
             sl1_things: Vec::new(),
             sl1_transforms: Vec::new(),
+            sl1_demand: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -1037,6 +1139,7 @@ mod tests {
             sl1_links: vec![],
             sl1_things: vec![],
             sl1_transforms: vec![],
+            sl1_demand: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -1094,6 +1197,7 @@ mod tests {
             sl1_links: links.clone(),
             sl1_things: vec![],
             sl1_transforms: vec![],
+            sl1_demand: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);
