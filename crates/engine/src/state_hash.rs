@@ -225,6 +225,114 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
             None => h.update([0u8]),
         }
     }
+
+    // Per-thing static fingerprint (PR 3). Things are already sorted
+    // by id at validation time. Gated on `!things.is_empty()` so the
+    // existing `sl1-empty` baseline stays stable (and any future
+    // baseline whose scene declares zero typed things remains stable).
+    if !sl1.things.is_empty() {
+        for thing in &sl1.things {
+            h.update(b"sl1.thing.v1");
+            feed_str(h, &thing.id);
+            feed_str(h, &thing.kind);
+            feed_str_list(h, &thing.tags);
+            match thing.schema_version {
+                Some(v) => {
+                    h.update([1u8]);
+                    h.update(v.to_le_bytes());
+                }
+                None => h.update([0u8]),
+            }
+            match thing.freshness_budget_ticks {
+                Some(v) => {
+                    h.update([1u8]);
+                    h.update(v.to_le_bytes());
+                }
+                None => h.update([0u8]),
+            }
+            match thing.quality_contract.as_ref() {
+                Some(qc) => {
+                    h.update([1u8]);
+                    match qc.max_drop_percent {
+                        Some(v) => {
+                            h.update([1u8]);
+                            // Canonicalize -0.0 to 0.0 so the hash never
+                            // distinguishes the two encodings.
+                            let canonical = if v == 0.0 { 0.0_f64 } else { v };
+                            h.update(canonical.to_le_bytes());
+                        }
+                        None => h.update([0u8]),
+                    }
+                    match qc.max_late_ticks {
+                        Some(v) => {
+                            h.update([1u8]);
+                            h.update(v.to_le_bytes());
+                        }
+                        None => h.update([0u8]),
+                    }
+                    feed_str_list(h, &qc.required_fields);
+                }
+                None => h.update([0u8]),
+            }
+            match thing.render.as_ref() {
+                Some(r) => {
+                    h.update([1u8]);
+                    feed_str(h, &r.glyph);
+                    match r.color {
+                        Some(c) => {
+                            h.update([1u8]);
+                            h.update(c.to_le_bytes());
+                        }
+                        None => h.update([0u8]),
+                    }
+                }
+                None => h.update([0u8]),
+            }
+        }
+    }
+
+    // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
+    // AND typed things being present so empty-things scenes stay on
+    // their existing baselines. The runtime carries per-place
+    // inventories and freshness state — both of which change with
+    // tick number.
+    if let Some(runtime) = world.sl1_runtime.as_ref() {
+        if !sl1.things.is_empty() {
+            h.update(b"sl1.runtime.v1");
+            h.update((runtime.inventories.len() as u64).to_le_bytes());
+            for (place_id, slots) in &runtime.inventories {
+                feed_str(h, place_id);
+                h.update((slots.len() as u64).to_le_bytes());
+                for (thing_id, count) in slots {
+                    feed_str(h, thing_id);
+                    h.update(count.to_le_bytes());
+                }
+            }
+            h.update((runtime.freshness.len() as u64).to_le_bytes());
+            for ((place_id, thing_id), state) in &runtime.freshness {
+                feed_str(h, place_id);
+                feed_str(h, thing_id);
+                feed_freshness_state(h, state);
+            }
+        }
+    }
+}
+
+fn feed_freshness_state(h: &mut Sha256, s: &crate::scenario_language_v1::FreshnessState) {
+    use crate::scenario_language_v1::FreshnessState;
+    match s {
+        FreshnessState::NoData => h.update([0x01]),
+        FreshnessState::Ok { last_set_tick } => {
+            h.update([0x02]);
+            h.update(last_set_tick.to_le_bytes());
+        }
+        FreshnessState::Stale { last_set_tick } => {
+            h.update([0x03]);
+            h.update(last_set_tick.to_le_bytes());
+        }
+        FreshnessState::Degraded => h.update([0x04]),
+        FreshnessState::Invalid => h.update([0x05]),
+    }
 }
 
 fn link_direction_tag(d: crate::scenario_language_v1::Sl1LinkDirection) -> u8 {

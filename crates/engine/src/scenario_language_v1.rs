@@ -71,6 +71,15 @@ pub const MAX_LINK_QUEUE_CAPACITY: u64 = 1_000_000_000;
 /// human-meaningful range.
 pub const MAX_LINK_TRAVEL_TICKS: u64 = 1_000_000_000;
 
+/// Upper bound for `Sl1Thing.freshness_budget_ticks`. Same rationale
+/// as the link bounds: keep author-supplied tick budgets in a
+/// human-meaningful range so a stray typo cannot disable freshness
+/// tracking entirely.
+pub const MAX_THING_FRESHNESS_BUDGET: u64 = 1_000_000_000;
+
+/// Upper bound for `Sl1ThingQualityContract.max_late_ticks`.
+pub const MAX_THING_LATE_TICKS: u64 = 1_000_000_000;
+
 // ---------------------------------------------------------------------------
 // Raw (post-serde, pre-validation) SL1 scene block.
 // ---------------------------------------------------------------------------
@@ -95,7 +104,7 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub links: Vec<RawSl1Link>,
     #[serde(default)]
-    pub things: Vec<serde_json::Value>,
+    pub things: Vec<RawSl1Thing>,
     #[serde(default)]
     pub transforms: Vec<serde_json::Value>,
     #[serde(default)]
@@ -399,9 +408,90 @@ pub enum Sl1LinkBackpressure {
     DegradeQuality,
 }
 
-/// Placeholder loaded `thing`. Populated in PR 3.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Thing;
+/// Raw, post-serde representation of a `things[]` entry. Strict-schema:
+/// `#[serde(deny_unknown_fields)]` ensures nested typos do not silently
+/// no-op. `schema_version` and `freshness_budget_ticks` are optional —
+/// non-data things omit `schema_version`; non-budgeted things omit
+/// `freshness_budget_ticks` and never transition to `Stale` purely on
+/// elapsed ticks.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Thing {
+    pub id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub schema_version: Option<u32>,
+    #[serde(default)]
+    pub freshness_budget_ticks: Option<u64>,
+    #[serde(default)]
+    pub quality_contract: Option<RawSl1ThingQualityContract>,
+    #[serde(default)]
+    pub render: Option<RawSl1ThingRenderHint>,
+}
+
+/// Raw quality-contract block on a [`RawSl1Thing`]. All fields are
+/// individually optional, but the block as a whole is opt-in. PR 3
+/// only validates the shape; objective/failure-condition evaluation
+/// lands in PR 8.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1ThingQualityContract {
+    #[serde(default)]
+    pub max_drop_percent: Option<f64>,
+    #[serde(default)]
+    pub max_late_ticks: Option<u64>,
+    #[serde(default)]
+    pub required_fields: Vec<String>,
+}
+
+/// Optional render hint for a [`RawSl1Thing`]. Mirrors the link
+/// render hint shape: typed so typos fail load.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1ThingRenderHint {
+    pub glyph: String,
+    #[serde(default)]
+    pub color: Option<u32>,
+}
+
+/// Validated `thing` primitive (PR 3). Declarative only — runtime
+/// inventory mutation lands with transforms (PR 4) and demand
+/// (PR 5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sl1Thing {
+    pub id: String,
+    pub kind: String,
+    /// Sorted + deduplicated.
+    pub tags: Vec<String>,
+    pub schema_version: Option<u32>,
+    /// Absent means the thing is *not* time-budgeted: inventory with
+    /// initial > 0 stays [`FreshnessState::Ok`] forever (until later
+    /// PRs add quality-contract evaluation). Initial 0 stays
+    /// [`FreshnessState::NoData`].
+    pub freshness_budget_ticks: Option<u64>,
+    pub quality_contract: Option<Sl1ThingQualityContract>,
+    pub render: Option<Sl1ThingRenderHint>,
+}
+
+/// Validated quality contract. PR 3 carries the values opaquely;
+/// PR 8 (objectives + failure conditions) evaluates them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sl1ThingQualityContract {
+    /// `0.0..=1.0`, finite, normalized so `-0.0` becomes `0.0`.
+    pub max_drop_percent: Option<f64>,
+    pub max_late_ticks: Option<u64>,
+    /// Sorted + deduplicated.
+    pub required_fields: Vec<String>,
+}
+
+/// Validated render hint for a [`Sl1Thing`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1ThingRenderHint {
+    pub glyph: String,
+    pub color: Option<u32>,
+}
 
 /// Placeholder loaded `transform`. Populated in PR 4.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -445,7 +535,7 @@ pub struct Sl1Milestone;
 /// `#[non_exhaustive]` because later PRs add variants as each primitive
 /// gains real validation rules; downstream pattern matches must use
 /// `_` to remain forward-compatible.
-#[derive(Debug, Error, PartialEq, Eq, Clone)]
+#[derive(Debug, Error, PartialEq, Clone)]
 #[non_exhaustive]
 pub enum Sl1LoadError {
     #[error("scenario_language_v1.schema_version: found {found}, supported {supported}")]
@@ -674,6 +764,125 @@ pub enum Sl1LoadError {
         "scenario_language_v1.links[{id:?}].render.style: empty string (omit render for default)"
     )]
     LinkEmptyRenderStyle { id: String },
+
+    /// A `links[].compatibility` entry references neither a declared
+    /// `things[].id` nor a declared `things[].tag`. PR 3 adds this
+    /// cross-check now that things are typed.
+    #[error(
+        "scenario_language_v1.links[{id:?}].compatibility: \
+         {value:?} is not a declared thing id or tag"
+    )]
+    LinkCompatibilityUnknownReference { id: String, value: String },
+
+    // ---- Thing primitive (PR 3) -------------------------------------------
+    /// Two `things[]` entries declared the same `id`.
+    #[error("scenario_language_v1.things: duplicate id {id:?}")]
+    ThingDuplicateId { id: String },
+
+    /// A thing `id` is empty, too long, or contains characters outside
+    /// the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.things: invalid id {id:?}")]
+    ThingInvalidId { id: String },
+
+    /// A thing `kind` is empty.
+    #[error("scenario_language_v1.things[{id:?}].kind: must be non-empty")]
+    ThingEmptyKind { id: String },
+
+    /// A `tags` entry is empty.
+    #[error("scenario_language_v1.things[{id:?}].tags: empty entry not allowed")]
+    ThingEmptyTag { id: String },
+
+    /// A `tags` list contains a duplicate entry.
+    #[error("scenario_language_v1.things[{id:?}].tags: duplicate entry {value:?}")]
+    ThingDuplicateTag { id: String, value: String },
+
+    /// `schema_version` was supplied but is zero. Zero-version data is
+    /// almost certainly an authoring mistake; valid schemas start at 1.
+    #[error("scenario_language_v1.things[{id:?}].schema_version: must be >= 1 if present")]
+    ThingSchemaVersionZero { id: String },
+
+    /// `freshness_budget_ticks` was supplied but is zero. Omit the
+    /// field entirely to declare a thing as non-time-budgeted.
+    #[error(
+        "scenario_language_v1.things[{id:?}].freshness_budget_ticks: \
+         must be > 0 if present (omit field for non-budgeted things)"
+    )]
+    ThingFreshnessBudgetZero { id: String },
+
+    /// `freshness_budget_ticks` exceeds [`MAX_THING_FRESHNESS_BUDGET`].
+    #[error(
+        "scenario_language_v1.things[{id:?}].freshness_budget_ticks: \
+         {value} exceeds maximum {max}"
+    )]
+    ThingFreshnessBudgetOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `quality_contract.max_drop_percent` is non-finite or outside
+    /// `0.0..=1.0`.
+    #[error(
+        "scenario_language_v1.things[{id:?}].quality_contract.max_drop_percent: \
+         {value} not finite or outside 0.0..=1.0"
+    )]
+    ThingQualityMaxDropPercentOutOfRange { id: String, value: f64 },
+
+    /// `quality_contract.max_late_ticks` is zero. Omit the field
+    /// entirely to declare no lateness budget.
+    #[error(
+        "scenario_language_v1.things[{id:?}].quality_contract.max_late_ticks: \
+         must be > 0 if present"
+    )]
+    ThingQualityMaxLateTicksZero { id: String },
+
+    /// `quality_contract.max_late_ticks` exceeds [`MAX_THING_LATE_TICKS`].
+    #[error(
+        "scenario_language_v1.things[{id:?}].quality_contract.max_late_ticks: \
+         {value} exceeds maximum {max}"
+    )]
+    ThingQualityMaxLateTicksOutOfRange { id: String, value: u64, max: u64 },
+
+    /// A `quality_contract.required_fields` entry is empty.
+    #[error(
+        "scenario_language_v1.things[{id:?}].quality_contract.required_fields: \
+         empty entry not allowed"
+    )]
+    ThingQualityRequiredFieldEmpty { id: String },
+
+    /// A `quality_contract.required_fields` list contains a duplicate
+    /// entry.
+    #[error(
+        "scenario_language_v1.things[{id:?}].quality_contract.required_fields: \
+         duplicate entry {value:?}"
+    )]
+    ThingQualityRequiredFieldDuplicate { id: String, value: String },
+
+    /// `render.glyph` is empty.
+    #[error(
+        "scenario_language_v1.things[{id:?}].render.glyph: \
+         empty string (omit render for default)"
+    )]
+    ThingEmptyRenderGlyph { id: String },
+
+    /// A `places[*].storage[*]` key references a thing id that is not
+    /// declared in `things[]`. PR 3 adds this cross-check now that
+    /// things are typed; PR 1 fixtures using untyped storage keys must
+    /// either declare the matching thing or remove the storage entry.
+    #[error(
+        "scenario_language_v1.places[{place_id:?}].storage: \
+         {thing_id:?} is not a declared thing id"
+    )]
+    PlaceStorageUnknownThing { place_id: String, thing_id: String },
+
+    /// A `places[*].accepts` or `places[*].produces` entry references
+    /// neither a declared `things[].id` nor a declared `things[].tag`.
+    /// `field` is `"accepts"` or `"produces"`.
+    #[error(
+        "scenario_language_v1.places[{place_id:?}].{field}: \
+         {value:?} is not a declared thing id or tag"
+    )]
+    PlaceUnknownThingReference {
+        place_id: String,
+        field: &'static str,
+        value: String,
+    },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -706,6 +915,89 @@ pub enum Sl1Fault {
     __Reserved(String),
 }
 
+/// Freshness state of an inventory bucket (PR 3). Inventory + thing
+/// timing together form the runtime model that later PRs (transforms,
+/// demand, observability) mutate. PR 3 only reaches `NoData`, `Ok`,
+/// and `Stale`. `Degraded` and `Invalid` are defined now for forward
+/// compatibility so the protocol-mirror schema does not need to change
+/// when later PRs land — but they are unreachable until then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FreshnessState {
+    /// Initial inventory was zero, so no observation has ever been
+    /// recorded. Transitions to `Ok` when an inventory write lands
+    /// (PRs 4/5).
+    NoData,
+    /// Most recent observation landed at `last_set_tick` and is still
+    /// within the thing's `freshness_budget_ticks` window.
+    Ok { last_set_tick: u64 },
+    /// Most recent observation landed at `last_set_tick` but has aged
+    /// past the thing's `freshness_budget_ticks` window.
+    Stale { last_set_tick: u64 },
+    /// Quality-contract evaluation marked the data as degraded.
+    /// Reachable in PR 8 (objectives/failure conditions).
+    Degraded,
+    /// Quality-contract evaluation marked the data as invalid.
+    /// Reachable in PR 8 (objectives/failure conditions).
+    Invalid,
+}
+
+/// Per-scene SL1 runtime state (PR 3). Lives on `World` (not inside
+/// [`Sl1Scene`]) so the boundary between immutable declarative data
+/// and mutable per-tick state stays explicit. Constructed alongside
+/// `world.sl1` in the loader.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Sl1RuntimeState {
+    /// Per-place, per-thing inventory counts. Outer key is place id,
+    /// inner key is thing id. Populated from
+    /// `places[*].storage[*].initial` at load time; later PRs (4 and
+    /// 5) mutate via transforms and demand.
+    pub inventories: std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+    /// Per-(place, thing) freshness state. Same key pairs as
+    /// `inventories`. Recomputed every tick by `crate::sl1_runtime::run`
+    /// against `world.tick` and each thing's `freshness_budget_ticks`.
+    pub freshness: std::collections::BTreeMap<(String, String), FreshnessState>,
+}
+
+impl Sl1RuntimeState {
+    /// Construct the initial runtime state from a validated scene.
+    /// Inventories start at each storage slot's `initial` count;
+    /// freshness starts as [`FreshnessState::Ok`] (with
+    /// `last_set_tick: 0`) when initial > 0, else
+    /// [`FreshnessState::NoData`].
+    #[must_use]
+    pub fn from_scene(scene: &Sl1Scene) -> Self {
+        let mut inventories: std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, u64>,
+        > = std::collections::BTreeMap::new();
+        let mut freshness: std::collections::BTreeMap<(String, String), FreshnessState> =
+            std::collections::BTreeMap::new();
+        for place in &scene.places {
+            if place.storage.is_empty() {
+                continue;
+            }
+            let mut place_slots: std::collections::BTreeMap<String, u64> =
+                std::collections::BTreeMap::new();
+            for (thing_id, slot) in &place.storage {
+                place_slots.insert(thing_id.clone(), slot.initial);
+                let key = (place.id.clone(), thing_id.clone());
+                let state = if slot.initial > 0 {
+                    FreshnessState::Ok { last_set_tick: 0 }
+                } else {
+                    FreshnessState::NoData
+                };
+                freshness.insert(key, state);
+            }
+            inventories.insert(place.id.clone(), place_slots);
+        }
+        Self {
+            inventories,
+            freshness,
+        }
+    }
+}
+
 /// Terminal outcome of an SL1 scenario. Real evaluation lands in PR 8;
 /// PR 0 always reports [`GameOutcome::InProgress`].
 ///
@@ -736,26 +1028,26 @@ impl GameOutcome {
 
 /// Validate a parsed [`RawSl1Scene`] into a [`Sl1Scene`].
 ///
-/// PR 2 enforces (in addition to PR 1):
+/// PR 3 enforces (in addition to PR 1 and PR 2):
 /// - `schema_version` must equal [`SL1_SCHEMA_VERSION`].
 /// - Unknown top-level fields land in [`RawSl1Scene::extra`] and are
 ///   rejected with [`Sl1LoadError::UnknownField`].
-/// - `places` entries are typed; each is validated for id charset/length
-///   uniqueness, finite coords, non-empty role, non-zero storage
-///   capacity, `storage[*].initial <= storage[*].capacity`, deduplicated
-///   set-like fields, and an operating-state map whose `when` strings
-///   parse into a closed set of supported predicates.
-/// - `links` entries are typed; each is validated for id charset/length
-///   uniqueness, non-empty `type`, `from`/`to` referencing declared
-///   places (no self-loops), closed-enum `direction` and `backpressure`
-///   (each distinguishing Missing vs Unknown), non-empty capacity keys,
-///   deduplicated non-empty compatibility entries, `travel_ticks` in
-///   `1..=`[`MAX_LINK_TRAVEL_TICKS`], `queue_capacity` in
-///   `1..=`[`MAX_LINK_QUEUE_CAPACITY`], and an optional render hint
-///   with a non-empty `style`.
+/// - `places` entries are typed and cross-validated against `things[]`:
+///   `storage` map keys must reference declared things; `accepts` and
+///   `produces` entries must reference a declared thing id or tag.
+/// - `links` entries are typed; `compatibility` entries are
+///   cross-validated against declared thing ids or tags.
+/// - `things` entries are typed; each is validated for id charset/length
+///   uniqueness, non-empty `kind`, deduplicated non-empty tags, optional
+///   non-zero `schema_version`, optional `freshness_budget_ticks` in
+///   `1..=`[`MAX_THING_FRESHNESS_BUDGET`], optional `quality_contract`
+///   with finite `max_drop_percent` in `0.0..=1.0`, `max_late_ticks` in
+///   `1..=`[`MAX_THING_LATE_TICKS`] if present, deduplicated non-empty
+///   `required_fields`, and an optional render hint with a non-empty
+///   `glyph`.
 /// - All remaining behavior-bearing primitives must be empty —
 ///   [`Sl1LoadError::PrimitiveNotImplemented`] for any
-///   `things`/`transforms`/`demand`/`pressure`/`objectives`/
+///   `transforms`/`demand`/`pressure`/`objectives`/
 ///   `failure_conditions`/`agents`/`milestones` with entries.
 /// - The optional `observability` block may be present but must be
 ///   an empty object.
@@ -808,7 +1100,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.things, "things");
     reject_non_empty!(raw.transforms, "transforms");
     reject_non_empty!(raw.demand, "demand");
     reject_non_empty!(raw.pressure, "pressure");
@@ -817,13 +1108,67 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     reject_non_empty!(raw.agents, "agents");
     reject_non_empty!(raw.milestones, "milestones");
 
-    // Validate places (PR 1).
+    // Validate things (PR 3) FIRST so places + links can cross-check
+    // against the declared thing catalog.
+    let mut things: Vec<Sl1Thing> = Vec::with_capacity(raw.things.len());
+    let mut seen_thing_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_thing in raw.things {
+        let thing = validate_thing(raw_thing)?;
+        if !seen_thing_ids.insert(thing.id.clone()) {
+            return Err(Sl1LoadError::ThingDuplicateId { id: thing.id });
+        }
+        things.push(thing);
+    }
+    // Sort things by id so engine iteration order is independent of
+    // declaration order.
+    things.sort_by(|a, b| a.id.cmp(&b.id));
+    // Build a flat set of every declared thing tag for O(1)
+    // accepts/produces/compatibility cross-checks.
+    let thing_ids: std::collections::BTreeSet<String> =
+        things.iter().map(|t| t.id.clone()).collect();
+    let thing_tags: std::collections::BTreeSet<String> =
+        things.iter().flat_map(|t| t.tags.iter().cloned()).collect();
+
+    // Validate places (PR 1) + cross-validate against the typed thing
+    // catalog (PR 3).
     let mut places: Vec<Sl1Place> = Vec::with_capacity(raw.places.len());
     let mut seen_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for raw_place in raw.places {
         let place = validate_place(raw_place)?;
         if !seen_ids.insert(place.id.clone()) {
             return Err(Sl1LoadError::PlaceDuplicateId { id: place.id });
+        }
+        // Storage map keys must reference declared thing ids. PR 3
+        // adds this cross-check now that things are typed; prior PRs
+        // accepted any non-empty key.
+        for slot_key in place.storage.keys() {
+            if !thing_ids.contains(slot_key) {
+                return Err(Sl1LoadError::PlaceStorageUnknownThing {
+                    place_id: place.id.clone(),
+                    thing_id: slot_key.clone(),
+                });
+            }
+        }
+        // accepts / produces must reference a declared thing id or
+        // tag — the SL1 strict-schema rule prevents silent typos
+        // exactly here.
+        for value in &place.accepts {
+            if !thing_ids.contains(value) && !thing_tags.contains(value) {
+                return Err(Sl1LoadError::PlaceUnknownThingReference {
+                    place_id: place.id.clone(),
+                    field: "accepts",
+                    value: value.clone(),
+                });
+            }
+        }
+        for value in &place.produces {
+            if !thing_ids.contains(value) && !thing_tags.contains(value) {
+                return Err(Sl1LoadError::PlaceUnknownThingReference {
+                    place_id: place.id.clone(),
+                    field: "produces",
+                    value: value.clone(),
+                });
+            }
         }
         places.push(place);
     }
@@ -842,6 +1187,16 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         let link = validate_link(raw_link, &place_ids)?;
         if !seen_link_ids.insert(link.id.clone()) {
             return Err(Sl1LoadError::LinkDuplicateId { id: link.id });
+        }
+        // PR 3 cross-check: compatibility entries must reference a
+        // declared thing id or tag.
+        for value in &link.compatibility {
+            if !thing_ids.contains(value) && !thing_tags.contains(value) {
+                return Err(Sl1LoadError::LinkCompatibilityUnknownReference {
+                    id: link.id.clone(),
+                    value: value.clone(),
+                });
+            }
         }
         links.push(link);
     }
@@ -876,7 +1231,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         schema_version: raw.schema_version,
         places,
         links,
-        things: Vec::new(),
+        things,
         transforms: Vec::new(),
         demand: Vec::new(),
         pressure: Vec::new(),
@@ -1315,6 +1670,133 @@ pub fn load_str(json: &str) -> Result<Sl1Scene, Sl1LoadError> {
     load_value(value)
 }
 
+// ---------------------------------------------------------------------------
+// Thing validation helpers (PR 3).
+// ---------------------------------------------------------------------------
+
+fn validate_thing(raw: RawSl1Thing) -> Result<Sl1Thing, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::ThingInvalidId { id: raw.id });
+    }
+    if raw.kind.trim().is_empty() {
+        return Err(Sl1LoadError::ThingEmptyKind { id: raw.id });
+    }
+    let tags = canonicalize_thing_tags(&raw.id, raw.tags)?;
+    if let Some(version) = raw.schema_version {
+        if version == 0 {
+            return Err(Sl1LoadError::ThingSchemaVersionZero { id: raw.id });
+        }
+    }
+    if let Some(budget) = raw.freshness_budget_ticks {
+        if budget == 0 {
+            return Err(Sl1LoadError::ThingFreshnessBudgetZero { id: raw.id });
+        }
+        if budget > MAX_THING_FRESHNESS_BUDGET {
+            return Err(Sl1LoadError::ThingFreshnessBudgetOutOfRange {
+                id: raw.id,
+                value: budget,
+                max: MAX_THING_FRESHNESS_BUDGET,
+            });
+        }
+    }
+    let quality_contract = match raw.quality_contract {
+        None => None,
+        Some(qc) => Some(validate_thing_quality_contract(&raw.id, qc)?),
+    };
+    let render = match raw.render {
+        None => None,
+        Some(hint) => {
+            if hint.glyph.trim().is_empty() {
+                return Err(Sl1LoadError::ThingEmptyRenderGlyph { id: raw.id });
+            }
+            Some(Sl1ThingRenderHint {
+                glyph: hint.glyph,
+                color: hint.color,
+            })
+        }
+    };
+    Ok(Sl1Thing {
+        id: raw.id,
+        kind: raw.kind,
+        tags,
+        schema_version: raw.schema_version,
+        freshness_budget_ticks: raw.freshness_budget_ticks,
+        quality_contract,
+        render,
+    })
+}
+
+fn validate_thing_quality_contract(
+    thing_id: &str,
+    raw: RawSl1ThingQualityContract,
+) -> Result<Sl1ThingQualityContract, Sl1LoadError> {
+    let max_drop_percent = match raw.max_drop_percent {
+        None => None,
+        Some(v) => {
+            if !v.is_finite() || !(0.0..=1.0).contains(&v) {
+                return Err(Sl1LoadError::ThingQualityMaxDropPercentOutOfRange {
+                    id: thing_id.to_string(),
+                    value: v,
+                });
+            }
+            // Canonicalize -0.0 to 0.0 so the deterministic hash never
+            // distinguishes the two encodings.
+            Some(if v == 0.0 { 0.0 } else { v })
+        }
+    };
+    if let Some(late) = raw.max_late_ticks {
+        if late == 0 {
+            return Err(Sl1LoadError::ThingQualityMaxLateTicksZero {
+                id: thing_id.to_string(),
+            });
+        }
+        if late > MAX_THING_LATE_TICKS {
+            return Err(Sl1LoadError::ThingQualityMaxLateTicksOutOfRange {
+                id: thing_id.to_string(),
+                value: late,
+                max: MAX_THING_LATE_TICKS,
+            });
+        }
+    }
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for field in &raw.required_fields {
+        if field.trim().is_empty() {
+            return Err(Sl1LoadError::ThingQualityRequiredFieldEmpty {
+                id: thing_id.to_string(),
+            });
+        }
+        if !seen.insert(field.clone()) {
+            return Err(Sl1LoadError::ThingQualityRequiredFieldDuplicate {
+                id: thing_id.to_string(),
+                value: field.clone(),
+            });
+        }
+    }
+    Ok(Sl1ThingQualityContract {
+        max_drop_percent,
+        max_late_ticks: raw.max_late_ticks,
+        required_fields: seen.into_iter().collect(),
+    })
+}
+
+fn canonicalize_thing_tags(thing_id: &str, raw: Vec<String>) -> Result<Vec<String>, Sl1LoadError> {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in &raw {
+        if entry.trim().is_empty() {
+            return Err(Sl1LoadError::ThingEmptyTag {
+                id: thing_id.to_string(),
+            });
+        }
+        if !seen.insert(entry.clone()) {
+            return Err(Sl1LoadError::ThingDuplicateTag {
+                id: thing_id.to_string(),
+                value: entry.clone(),
+            });
+        }
+    }
+    Ok(seen.into_iter().collect())
+}
+
 /// Stable, English-only one-word kind tag for a `serde_json::Value`,
 /// used in [`Sl1LoadError::ExpectedObject`] and observability shape
 /// diagnostics. Kept tiny and locale-free on purpose.
@@ -1432,13 +1914,12 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 3-11 have no behavior for their primitive — even a
+        // PRs 4-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
-        // proto-SL1 scene would silently no-op. PR 1 removed `places`
-        // and PR 2 removed `links` from this guard because both are
-        // now typed and validated.
+        // proto-SL1 scene would silently no-op. PR 1 removed `places`,
+        // PR 2 removed `links`, and PR 3 removed `things` from this
+        // guard because all three are now typed and validated.
         for (json, expected_section) in [
-            (r#"{"things": [{}]}"#, "things"),
             (r#"{"transforms": [{}]}"#, "transforms"),
             (r#"{"demand": [{}]}"#, "demand"),
             (r#"{"pressure": [{}]}"#, "pressure"),
@@ -1523,7 +2004,7 @@ mod tests {
         // typo at the top level is surfaced even if the author also
         // populated a primitive that would have hit
         // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "things": [{}]}"#).unwrap_err();
+        let err = load_str(r#"{"mystery": 1, "transforms": [{}]}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),

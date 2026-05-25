@@ -1,8 +1,8 @@
 # scenario_language_v1 (SL1)
 
-> **Status:** PR 2 — Links landed. The SL1 root, taxonomy, Place
-> primitive, and Link primitive ship; later primitives (things,
-> transforms, demand, …) arrive in subsequent PRs.
+> **Status:** PR 3 — Things landed. The SL1 root, taxonomy, Place,
+> Link, and Thing primitives ship; later primitives (transforms,
+> demand, pressure, …) arrive in subsequent PRs.
 >
 > **Authoritative spec:**
 > [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](superpowers/specs/2026-05-24-scenario_language_v1-plan.md)
@@ -282,6 +282,127 @@ mirrors `Sl1Link` one-to-one, including typed `direction` and
 `backpressure` enum views and an optional `render` hint. The field
 uses `#[serde(default, skip_serializing_if = "Vec::is_empty")]` so
 non-SL1 (or SL1 scenes with no links) serialize without the field.
+
+## Things (PR 3)
+
+A **thing** is a typed, countable resource that flows through places
+and links and is produced/consumed by transforms. PR 3 introduces the
+typed registry, per-place typed inventories, and per-(place, thing)
+freshness aging. Transform/demand mutation of inventories arrives in
+PRs 4 and 5; PR 3 is load + initial-state + runtime aging only.
+
+### Schema
+
+```jsonc
+"things": [
+  {
+    "id": "widget",
+    "kind": "product",
+    "tags": ["finished", "sellable"],
+    "schema_version": 1,            // optional u32
+    "freshness_budget_ticks": 600,  // optional u64; absent = "not time-budgeted"
+    "quality_contract": {           // optional, deny_unknown_fields
+      "max_drop_percent": 0.05,     // optional f64, 0.0..=1.0 (fraction)
+      "max_late_ticks": 30,         // optional u64
+      "required_fields": ["sku", "qty"]
+    },
+    "render": {                     // optional, deny_unknown_fields
+      "glyph": "W",
+      "color": 16763310             // optional u32 (RGB packed)
+    }
+  }
+]
+```
+
+### Validation rules
+
+| Rule | Error |
+|---|---|
+| id matches `[a-zA-Z0-9_-]{1,64}` | `ThingInvalidId` |
+| id unique across `things[]` | `ThingDuplicateId` |
+| `kind` non-empty (trimmed) | `ThingEmptyKind` |
+| `tags[]` entries non-empty, deduped | `ThingEmptyTag`, `ThingDuplicateTag` |
+| `freshness_budget_ticks` (if present) > 0 | `ThingFreshnessBudgetZero` |
+| `quality_contract.max_drop_percent` finite, in `[0.0, 1.0]` | `ThingQualityMaxDropPercentOutOfRange` |
+| `quality_contract.required_fields[]` non-empty + unique | `ThingQualityRequiredFieldEmpty`, `ThingQualityRequiredFieldDuplicate` |
+| `render.glyph` non-empty | `ThingEmptyRenderGlyph` |
+| Unknown nested fields | `Sl1LoadError::Parse` (via `deny_unknown_fields`) |
+
+### Cross-validation
+
+The validator walks `places[]` and `links[]` after `things[]` is
+canonicalized. Any reference to an undeclared thing id or tag is
+rejected:
+
+| Source | Error |
+|---|---|
+| `places[].storage.<key>` references undeclared thing id | `PlaceUnknownThingReference` |
+| `places[].accepts[]` references undeclared id or tag | `PlaceUnknownThingReference` |
+| `places[].produces[]` references undeclared id or tag | `PlaceUnknownThingReference` |
+| `links[].compatibility[]` references undeclared id or tag | `LinkCompatibilityUnknownReference` |
+
+`accepts` / `produces` / `compatibility` accept **either** a declared
+thing id or a declared tag — duplicate canonicalized entries are
+rejected at link/place validation time (per PRs 1 and 2).
+
+### Initial inventories
+
+`places[].storage.<thing_id>.initial` (already validated against
+`capacity` in PR 1) populates `World.sl1_runtime.inventories`:
+`BTreeMap<place_id, BTreeMap<thing_id, count>>`. Initial counts are
+the only mutation path in PR 3. PRs 4 and 5 add transform output and
+demand consumption.
+
+### Freshness state machine
+
+Each (place, thing) entry in `World.sl1_runtime.freshness` carries a
+`FreshnessState`:
+
+| State | Meaning |
+|---|---|
+| `NoData` | No write has occurred yet for this (place, thing). |
+| `Ok { last_set_tick }` | Last write at tick `t`, still within budget. |
+| `Stale` | Last write older than `freshness_budget_ticks`. |
+| `Degraded` | (Reserved; emitted starting in PR 8.) |
+| `Invalid` | (Reserved; emitted starting in PR 8.) |
+
+If `initial > 0`, the loader seeds `Ok { last_set_tick: 0 }`. If
+`initial == 0`, it seeds `NoData`. Each tick, `sl1_runtime::run`
+ages `Ok { last_set_tick: t }` → `Stale` when
+`world.tick.saturating_sub(t) > freshness_budget_ticks`. Things
+without `freshness_budget_ticks` are never aged (a deliberate
+"not time-budgeted" signal — sticky `Ok` / `NoData`).
+
+### State hash
+
+`feed_sl1` extends the canonical state hash with one fingerprint per
+thing (id, kind, sorted tags, optional schema_version, optional
+budget, optional contract, optional render hint). The per-thing loop
+is gated on `!things.is_empty()` so the empty-SL1 baseline
+(`sl1-empty.hash`) is unchanged. Thing-bearing fixtures
+(`sl1-places.hash`, `sl1-links.hash`, `sl1-things.hash`) carry new
+hashes that travel with the PR.
+
+### Protocol mirror
+
+`StaticPayload` carries `sl1_things: Vec<Sl1ThingView>`; each tick's
+`SnapshotPayload` carries
+`sl1_place_inventories: Vec<Sl1PlaceInventoryView>` with one entry
+per (place, thing) including `count` and a `FreshnessStateView`. The
+view is internally tagged on `"state"` (snake_case), e.g.
+
+```jsonc
+{"state": "no_data"}
+{"state": "ok",       "last_set_tick": 0}
+{"state": "stale",    "last_set_tick": 0}
+{"state": "degraded"} // reserved, PR 8+
+{"state": "invalid"}  // reserved, PR 8+
+```
+
+Both new fields use `#[serde(default, skip_serializing_if = "Vec::is_empty")]`
+so legacy + SL1-empty scenes serialize without them. Snapshot
+encoding clears `sl1_place_inventories` every tick (mirroring the
+`movers` pattern) and rebuilds it from `World.sl1_runtime`.
 
 ## Roadmap (per `plan.md`)
 

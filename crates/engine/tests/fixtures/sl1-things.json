@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "name": "sl1-things",
+  "theme": {
+    "palette": ["#0a1c2e", "#1aa6e0", "#f0c419"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "warehouse",
+        "role": "storage",
+        "pos": [0.0, 0.0],
+        "capacity": { "slots": 100 },
+        "storage": {
+          "widget": { "capacity": 50, "initial": 10 },
+          "gadget": { "capacity": 25, "initial": 0 }
+        },
+        "accepts": ["widget", "gadget", "consumable"],
+        "produces": []
+      },
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [10.0, 0.0],
+        "capacity": { "throughput_per_tick": 5 },
+        "storage": {
+          "raw_material": { "capacity": 200, "initial": 100 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["widget", "gadget"]
+      }
+    ],
+    "links": [
+      {
+        "id": "supply_line",
+        "type": "conveyor",
+        "from": "factory",
+        "to": "warehouse",
+        "direction": "forward",
+        "capacity": { "items_per_tick": 2 },
+        "travel_ticks": 3,
+        "compatibility": ["widget", "gadget"],
+        "queue_capacity": 16,
+        "backpressure": "block_upstream"
+      }
+    ],
+    "things": [
+      {
+        "id": "widget",
+        "kind": "manufactured",
+        "tags": ["consumable"],
+        "schema_version": 2,
+        "freshness_budget_ticks": 100,
+        "quality_contract": {
+          "max_drop_percent": 0.05,
+          "max_late_ticks": 30,
+          "required_fields": ["serial", "batch"]
+        },
+        "render": { "glyph": "W", "color": 1 }
+      },
+      {
+        "id": "gadget",
+        "kind": "manufactured",
+        "tags": [],
+        "freshness_budget_ticks": 50
+      },
+      {
+        "id": "raw_material",
+        "kind": "input",
+        "tags": []
+      }
+    ]
+  }
+}
