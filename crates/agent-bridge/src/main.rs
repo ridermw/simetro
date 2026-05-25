@@ -159,21 +159,43 @@ async fn dispatch(
         tools: simetro_agent_bridge::tools::action_tool_specs(),
     };
     match backend.invoke(backend_req).await {
-        Ok(resp) => {
-            let chosen = resp
-                .tool_calls
-                .first()
-                .and_then(|tc| {
-                    simetro_agent_bridge::bridge::parse_tool_call(tc, &req.id.agent_id).ok()
-                })
-                .or(Some(Action::NoOp));
-            AgentReply {
-                id: req.id.clone(),
-                chosen,
-                rationale: truncate(&resp.raw, 512),
-                confidence: 1.0,
+        Ok(resp) => match resp.tool_calls.first() {
+            None => {
+                // No tool call returned — treat as NoOp. This is the
+                // expected path when the model decides to do nothing.
+                AgentReply {
+                    id: req.id.clone(),
+                    chosen: Some(Action::NoOp),
+                    rationale: truncate(&resp.raw, 512),
+                    confidence: 1.0,
+                }
             }
-        }
+            Some(tc) => {
+                match simetro_agent_bridge::bridge::parse_tool_call(tc, &req.id.agent_id) {
+                    Ok(action) => AgentReply {
+                        id: req.id.clone(),
+                        chosen: Some(action),
+                        rationale: truncate(&resp.raw, 512),
+                        confidence: 1.0,
+                    },
+                    Err(parse_err) => {
+                        // Per spec §11.1 + Codex PR #21 R2 finding:
+                        // malformed tool calls MUST surface as a
+                        // typed Warning::InvalidAction, not a silent
+                        // NoOp. Route through the same error mapping
+                        // as backend-level errors so observability /
+                        // recovery behavior is consistent.
+                        let message = llm_error_to_message(&parse_err, &req.id.agent_id, 1);
+                        AgentReply {
+                            id: req.id.clone(),
+                            chosen: Some(Action::NoOp),
+                            rationale: warning_rationale(&message),
+                            confidence: 1.0,
+                        }
+                    }
+                }
+            }
+        },
         Err(err) => {
             // Surface a NoOp reply so the lifecycle isn't blocked; the
             // warning rationale tells the operator what happened.
