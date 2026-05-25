@@ -10,6 +10,7 @@ use crate::components::{
     Resource, ResourceId,
 };
 use crate::rng::SimRng;
+use crate::scenario_language_v1::{GameOutcome, Sl1Scene};
 
 /// Top-level run state per run-state model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +51,10 @@ pub struct World {
     pub producers: BTreeMap<ProducerId, Producer>,
     /// Consumers by stable id.
     pub consumers: BTreeMap<ConsumerId, Consumer>,
+    /// Validated `scenario_language_v1` block, if the scene JSON
+    /// included one. PR 0 carries only empty placeholders; later PRs
+    /// populate places, links, things, transforms, etc.
+    pub sl1: Option<Sl1Scene>,
 }
 
 impl World {
@@ -69,6 +74,7 @@ impl World {
             inventory: BTreeMap::new(),
             producers: BTreeMap::new(),
             consumers: BTreeMap::new(),
+            sl1: None,
         }
     }
 
@@ -89,6 +95,18 @@ impl World {
             && self.inventory.is_empty()
             && self.producers.is_empty()
             && self.consumers.is_empty()
+            && self.sl1.is_none()
+    }
+
+    /// Current SL1 game outcome.
+    ///
+    /// PR 0 always reports [`GameOutcome::InProgress`] — real
+    /// objective/failure evaluation lands in PR 8. Worlds without an
+    /// SL1 block also report `InProgress` (legacy scenes have no
+    /// terminal outcome; they "loop forever").
+    #[must_use]
+    pub fn sl1_outcome(&self) -> GameOutcome {
+        GameOutcome::InProgress
     }
 
     /// Find a resource by its stable string name. Linear in number of

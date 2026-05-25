@@ -22,6 +22,7 @@ use crate::components::{
     ProducerId, Resource, ResourceId,
 };
 use crate::error::LoadError;
+use crate::scenario_language_v1::{self, RawSl1Scene, Sl1Scene};
 use crate::world::World;
 
 const MIN_SCHEMA_VERSION: u32 = 1;
@@ -93,6 +94,9 @@ pub struct LoadedScene {
     pub agents: Vec<AgentSpec>,
     pub id_map: IdMap,
     pub world: World,
+    /// Validated `scenario_language_v1` block, if the scene JSON
+    /// included one. `None` for legacy v1/v2 scenes.
+    pub sl1: Option<Sl1Scene>,
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +122,11 @@ struct RawScene {
     producers: Vec<RawProducer>,
     #[serde(default)]
     consumers: Vec<RawConsumer>,
+    /// Optional `scenario_language_v1` block. Sibling of `pieces` so
+    /// legacy v1/v2 scenes are unaffected. The block is strict-schema:
+    /// unknown fields inside it are a load error.
+    #[serde(default, rename = "scenario_language_v1")]
+    sl1: Option<RawSl1Scene>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -517,6 +526,8 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         })
         .collect();
 
+    let sl1 = raw.sl1.map(scenario_language_v1::validate).transpose()?;
+
     let mut world = World::new(seed);
     world.nodes = nodes;
     world.paths = paths;
@@ -525,6 +536,7 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
     world.inventory = inventory;
     world.producers = producers;
     world.consumers = consumers;
+    world.sl1 = sl1.clone();
     world.state = crate::world::RunState::Loaded;
 
     Ok(LoadedScene {
@@ -534,6 +546,7 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         agents,
         id_map,
         world,
+        sl1,
     })
 }
 

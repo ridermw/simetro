@@ -6,6 +6,8 @@
 
 use thiserror::Error;
 
+use crate::scenario_language_v1::Sl1LoadError;
+
 /// Errors produced by the JSON scene loader. scene loader contract + §11.1.
 ///
 /// Every variant has a typed field-path or section/id so the renderer
@@ -82,6 +84,11 @@ pub enum LoadError {
         "agent kind `{kind}` at agents[{index}] requires building with the `llm-live` feature"
     )]
     AgentKindRequiresFeature { index: usize, kind: String },
+
+    /// Wraps an `scenario_language_v1`-specific load failure so the
+    /// surrounding scene loader returns a uniform [`LoadError`].
+    #[error(transparent)]
+    Sl1(#[from] Sl1LoadError),
 }
 
 #[derive(Debug, Error, PartialEq)]
