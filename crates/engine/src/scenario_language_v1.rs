@@ -1,11 +1,14 @@
-//! `scenario_language_v1` (SL1) skeleton.
+//! `scenario_language_v1` (SL1) grammar.
 //!
 //! This module establishes the shape of the SL1 grammar — places,
 //! links, things, transforms, demand, pressure, objectives,
-//! failure_conditions, agents, observability, and milestones — without
-//! yet implementing any behavior. Each subsequent PR replaces one
-//! primitive's empty placeholder with concrete fields, validation, and
-//! engine systems.
+//! failure_conditions, agents, observability, and milestones. PR 0
+//! installed the skeleton with all primitives as placeholders. PR 1
+//! lands the first real primitive: [`Sl1Place`] — author-declared
+//! locations with capacity, storage, accepted/produced thing tags,
+//! failure-domain labels, and a strict-predicate operating-state map.
+//! All other primitives remain placeholders until their dedicated PRs
+//! land.
 //!
 //! The SL1 block is **strict-schema** in two complementary ways:
 //!
@@ -41,26 +44,42 @@ use thiserror::Error;
 pub const SL1_SCHEMA_VERSION: u32 = 1;
 const MAX_SL1_ITEMS_PER_SECTION: usize = 100_000;
 
+/// Maximum length of an SL1 stable identifier (place id, etc.).
+/// Matches `loader::MAX_ID_LEN` so SL1 and legacy ids share charset
+/// rules and operators can predict a uniform identifier surface.
+const MAX_SL1_ID_LEN: usize = 64;
+
+/// Coordinate clamp for SL1 place positions, mirroring
+/// `loader::COORD_LIMIT`. Keeps the SL1 world bounded so renderer
+/// transforms stay numerically stable.
+const SL1_COORD_LIMIT: f32 = 1.0e6;
+
+/// Upper bound for `used_percent`-style predicate thresholds. Percent
+/// thresholds beyond 100 cannot fire and almost certainly indicate
+/// an author typo.
+const SL1_PERCENT_MAX: u8 = 100;
+
 // ---------------------------------------------------------------------------
 // Raw (post-serde, pre-validation) SL1 scene block.
 // ---------------------------------------------------------------------------
 
-/// Raw SL1 scene block. PR 0 deliberately captures every grammar
-/// primitive as `Vec<serde_json::Value>` so the validator can reject
-/// non-empty entries with [`Sl1LoadError::PrimitiveNotImplemented`]
-/// without relying on each placeholder struct's shape. Each later PR
-/// replaces the corresponding `Vec<Value>` with a strict typed
-/// `Vec<RawSl1Foo>` and removes the matching guard.
+/// Raw SL1 scene block. Each grammar primitive that has not yet had
+/// its PR land is typed as `Vec<serde_json::Value>` so the validator
+/// can reject non-empty entries with
+/// [`Sl1LoadError::PrimitiveNotImplemented`] without relying on a
+/// placeholder struct's shape. PR 1 promotes `places` to a typed
+/// `Vec<RawSl1Place>`; PRs 2–11 do the same for the remaining
+/// primitives in order.
 ///
 /// Unknown top-level fields land in [`Self::extra`]; [`validate`]
 /// emits a typed [`Sl1LoadError::UnknownField`] for each.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 pub struct RawSl1Scene {
     /// Defaults to [`SL1_SCHEMA_VERSION`] when omitted.
     #[serde(default = "default_sl1_schema_version")]
     pub schema_version: u32,
     #[serde(default)]
-    pub places: Vec<serde_json::Value>,
+    pub places: Vec<RawSl1Place>,
     #[serde(default)]
     pub links: Vec<serde_json::Value>,
     #[serde(default)]
@@ -111,11 +130,9 @@ fn default_sl1_schema_version() -> u32 {
 // Loaded (validated, engine-facing) SL1 scene.
 // ---------------------------------------------------------------------------
 
-/// Validated SL1 scene. PR 0 carries only the validated `schema_version`
-/// plus empty vectors; each later PR populates the corresponding
-/// primitive's data, plus stable id maps and engine state where
-/// appropriate.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+/// Validated SL1 scene. PR 1 populates `places`; other primitives
+/// remain empty placeholders until their dedicated PRs land.
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Sl1Scene {
     pub schema_version: u32,
     pub places: Vec<Sl1Place>,
@@ -131,9 +148,124 @@ pub struct Sl1Scene {
     pub milestones: Vec<Sl1Milestone>,
 }
 
-/// Placeholder loaded `place`. Populated in PR 1.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Place;
+// ---------------------------------------------------------------------------
+// Place — typed primitive (PR 1).
+// ---------------------------------------------------------------------------
+
+/// Raw, post-serde representation of a `places[]` entry. Strict-schema:
+/// `#[serde(deny_unknown_fields)]` ensures nested typos do not silently
+/// no-op even though top-level SL1 typos are also blocked.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Place {
+    pub id: String,
+    pub role: String,
+    pub pos: [f32; 2],
+    #[serde(default)]
+    pub capacity: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub storage: BTreeMap<String, RawSl1StorageSlot>,
+    #[serde(default)]
+    pub accepts: Vec<String>,
+    #[serde(default)]
+    pub produces: Vec<String>,
+    #[serde(default)]
+    pub failure_domains: Vec<String>,
+    /// Map of operating-state name → predicate. Matches the spec map
+    /// form (`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`
+    /// §places example), preserving the state name (`strained`,
+    /// `overloaded`, `failed`, etc.). The validator translates each
+    /// entry into a typed [`Sl1OperatingPredicate`].
+    #[serde(default)]
+    pub operating_states: BTreeMap<String, RawSl1OperatingState>,
+}
+
+/// Raw storage slot for a [`RawSl1Place`]. Capacity is the slot's max
+/// units; `initial` is the pre-loaded amount at scene load and must not
+/// exceed `capacity`.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1StorageSlot {
+    pub capacity: u64,
+    #[serde(default)]
+    pub initial: u64,
+}
+
+/// Raw operating-state declaration. The author writes a single
+/// predicate string under `when` plus an optional `grace_ticks` for
+/// debounce. The validator parses `when` into a typed
+/// [`Sl1OperatingPredicate`]; **there is no expression engine** —
+/// strings are pattern-matched against a closed set of supported
+/// predicate templates and any deviation is a typed load error.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1OperatingState {
+    pub when: String,
+    #[serde(default)]
+    pub grace_ticks: Option<u64>,
+}
+
+/// Validated `place` primitive (PR 1).
+///
+/// Carries author-declared static metadata only; per-tick utilization
+/// and storage updates land alongside the transforms PR.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sl1Place {
+    pub id: String,
+    pub role: String,
+    pub pos: [f32; 2],
+    /// Named, unitless capacity buckets (e.g. `query_slots`,
+    /// `cooling_tons`). Sorted by key so iteration order is stable.
+    pub capacity: BTreeMap<String, u64>,
+    /// Named buffer slots that hold a typed thing tag (resolution to
+    /// `things[]` ids lands in PR 3). Sorted by key.
+    pub storage: BTreeMap<String, Sl1StorageSlot>,
+    /// Tags this place accepts as input. Sorted + deduplicated so the
+    /// determinism hash is independent of declaration order and free
+    /// of cosmetic baseline drift.
+    pub accepts: Vec<String>,
+    /// Tags this place produces. Sorted + deduplicated.
+    pub produces: Vec<String>,
+    /// Failure-domain labels (e.g. `eastus`, `az1`). Sorted +
+    /// deduplicated.
+    pub failure_domains: Vec<String>,
+    /// Operating-state map, keyed by state name (`strained`,
+    /// `overloaded`, `failed`, etc.). The `BTreeMap` key ordering is
+    /// what the determinism hash walks.
+    pub operating_states: BTreeMap<String, Sl1OperatingState>,
+}
+
+/// Validated storage slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sl1StorageSlot {
+    pub capacity: u64,
+    pub initial: u64,
+}
+
+/// Validated operating-state entry: typed predicate plus optional
+/// debounce window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1OperatingState {
+    pub predicate: Sl1OperatingPredicate,
+    pub grace_ticks: Option<u64>,
+}
+
+/// Closed set of supported operating-state predicates for PR 1. Each
+/// variant maps to one author-facing template (see [`parse_predicate`]
+/// for the exact textual surface). The closed set is deliberate — the
+/// spec forbids an arbitrary predicate language
+/// (`docs/scenario-language-v1.md` and the canonical roadmap).
+///
+/// Future PRs add `InventoryGte` (after Things land) and `MetricGte`
+/// (after Observability lands) by extending this enum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1OperatingPredicate {
+    /// `<metric_id>.used_percent >= <0..=100>`.
+    UsedPercentGte { metric: String, threshold: u8 },
+    /// `overloaded_ticks > <ticks>`.
+    OverloadedTicksGt { ticks: u64 },
+}
 
 /// Placeholder loaded `link`. Populated in PR 2.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -229,6 +361,87 @@ pub enum Sl1LoadError {
         count: usize,
         max: usize,
     },
+
+    // ---- Place primitive (PR 1) -------------------------------------------
+    /// Two `places[]` entries declared the same `id`.
+    #[error("scenario_language_v1.places: duplicate id {id:?}")]
+    PlaceDuplicateId { id: String },
+
+    /// A place `id` is empty, too long, or contains characters outside
+    /// the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.places: invalid id {id:?}")]
+    PlaceInvalidId { id: String },
+
+    /// A place `role` is empty.
+    #[error("scenario_language_v1.places[{id:?}].role: must be non-empty")]
+    PlaceEmptyRole { id: String },
+
+    /// A place `pos` coordinate is non-finite (NaN/inf) or exceeds the
+    /// coordinate clamp.
+    #[error("scenario_language_v1.places[{id:?}].pos: non-finite or out of bounds")]
+    PlaceInvalidPos { id: String },
+
+    /// A `storage[*].initial` value exceeds its slot's `capacity`.
+    #[error(
+        "scenario_language_v1.places[{id:?}].storage[{slot:?}]: \
+         initial {initial} exceeds capacity {capacity}"
+    )]
+    PlaceStorageInitialExceedsCapacity {
+        id: String,
+        slot: String,
+        initial: u64,
+        capacity: u64,
+    },
+
+    /// A `storage[*].capacity` is zero. A zero-capacity buffer cannot
+    /// hold anything and is always an authoring mistake.
+    #[error("scenario_language_v1.places[{id:?}].storage[{slot:?}]: capacity must be > 0")]
+    PlaceStorageCapacityZero { id: String, slot: String },
+
+    /// A `capacity`, `storage`, `accepts`, `produces`, or
+    /// `failure_domains` key/entry is empty.
+    #[error("scenario_language_v1.places[{id:?}].{field}: empty entry not allowed")]
+    PlaceEmptyEntry { id: String, field: &'static str },
+
+    /// An `accepts`, `produces`, or `failure_domains` list contains a
+    /// duplicate entry.
+    #[error("scenario_language_v1.places[{id:?}].{field}: duplicate entry {value:?}")]
+    PlaceDuplicateEntry {
+        id: String,
+        field: &'static str,
+        value: String,
+    },
+
+    /// An `operating_states[*].when` predicate string did not match
+    /// any supported predicate template. The list of supported
+    /// templates is enumerated by [`Sl1OperatingPredicate`] variants.
+    #[error(
+        "scenario_language_v1.places[{id:?}].operating_states[{state:?}].when: \
+         unsupported predicate {predicate:?}"
+    )]
+    PlaceUnsupportedPredicate {
+        id: String,
+        state: String,
+        predicate: String,
+    },
+
+    /// A `used_percent` predicate threshold exceeds 100. Percent
+    /// thresholds outside `0..=100` cannot fire and are always an
+    /// authoring mistake.
+    #[error(
+        "scenario_language_v1.places[{id:?}].operating_states[{state:?}].when: \
+         used_percent threshold {threshold} exceeds {max}"
+    )]
+    PlacePercentThresholdOutOfRange {
+        id: String,
+        state: String,
+        threshold: u64,
+        max: u8,
+    },
+
+    /// An operating-state name is empty.
+    #[error("scenario_language_v1.places[{id:?}].operating_states: empty state name")]
+    PlaceEmptyOperatingStateName { id: String },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -291,15 +504,19 @@ impl GameOutcome {
 
 /// Validate a parsed [`RawSl1Scene`] into a [`Sl1Scene`].
 ///
-/// PR 0 enforces:
+/// PR 1 enforces:
 /// - `schema_version` must equal [`SL1_SCHEMA_VERSION`].
 /// - Unknown top-level fields land in [`RawSl1Scene::extra`] and are
 ///   rejected with [`Sl1LoadError::UnknownField`].
-/// - All grammar primitives must be empty —
+/// - `places` entries are typed; each is validated for id charset/length
+///   uniqueness, finite coords, non-empty role, non-zero storage
+///   capacity, `storage[*].initial <= storage[*].capacity`, deduplicated
+///   set-like fields, and an operating-state map whose `when` strings
+///   parse into a closed set of supported predicates.
+/// - All other behavior-bearing primitives must be empty —
 ///   [`Sl1LoadError::PrimitiveNotImplemented`] for any
-///   `places`/`links`/`things`/`transforms`/`demand`/`pressure`/
-///   `objectives`/`failure_conditions`/`agents`/`milestones` with
-///   entries, since this build cannot give them behavior.
+///   `links`/`things`/`transforms`/`demand`/`pressure`/`objectives`/
+///   `failure_conditions`/`agents`/`milestones` with entries.
 /// - The optional `observability` block may be present but must be
 ///   an empty object.
 ///
@@ -323,14 +540,12 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         });
     }
 
-    // Defensive per-section item caps. Even though PR 0 rejects any
-    // non-empty primitive, the cap is the right shape for later PRs
-    // when a primitive becomes valid. Note: serde has already
-    // allocated `Vec<Value>` by the time this check runs, so the cap
-    // is a diagnostic / sanity bound — not a parse-time memory
-    // defense against a maliciously huge input. A future loader pass
-    // that wants byte-level protection should add streaming or
-    // preallocation limits in addition to this check.
+    // Defensive per-section item caps. For PR 1, `places` is fully
+    // typed; the cap is still a diagnostic / sanity bound preventing
+    // pathological JSON. For not-yet-implemented primitives, the cap
+    // runs before the empty-section guard so the diagnostic still
+    // surfaces if author code happens to declare a 100k+ list while
+    // waiting for the matching PR.
     check_section_cap("places", raw.places.len())?;
     check_section_cap("links", raw.links.len())?;
     check_section_cap("things", raw.things.len())?;
@@ -342,11 +557,10 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     check_section_cap("agents", raw.agents.len())?;
     check_section_cap("milestones", raw.milestones.len())?;
 
-    // PR 0 has no behavior for any primitive. Reject non-empty sections
-    // so a proto-SL1 scene can't silently no-op while developers wait
-    // for PRs 1–11. The vecs are Vec<serde_json::Value> in PR 0 so
-    // even a well-formed future shape (e.g. `{"id": "p1"}`) reaches
-    // this guard instead of bouncing off a per-primitive struct.
+    // PRs 2–11 add behavior for each primitive. Reject non-empty
+    // sections so a proto-SL1 scene can't silently no-op while
+    // developers wait. PR 1 has removed `places` from this guard
+    // because the typed `Vec<RawSl1Place>` is now validated below.
     macro_rules! reject_non_empty {
         ($vec:expr, $name:literal) => {
             if !$vec.is_empty() {
@@ -354,7 +568,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.places, "places");
     reject_non_empty!(raw.links, "links");
     reject_non_empty!(raw.things, "things");
     reject_non_empty!(raw.transforms, "transforms");
@@ -364,6 +577,20 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     reject_non_empty!(raw.failure_conditions, "failure_conditions");
     reject_non_empty!(raw.agents, "agents");
     reject_non_empty!(raw.milestones, "milestones");
+
+    // Validate places (PR 1).
+    let mut places: Vec<Sl1Place> = Vec::with_capacity(raw.places.len());
+    let mut seen_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_place in raw.places {
+        let place = validate_place(raw_place)?;
+        if !seen_ids.insert(place.id.clone()) {
+            return Err(Sl1LoadError::PlaceDuplicateId { id: place.id });
+        }
+        places.push(place);
+    }
+    // Sort places by id so engine iteration order is independent of
+    // declaration order in the source JSON.
+    places.sort_by(|a, b| a.id.cmp(&b.id));
 
     // The optional observability block must be an empty object until
     // PR 9 implements its schema.
@@ -390,7 +617,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
 
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
-        places: Vec::new(),
+        places,
         links: Vec::new(),
         things: Vec::new(),
         transforms: Vec::new(),
@@ -413,6 +640,218 @@ fn check_section_cap(section: &'static str, count: usize) -> Result<(), Sl1LoadE
         });
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Place validation helpers (PR 1).
+// ---------------------------------------------------------------------------
+
+fn validate_place(raw: RawSl1Place) -> Result<Sl1Place, Sl1LoadError> {
+    validate_sl1_id(&raw.id)?;
+    if raw.role.trim().is_empty() {
+        return Err(Sl1LoadError::PlaceEmptyRole { id: raw.id });
+    }
+    if !raw.pos[0].is_finite()
+        || !raw.pos[1].is_finite()
+        || raw.pos[0].abs() > SL1_COORD_LIMIT
+        || raw.pos[1].abs() > SL1_COORD_LIMIT
+    {
+        return Err(Sl1LoadError::PlaceInvalidPos { id: raw.id });
+    }
+    // Capacity entries: reject empty keys. Zero values are allowed —
+    // the spec example `query_slots: 0` is a valid "declared but
+    // currently unavailable" capacity bucket.
+    for key in raw.capacity.keys() {
+        if key.trim().is_empty() {
+            return Err(Sl1LoadError::PlaceEmptyEntry {
+                id: raw.id,
+                field: "capacity",
+            });
+        }
+    }
+    // Storage slots: each key must be non-empty, capacity must be > 0,
+    // and initial must not exceed capacity.
+    for (slot, slot_def) in &raw.storage {
+        if slot.trim().is_empty() {
+            return Err(Sl1LoadError::PlaceEmptyEntry {
+                id: raw.id,
+                field: "storage",
+            });
+        }
+        if slot_def.capacity == 0 {
+            return Err(Sl1LoadError::PlaceStorageCapacityZero {
+                id: raw.id,
+                slot: slot.clone(),
+            });
+        }
+        if slot_def.initial > slot_def.capacity {
+            return Err(Sl1LoadError::PlaceStorageInitialExceedsCapacity {
+                id: raw.id,
+                slot: slot.clone(),
+                initial: slot_def.initial,
+                capacity: slot_def.capacity,
+            });
+        }
+    }
+    let storage: BTreeMap<String, Sl1StorageSlot> = raw
+        .storage
+        .into_iter()
+        .map(|(k, v)| {
+            (
+                k,
+                Sl1StorageSlot {
+                    capacity: v.capacity,
+                    initial: v.initial,
+                },
+            )
+        })
+        .collect();
+
+    let accepts = canonicalize_set(&raw.id, "accepts", raw.accepts)?;
+    let produces = canonicalize_set(&raw.id, "produces", raw.produces)?;
+    let failure_domains = canonicalize_set(&raw.id, "failure_domains", raw.failure_domains)?;
+
+    let mut operating_states: BTreeMap<String, Sl1OperatingState> = BTreeMap::new();
+    for (state, raw_state) in raw.operating_states {
+        if state.trim().is_empty() {
+            return Err(Sl1LoadError::PlaceEmptyOperatingStateName { id: raw.id });
+        }
+        let predicate = parse_predicate(&raw.id, &state, &raw_state.when)?;
+        operating_states.insert(
+            state,
+            Sl1OperatingState {
+                predicate,
+                grace_ticks: raw_state.grace_ticks,
+            },
+        );
+    }
+
+    Ok(Sl1Place {
+        id: raw.id,
+        role: raw.role,
+        pos: raw.pos,
+        capacity: raw.capacity,
+        storage,
+        accepts,
+        produces,
+        failure_domains,
+        operating_states,
+    })
+}
+
+fn validate_sl1_id(id: &str) -> Result<(), Sl1LoadError> {
+    if id.is_empty()
+        || id.len() > MAX_SL1_ID_LEN
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(Sl1LoadError::PlaceInvalidId { id: id.to_string() });
+    }
+    Ok(())
+}
+
+/// Reject empty entries and duplicates, then sort lexicographically.
+/// Used for set-like fields (`accepts`, `produces`, `failure_domains`)
+/// where author declaration order has no semantic meaning, so a stable
+/// canonical order eliminates cosmetic hash baseline drift.
+fn canonicalize_set(
+    place_id: &str,
+    field: &'static str,
+    raw: Vec<String>,
+) -> Result<Vec<String>, Sl1LoadError> {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in &raw {
+        if entry.trim().is_empty() {
+            return Err(Sl1LoadError::PlaceEmptyEntry {
+                id: place_id.to_string(),
+                field,
+            });
+        }
+        if !seen.insert(entry.clone()) {
+            return Err(Sl1LoadError::PlaceDuplicateEntry {
+                id: place_id.to_string(),
+                field,
+                value: entry.clone(),
+            });
+        }
+    }
+    Ok(seen.into_iter().collect())
+}
+
+/// Parse an operating-state `when` string into a typed
+/// [`Sl1OperatingPredicate`]. Matches a closed set of templates only;
+/// **no expression engine** — anything outside the templates is a
+/// typed load error. Surface for PR 1:
+///
+/// - `<metric_id>.used_percent >= <0..=100>`
+/// - `overloaded_ticks > <ticks>`
+///
+/// PRs 3 and 9 add `InventoryGte` and `MetricGte` templates.
+fn parse_predicate(
+    place_id: &str,
+    state: &str,
+    when: &str,
+) -> Result<Sl1OperatingPredicate, Sl1LoadError> {
+    let trimmed = when.trim();
+
+    // Try `<metric_id>.used_percent >= <threshold>` first because the
+    // dot disambiguates against the bare `overloaded_ticks` template.
+    if let Some((lhs, rhs)) = trimmed.split_once(">=") {
+        let lhs = lhs.trim();
+        let rhs = rhs.trim();
+        if let Some(metric) = lhs.strip_suffix(".used_percent") {
+            let metric = metric.trim();
+            if validate_sl1_id(metric).is_ok() {
+                let threshold: u64 =
+                    rhs.parse()
+                        .map_err(|_| Sl1LoadError::PlaceUnsupportedPredicate {
+                            id: place_id.to_string(),
+                            state: state.to_string(),
+                            predicate: when.to_string(),
+                        })?;
+                if threshold > u64::from(SL1_PERCENT_MAX) {
+                    return Err(Sl1LoadError::PlacePercentThresholdOutOfRange {
+                        id: place_id.to_string(),
+                        state: state.to_string(),
+                        threshold,
+                        max: SL1_PERCENT_MAX,
+                    });
+                }
+                return Ok(Sl1OperatingPredicate::UsedPercentGte {
+                    metric: metric.to_string(),
+                    #[allow(clippy::cast_possible_truncation)]
+                    threshold: threshold as u8,
+                });
+            }
+        }
+    }
+
+    // `overloaded_ticks > <ticks>`. Use `>` only (not `>=`) per spec
+    // example.
+    if let Some((lhs, rhs)) = trimmed.split_once('>') {
+        let lhs = lhs.trim();
+        let rhs = rhs.trim();
+        // Avoid catching `>=` here: if the next char of the original
+        // operator was `=` then split_once('>') would have produced
+        // `rhs` starting with `=`; reject that to keep `>` strict.
+        if lhs == "overloaded_ticks" && !rhs.starts_with('=') {
+            let ticks: u64 = rhs
+                .parse()
+                .map_err(|_| Sl1LoadError::PlaceUnsupportedPredicate {
+                    id: place_id.to_string(),
+                    state: state.to_string(),
+                    predicate: when.to_string(),
+                })?;
+            return Ok(Sl1OperatingPredicate::OverloadedTicksGt { ticks });
+        }
+    }
+
+    Err(Sl1LoadError::PlaceUnsupportedPredicate {
+        id: place_id.to_string(),
+        state: state.to_string(),
+        predicate: when.to_string(),
+    })
 }
 
 /// Parse + validate a standalone SL1 block from a `serde_json::Value`.
@@ -554,27 +993,28 @@ mod tests {
     }
 
     #[test]
-    fn non_empty_place_with_real_shape_hits_primitive_guard() {
-        // Even a well-formed future-PR shape inside `places` must hit
-        // PrimitiveNotImplemented in PR 0, not bounce off a per-struct
-        // deny_unknown_fields rule. This is the ergonomic the rubber
-        // duck flagged in round 2.
+    fn non_empty_place_missing_id_hits_typed_parse_error() {
+        // Now that `places` is a typed `Vec<RawSl1Place>` with strict
+        // `deny_unknown_fields`, a place missing required fields like
+        // `pos` no longer hits `PrimitiveNotImplemented` — it hits a
+        // typed parse error from serde. Documents the post-PR-1
+        // behavior change.
         let err = load_str(r#"{"places": [{"id": "p1", "role": "node"}]}"#).unwrap_err();
         match err {
-            Sl1LoadError::PrimitiveNotImplemented { section } => {
-                assert_eq!(section, "places");
+            Sl1LoadError::Parse { message } => {
+                assert!(message.contains("pos") || message.contains("missing field"));
             }
-            other => panic!("expected PrimitiveNotImplemented, got {other:?}"),
+            other => panic!("expected Parse for missing pos field, got {other:?}"),
         }
     }
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PR 0 has no behavior for any grammar primitive — even a
+        // PRs 2-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
-        // proto-SL1 scene would silently no-op.
+        // proto-SL1 scene would silently no-op. PR 1 removed `places`
+        // from this guard because places are now typed and validated.
         for (json, expected_section) in [
-            (r#"{"places": [{}]}"#, "places"),
             (r#"{"links": [{}]}"#, "links"),
             (r#"{"things": [{}]}"#, "things"),
             (r#"{"transforms": [{}]}"#, "transforms"),
@@ -597,10 +1037,22 @@ mod tests {
 
     #[test]
     fn section_caps_are_checked_before_placeholder_rejection() {
+        // Build 100_001 valid typed RawSl1Place values to trigger the
+        // section cap before any later per-entry validation runs.
         let raw = RawSl1Scene {
             schema_version: SL1_SCHEMA_VERSION,
             places: (0..=MAX_SL1_ITEMS_PER_SECTION)
-                .map(|_| serde_json::Value::Object(serde_json::Map::new()))
+                .map(|i| RawSl1Place {
+                    id: format!("p{i}"),
+                    role: "filler".to_string(),
+                    pos: [0.0, 0.0],
+                    capacity: BTreeMap::new(),
+                    storage: BTreeMap::new(),
+                    accepts: Vec::new(),
+                    produces: Vec::new(),
+                    failure_domains: Vec::new(),
+                    operating_states: BTreeMap::new(),
+                })
                 .collect(),
             ..RawSl1Scene::default()
         };
@@ -647,7 +1099,7 @@ mod tests {
         // typo at the top level is surfaced even if the author also
         // populated a primitive that would have hit
         // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "places": [{}]}"#).unwrap_err();
+        let err = load_str(r#"{"mystery": 1, "links": [{}]}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),
