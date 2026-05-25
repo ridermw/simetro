@@ -30,6 +30,7 @@ const SCENE_ENTRIES: &[SceneEntry] = &[
     scene_entry!("river-ferries"),
     scene_entry!("night-market-runners"),
     scene_entry!("orbital-transfers"),
+    scene_entry!("gpu-launch-week"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
