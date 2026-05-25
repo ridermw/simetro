@@ -244,6 +244,7 @@ fn advance_running(
     // 21 the completion check would fire before the deadline check).
     if now > deadline_tick {
         release_capacity(def, runtime);
+        release_pending_outputs(def, runtime);
         emit_warning(
             messages,
             id,
@@ -255,7 +256,8 @@ fn advance_running(
     }
 
     if now >= completion_tick {
-        // Produce outputs, update freshness, release capacity, → Idle.
+        // Produce outputs, update freshness, release capacity AND
+        // the pending-output reservation, → Idle.
         let place_id = def.runs_on.clone();
         let inv = runtime.inventories.entry(place_id.clone()).or_default();
         for out in &def.outputs {
@@ -267,6 +269,7 @@ fn advance_running(
             );
         }
         release_capacity(def, runtime);
+        release_pending_outputs(def, runtime);
         return Sl1TransformState::Idle;
     }
 
@@ -498,20 +501,29 @@ fn try_start(
         }
     }
 
-    // Output storage room? Each output thing's inventory + amount must
-    // fit under that place's storage[thing].capacity.
+    // Output storage room? Each output thing's inventory + already-
+    // in-flight reservation + amount must fit under that place's
+    // storage[thing].capacity. The pending-output reservation
+    // prevents two transforms targeting the same `(place, thing)`
+    // from both passing this check at the same tick and silently
+    // over-filling storage on completion.
     for out in &def.outputs {
         let cap = storage_caps
             .get(&(place_id, out.thing_id.as_str()))
             .copied()
             .unwrap_or(0);
         let cur = inv_ref.get(&out.thing_id).copied().unwrap_or(0);
-        if cur.saturating_add(out.amount) > cap {
+        let pending = runtime
+            .pending_outputs
+            .get(&(place_id.to_string(), out.thing_id.clone()))
+            .copied()
+            .unwrap_or(0);
+        if cur.saturating_add(pending).saturating_add(out.amount) > cap {
             return StartResult::Blocked;
         }
     }
 
-    // Commit: consume inputs, reserve capacity.
+    // Commit: consume inputs, reserve capacity, reserve output room.
     let inv = runtime.inventories.entry(place_id.to_string()).or_default();
     for input in &def.inputs {
         let entry = inv.entry(input.thing_id.clone()).or_default();
@@ -525,6 +537,11 @@ fn try_start(
         let entry = used.entry(k.clone()).or_default();
         *entry = entry.saturating_add(*v);
     }
+    for out in &def.outputs {
+        let key = (place_id.to_string(), out.thing_id.clone());
+        let entry = runtime.pending_outputs.entry(key).or_default();
+        *entry = entry.saturating_add(out.amount);
+    }
     StartResult::Started
 }
 
@@ -536,6 +553,26 @@ fn release_capacity(
         for (k, v) in &def.capacity_cost {
             if let Some(entry) = used.get_mut(k) {
                 *entry = entry.saturating_sub(*v);
+            }
+        }
+    }
+}
+
+/// Release the in-flight output reservation previously made by
+/// `try_start` when this transform entered `Running`. Called on
+/// completion (after inventory is incremented) and on every
+/// `Running → not-Running` failure transition (Late at deadline,
+/// Drop-policy failure) so the reserved storage room is freed.
+fn release_pending_outputs(
+    def: &Sl1Transform,
+    runtime: &mut crate::scenario_language_v1::Sl1RuntimeState,
+) {
+    for out in &def.outputs {
+        let key = (def.runs_on.clone(), out.thing_id.clone());
+        if let Some(entry) = runtime.pending_outputs.get_mut(&key) {
+            *entry = entry.saturating_sub(out.amount);
+            if *entry == 0 {
+                runtime.pending_outputs.remove(&key);
             }
         }
     }

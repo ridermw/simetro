@@ -395,6 +395,16 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
                     h.update(v.to_le_bytes());
                 }
             }
+            // In-flight output reservations (PR 5.5 carry-over). Each
+            // entry is `(place_id, thing_id) → reserved_amount`.
+            // Iteration is stable (BTreeMap).
+            h.update(b"sl1.runtime.transforms.pending_outputs.v1");
+            h.update((runtime.pending_outputs.len() as u64).to_le_bytes());
+            for ((place_id, thing_id), reserved) in &runtime.pending_outputs {
+                feed_str(h, place_id);
+                feed_str(h, thing_id);
+                h.update(reserved.to_le_bytes());
+            }
         }
         // Per-tick demand runtime fingerprint (PR 5). Gated on demand
         // being present so older baselines stay stable.

@@ -1161,3 +1161,258 @@ fn transforms_fixture_ticks_deterministically_against_baseline() {
         "deterministic hash drift detected for sl1-transforms.json\n  baseline: {baseline}\n  current:  {hash}"
     );
 }
+
+// -------------------------------------------------------------------
+// In-flight output reservation accounting (PR 5.5 carry-over)
+//
+// Multiple transforms targeting the same `(place, thing)` output must
+// not be able to over-fill storage by both passing `try_start`'s
+// output-room check before either of them completes. The fix is a
+// per-`(place, thing)` in-flight `pending_outputs` reservation that
+// `try_start` must include in its headroom check, and that is
+// released either on completion (when inventory is incremented) or
+// on Running → Late/Failed/Drop transitions (when no output lands).
+// -------------------------------------------------------------------
+
+fn contended_output_scene(failure_policy: &str, max_attempts: u32) -> String {
+    // Two transforms producing the same `(factory, widget)` output.
+    // Cap = 10, output amount = 6 each. Cadence aligned at tick 10
+    // so both fire in the same tick.
+    let places = r#"[
+        {
+            "id": "factory",
+            "role": "producer",
+            "pos": [0.0, 0.0],
+            "capacity": { "machine_hours": 2 },
+            "storage": { "widget": { "capacity": 10, "initial": 0 } },
+            "accepts": [],
+            "produces": ["widget"]
+        }
+    ]"#;
+    let things = r#"[
+        {"id": "widget", "kind": "output", "tags": [], "freshness_budget_ticks": 100}
+    ]"#;
+    let transforms = format!(
+        r#"[
+            {{"id": "t_a", "type": "x", "runs_on": "factory",
+              "outputs": [{{"thing": "widget", "amount": 6}}],
+              "cadence_ticks": 10, "duration_ticks": 5, "deadline_ticks": 50,
+              "capacity_cost": {{"machine_hours": 1}},
+              "failure_policy": "{failure_policy}", "max_attempts": {max_attempts}}},
+            {{"id": "t_b", "type": "x", "runs_on": "factory",
+              "outputs": [{{"thing": "widget", "amount": 6}}],
+              "cadence_ticks": 10, "duration_ticks": 5, "deadline_ticks": 50,
+              "capacity_cost": {{"machine_hours": 1}},
+              "failure_policy": "{failure_policy}", "max_attempts": {max_attempts}}}
+        ]"#
+    );
+    scene_with(places, things, &transforms)
+}
+
+#[test]
+fn pending_output_reservation_prevents_storage_overflow() {
+    // Without pending-output accounting: at tick 15 both t_a and t_b
+    // complete and inventory becomes 12 (cap=10), silently overflowing
+    // storage. With the fix, t_b is Blocked at tick 10 because
+    // pending+amount (6+6) exceeds cap=10, so inventory peaks at 6.
+    let json = contended_output_scene("retry_then_warn", 5);
+    let (_runner, world, _messages) = load_and_tick(&json, 30);
+    let rt = world.sl1_runtime.as_ref().expect("sl1_runtime");
+    let inv = rt.inventories.get("factory").expect("factory inventory");
+    let widgets = inv.get("widget").copied().unwrap_or(0);
+    assert!(
+        widgets <= 10,
+        "storage overflow: widget inventory = {widgets} exceeds capacity 10"
+    );
+}
+
+#[test]
+fn pending_output_reservation_blocks_second_concurrent_starter() {
+    // With the fix: t_a starts (it sorts first by id), t_b is Blocked.
+    // The runtime emits a Blocked warning for t_b at tick 10.
+    let json = contended_output_scene("retry_then_warn", 5);
+    let (_runner, _world, messages) = load_and_tick(&json, 11);
+    let blocked_b = count_warnings(&messages, "t_b", Sl1TransformWarningKind::Blocked);
+    assert!(
+        blocked_b >= 1,
+        "expected t_b to be Blocked when t_a's output reservation fills storage; \
+         got 0 Blocked warnings for t_b. Messages: {messages:?}"
+    );
+    // t_a should not be blocked — it gets the reservation.
+    let blocked_a = count_warnings(&messages, "t_a", Sl1TransformWarningKind::Blocked);
+    assert_eq!(
+        blocked_a, 0,
+        "t_a should not be Blocked — it acquires the reservation first by stable id order"
+    );
+}
+
+#[test]
+fn pending_output_reservation_released_on_completion() {
+    // After t_a completes (tick 15), inventory = 6, pending = 0.
+    // Next cadence at tick 20: t_a re-attempts. cur=6, pending=0,
+    // amount=6 → 12 > 10 → Blocked (this is the existing single-
+    // transform check). To exercise the released-pending path, we
+    // need cur+pending+amount to be allowed AFTER completion but NOT
+    // before. With cap=10, inv after completion = 6, so any new
+    // start needs amount <= 4. Use a cleaner shape: two transforms,
+    // first produces 3, then frees its slot, then a follow-up cycle
+    // with second producing 6 must succeed.
+    //
+    // Simpler approach: confirm that after t_a completes at tick 15,
+    // the runtime state shows pending_outputs[(factory,widget)] == 0
+    // and inventory == 6. This validates the release path.
+    let json = contended_output_scene("retry_then_warn", 5);
+    let (_runner, world, _messages) = load_and_tick(&json, 16);
+    let rt = world.sl1_runtime.as_ref().expect("sl1_runtime");
+    let inv = rt.inventories.get("factory").expect("factory inventory");
+    let widgets = inv.get("widget").copied().unwrap_or(0);
+    assert_eq!(
+        widgets, 6,
+        "after t_a completes, widget inventory should be exactly 6 (t_b blocked)"
+    );
+    let pending = world
+        .sl1_runtime
+        .as_ref()
+        .expect("sl1_runtime")
+        .pending_outputs
+        .get(&("factory".to_string(), "widget".to_string()))
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        pending, 0,
+        "pending_outputs must release to 0 after t_a completes"
+    );
+}
+
+#[test]
+fn pending_output_reservation_released_on_late_failure() {
+    // To exercise Running → Late release we need a transform that
+    // starts (reserving pending), then misses its deadline before
+    // completing. The loader rejects deadline < duration, so the
+    // late-arrival must come from a delayed start via Starved →
+    // recover. Producer (cadence=12, dur=1) supplies `raw`. By
+    // BTreeMap id order `consumer` runs before `producer` each tick:
+    // consumer cadence-fires at tick 10 (raw=0 → Starves), stays
+    // Starved through tick 13 (producer just deposits at 13 but
+    // consumer ran first that tick), then on tick 14 advance_waiting
+    // sees raw=1 and starts: scheduled_at=10, started_at=14,
+    // completion_tick=18, deadline_tick=15. At tick 16 advance_running
+    // sees now>deadline → emits Late + Drop-policy Failed, releases
+    // pending_outputs.
+    let places = r#"[
+        {
+            "id": "factory", "role": "consumer", "pos": [0.0, 0.0],
+            "capacity": {"m": 1},
+            "storage": {
+                "raw": {"capacity": 10, "initial": 0},
+                "widget": {"capacity": 10, "initial": 0}
+            },
+            "accepts": ["raw"], "produces": ["widget"]
+        }
+    ]"#;
+    let things = r#"[
+        {"id": "raw", "kind": "input", "tags": []},
+        {"id": "widget", "kind": "output", "tags": [], "freshness_budget_ticks": 100}
+    ]"#;
+    let transforms = r#"[
+        {"id": "consumer", "type": "x", "runs_on": "factory",
+         "inputs": [{"thing": "raw", "amount": 1}],
+         "outputs": [{"thing": "widget", "amount": 6}],
+         "cadence_ticks": 10, "duration_ticks": 4, "deadline_ticks": 5,
+         "capacity_cost": {"m": 1},
+         "failure_policy": "drop"},
+        {"id": "producer", "type": "x", "runs_on": "factory",
+         "outputs": [{"thing": "raw", "amount": 1}],
+         "cadence_ticks": 12, "duration_ticks": 1, "deadline_ticks": 5,
+         "capacity_cost": {},
+         "failure_policy": "drop"}
+    ]"#;
+    let json = scene_with(places, things, transforms);
+    let (_runner, world, messages) = load_and_tick(&json, 20);
+    let pending = world
+        .sl1_runtime
+        .as_ref()
+        .expect("sl1_runtime")
+        .pending_outputs
+        .get(&("factory".to_string(), "widget".to_string()))
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        pending, 0,
+        "pending_outputs must release to 0 after Drop-policy Late failure.          Messages: {messages:?}"
+    );
+    let widgets = world
+        .sl1_runtime
+        .as_ref()
+        .expect("sl1_runtime")
+        .inventories
+        .get("factory")
+        .and_then(|i| i.get("widget"))
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        widgets, 0,
+        "no widget should have been produced — consumer hit Late before completion"
+    );
+}
+
+#[test]
+fn pending_output_reservation_released_on_retry_then_warn_late() {
+    // Same shape as the Drop-policy Late test, but with
+    // `retry_then_warn` and `max_attempts: 2`. After consumer breaches
+    // its deadline at tick 16 advance_running emits Late and calls
+    // release_pending_outputs (this PR's fix) BEFORE handle_failure_policy
+    // returns Sl1TransformState::Late. The Late state's next tick will
+    // re-enter via advance_late and call try_start fresh — if the
+    // original reservation hadn't been released, that fresh try_start
+    // would Block on its own stale reservation.
+    let places = r#"[
+        {
+            "id": "factory", "role": "consumer", "pos": [0.0, 0.0],
+            "capacity": {"m": 1},
+            "storage": {
+                "raw": {"capacity": 10, "initial": 0},
+                "widget": {"capacity": 10, "initial": 0}
+            },
+            "accepts": ["raw"], "produces": ["widget"]
+        }
+    ]"#;
+    let things = r#"[
+        {"id": "raw", "kind": "input", "tags": []},
+        {"id": "widget", "kind": "output", "tags": [], "freshness_budget_ticks": 100}
+    ]"#;
+    let transforms = r#"[
+        {"id": "consumer", "type": "x", "runs_on": "factory",
+         "inputs": [{"thing": "raw", "amount": 1}],
+         "outputs": [{"thing": "widget", "amount": 6}],
+         "cadence_ticks": 10, "duration_ticks": 4, "deadline_ticks": 5,
+         "capacity_cost": {"m": 1},
+         "failure_policy": "retry_then_warn", "max_attempts": 2},
+        {"id": "producer", "type": "x", "runs_on": "factory",
+         "outputs": [{"thing": "raw", "amount": 1}],
+         "cadence_ticks": 12, "duration_ticks": 1, "deadline_ticks": 5,
+         "capacity_cost": {},
+         "failure_policy": "drop"}
+    ]"#;
+    let json = scene_with(places, things, transforms);
+    // Tick 16: advance_running emits Late, releases pending, enters
+    // Late state. By tick 17 (advance_late → try_start), pending was
+    // already 0 before the retry's fresh reservation. If we sample
+    // pending at tick 16 (after Late emission, before retry) it must
+    // be 0. Sampling at later ticks may or may not catch reservation
+    // depending on attempt scheduling, so we tick exactly 16 and check.
+    let (_runner, world, _messages) = load_and_tick(&json, 16);
+    let pending = world
+        .sl1_runtime
+        .as_ref()
+        .expect("sl1_runtime")
+        .pending_outputs
+        .get(&("factory".to_string(), "widget".to_string()))
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        pending, 0,
+        "pending_outputs for widget must be 0 right after RetryThenWarn Late \
+         release — otherwise the retry will block on its own stale reservation"
+    );
+}
