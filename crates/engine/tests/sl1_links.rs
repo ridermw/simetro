@@ -530,6 +530,52 @@ fn links_fixture_loads_and_static_payload_carries_them() {
 }
 
 #[test]
+fn degrade_quality_backpressure_round_trips_and_hashes_uniquely() {
+    // Positive coverage for the `degrade_quality` variant: the fixture
+    // intentionally exercises only the other three policies, so this
+    // test pins loader + StaticPayload mirror + hash-tag uniqueness for
+    // the fourth. Two otherwise-identical links differing only in
+    // backpressure must hash differently, confirming the tag byte is
+    // distinct from the other variants.
+    let base = r#"{
+        "id":"l1","type":"t","from":"a","to":"b","direction":"forward",
+        "capacity":{},"travel_ticks":1,"compatibility":[],"queue_capacity":4"#;
+    let degrade_scene = scene_with(
+        STANDARD_PLACES,
+        &format!(r#"[{base},"backpressure":"degrade_quality"}}]"#),
+    );
+    let block_scene = scene_with(
+        STANDARD_PLACES,
+        &format!(r#"[{base},"backpressure":"block_upstream"}}]"#),
+    );
+
+    let degrade = load_scene_str(&degrade_scene, SEED).expect("loads");
+    let degrade_sl1 = degrade.sl1.as_ref().unwrap();
+    assert!(matches!(
+        degrade_sl1.links[0].backpressure,
+        Sl1LinkBackpressure::DegradeQuality
+    ));
+    let degrade_view = encode_static(&degrade);
+    assert_eq!(
+        degrade_view.sl1_links[0].backpressure,
+        Sl1LinkBackpressureView::DegradeQuality
+    );
+
+    // Hash-tag uniqueness: degrade_quality must hash differently from
+    // block_upstream when every other field is identical.
+    let block = load_scene_str(&block_scene, SEED).expect("loads");
+    let mut degrade_world = degrade.world;
+    let mut block_world = block.world;
+    let mut runner = TickRunner::new();
+    let degrade_hash = hash_run(&mut degrade_world, &mut runner, 1);
+    let block_hash = hash_run(&mut block_world, &mut TickRunner::new(), 1);
+    assert_ne!(
+        degrade_hash, block_hash,
+        "degrade_quality must hash differently from block_upstream"
+    );
+}
+
+#[test]
 fn links_fixture_ticks_deterministically_against_baseline() {
     let mut loaded = load_scene_str(LINKS_SCENE, SEED).expect("fixture should load");
     let mut runner = TickRunner::new();

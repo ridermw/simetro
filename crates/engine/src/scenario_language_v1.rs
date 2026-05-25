@@ -4,11 +4,13 @@
 //! links, things, transforms, demand, pressure, objectives,
 //! failure_conditions, agents, observability, and milestones. PR 0
 //! installed the skeleton with all primitives as placeholders. PR 1
-//! lands the first real primitive: [`Sl1Place`] — author-declared
-//! locations with capacity, storage, accepted/produced thing tags,
-//! failure-domain labels, and a strict-predicate operating-state map.
-//! All other primitives remain placeholders until their dedicated PRs
-//! land.
+//! landed [`Sl1Place`] — author-declared locations with capacity,
+//! storage, accepted/produced thing tags, failure-domain labels, and a
+//! strict-predicate operating-state map. PR 2 landed [`Sl1Link`] —
+//! declarative typed links between places with direction, capacity,
+//! travel ticks, compatibility, backpressure policy, and an optional
+//! render hint. Primitives from `things` onward remain placeholders
+//! until their dedicated PRs land.
 //!
 //! The SL1 block is **strict-schema** in two complementary ways:
 //!
@@ -140,8 +142,9 @@ fn default_sl1_schema_version() -> u32 {
 // Loaded (validated, engine-facing) SL1 scene.
 // ---------------------------------------------------------------------------
 
-/// Validated SL1 scene. PR 1 populates `places`; other primitives
-/// remain empty placeholders until their dedicated PRs land.
+/// Validated SL1 scene. PR 1 populated `places` and PR 2 populated
+/// `links`; primitives from `things` onward remain empty placeholders
+/// until their dedicated PRs land.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Sl1Scene {
     pub schema_version: u32,
@@ -733,7 +736,7 @@ impl GameOutcome {
 
 /// Validate a parsed [`RawSl1Scene`] into a [`Sl1Scene`].
 ///
-/// PR 1 enforces:
+/// PR 2 enforces (in addition to PR 1):
 /// - `schema_version` must equal [`SL1_SCHEMA_VERSION`].
 /// - Unknown top-level fields land in [`RawSl1Scene::extra`] and are
 ///   rejected with [`Sl1LoadError::UnknownField`].
@@ -742,9 +745,17 @@ impl GameOutcome {
 ///   capacity, `storage[*].initial <= storage[*].capacity`, deduplicated
 ///   set-like fields, and an operating-state map whose `when` strings
 ///   parse into a closed set of supported predicates.
-/// - All other behavior-bearing primitives must be empty —
+/// - `links` entries are typed; each is validated for id charset/length
+///   uniqueness, non-empty `type`, `from`/`to` referencing declared
+///   places (no self-loops), closed-enum `direction` and `backpressure`
+///   (each distinguishing Missing vs Unknown), non-empty capacity keys,
+///   deduplicated non-empty compatibility entries, `travel_ticks` in
+///   `1..=`[`MAX_LINK_TRAVEL_TICKS`], `queue_capacity` in
+///   `1..=`[`MAX_LINK_QUEUE_CAPACITY`], and an optional render hint
+///   with a non-empty `style`.
+/// - All remaining behavior-bearing primitives must be empty —
 ///   [`Sl1LoadError::PrimitiveNotImplemented`] for any
-///   `links`/`things`/`transforms`/`demand`/`pressure`/`objectives`/
+///   `things`/`transforms`/`demand`/`pressure`/`objectives`/
 ///   `failure_conditions`/`agents`/`milestones` with entries.
 /// - The optional `observability` block may be present but must be
 ///   an empty object.
