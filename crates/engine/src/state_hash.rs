@@ -291,6 +291,39 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-transform static fingerprint (PR 4). Transforms are already
+    // sorted by id at validation time. Gated on `!transforms.is_empty()`
+    // so existing baselines (sl1-empty, sl1-places, sl1-links,
+    // sl1-things) remain stable.
+    if !sl1.transforms.is_empty() {
+        for t in &sl1.transforms {
+            h.update(b"sl1.transform.v1");
+            feed_str(h, &t.id);
+            feed_str(h, &t.kind);
+            feed_str(h, &t.runs_on);
+            h.update((t.inputs.len() as u64).to_le_bytes());
+            for io in &t.inputs {
+                feed_str(h, &io.thing_id);
+                h.update(io.amount.to_le_bytes());
+            }
+            h.update((t.outputs.len() as u64).to_le_bytes());
+            for io in &t.outputs {
+                feed_str(h, &io.thing_id);
+                h.update(io.amount.to_le_bytes());
+            }
+            h.update(t.cadence_ticks.to_le_bytes());
+            h.update(t.duration_ticks.to_le_bytes());
+            h.update(t.deadline_ticks.to_le_bytes());
+            h.update((t.capacity_cost.len() as u64).to_le_bytes());
+            for (k, v) in &t.capacity_cost {
+                feed_str(h, k);
+                h.update(v.to_le_bytes());
+            }
+            h.update([failure_policy_tag(t.failure_policy)]);
+            h.update(t.max_attempts.to_le_bytes());
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -314,6 +347,82 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
                 feed_str(h, thing_id);
                 feed_freshness_state(h, state);
             }
+        }
+        // Per-tick transform runtime fingerprint (PR 4). Gated on
+        // transforms being present so older baselines stay stable.
+        if !sl1.transforms.is_empty() {
+            h.update(b"sl1.runtime.transforms.v1");
+            h.update((runtime.transforms.len() as u64).to_le_bytes());
+            for (tid, state) in &runtime.transforms {
+                feed_str(h, tid);
+                feed_transform_state(h, state);
+            }
+            h.update((runtime.place_capacity_used.len() as u64).to_le_bytes());
+            for (place_id, buckets) in &runtime.place_capacity_used {
+                feed_str(h, place_id);
+                h.update((buckets.len() as u64).to_le_bytes());
+                for (k, v) in buckets {
+                    feed_str(h, k);
+                    h.update(v.to_le_bytes());
+                }
+            }
+        }
+    }
+}
+
+fn failure_policy_tag(p: crate::scenario_language_v1::Sl1FailurePolicy) -> u8 {
+    use crate::scenario_language_v1::Sl1FailurePolicy::*;
+    match p {
+        RetryThenWarn => 1,
+        Drop => 2,
+    }
+}
+
+fn feed_transform_state(h: &mut Sha256, state: &crate::scenario_language_v1::Sl1TransformState) {
+    use crate::scenario_language_v1::Sl1TransformState::*;
+    match state {
+        Idle => {
+            h.update([0u8]);
+        }
+        Running {
+            scheduled_at,
+            started_at,
+            attempt,
+        } => {
+            h.update([1u8]);
+            h.update(scheduled_at.to_le_bytes());
+            h.update(started_at.to_le_bytes());
+            h.update(attempt.to_le_bytes());
+        }
+        Starved {
+            scheduled_at,
+            since,
+            attempts,
+        } => {
+            h.update([2u8]);
+            h.update(scheduled_at.to_le_bytes());
+            h.update(since.to_le_bytes());
+            h.update(attempts.to_le_bytes());
+        }
+        Blocked {
+            scheduled_at,
+            since,
+            attempts,
+        } => {
+            h.update([3u8]);
+            h.update(scheduled_at.to_le_bytes());
+            h.update(since.to_le_bytes());
+            h.update(attempts.to_le_bytes());
+        }
+        Late {
+            scheduled_at,
+            attempt,
+            since,
+        } => {
+            h.update([4u8]);
+            h.update(scheduled_at.to_le_bytes());
+            h.update(attempt.to_le_bytes());
+            h.update(since.to_le_bytes());
         }
     }
 }
@@ -528,6 +637,36 @@ fn feed_warning(h: &mut Sha256, w: &WarningPayload) {
         WarningPayload::AgentLogSlow => {
             h.update([0x33]);
         }
+        WarningPayload::Sl1Transform {
+            transform_id,
+            event,
+            tick,
+            attempt,
+        } => {
+            h.update([0x34]);
+            h.update((transform_id.len() as u64).to_le_bytes());
+            h.update(transform_id.as_bytes());
+            h.update([sl1_transform_warning_tag(*event)]);
+            h.update(tick.to_le_bytes());
+            match attempt {
+                Some(a) => {
+                    h.update([0x01]);
+                    h.update(a.to_le_bytes());
+                }
+                None => h.update([0x00]),
+            }
+        }
+    }
+}
+
+fn sl1_transform_warning_tag(event: simetro_protocol::Sl1TransformWarningKind) -> u8 {
+    use simetro_protocol::Sl1TransformWarningKind as K;
+    match event {
+        K::Starved => 0x01,
+        K::Blocked => 0x02,
+        K::Late => 0x03,
+        K::Failed => 0x04,
+        K::SlotMissed => 0x05,
     }
 }
 

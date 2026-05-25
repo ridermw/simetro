@@ -18,10 +18,11 @@
 
 use simetro_protocol::{
     FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView,
-    Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView,
-    Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView,
-    Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView,
-    SnapshotPayload, StaticPayload,
+    Sl1FailurePolicyView, Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView,
+    Sl1LinkView, Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView,
+    Sl1PlaceView, Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView,
+    Sl1ThingView, Sl1TransformIoView, Sl1TransformRuntimeView, Sl1TransformStateView,
+    Sl1TransformView, SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
@@ -106,6 +107,11 @@ pub fn encode_static_parts(
             .sl1
             .as_ref()
             .map(|sl1| sl1.things.iter().map(thing_to_view).collect())
+            .unwrap_or_default(),
+        sl1_transforms: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.transforms.iter().map(transform_to_view).collect())
             .unwrap_or_default(),
     }
 }
@@ -219,6 +225,85 @@ fn freshness_to_view(state: FreshnessState) -> FreshnessStateView {
     }
 }
 
+fn transform_to_view(t: &crate::scenario_language_v1::Sl1Transform) -> Sl1TransformView {
+    use crate::scenario_language_v1::Sl1FailurePolicy;
+    Sl1TransformView {
+        id: t.id.clone(),
+        kind: t.kind.clone(),
+        runs_on: t.runs_on.clone(),
+        inputs: t
+            .inputs
+            .iter()
+            .map(|io| Sl1TransformIoView {
+                thing_id: io.thing_id.clone(),
+                amount: io.amount,
+            })
+            .collect(),
+        outputs: t
+            .outputs
+            .iter()
+            .map(|io| Sl1TransformIoView {
+                thing_id: io.thing_id.clone(),
+                amount: io.amount,
+            })
+            .collect(),
+        cadence_ticks: t.cadence_ticks,
+        duration_ticks: t.duration_ticks,
+        deadline_ticks: t.deadline_ticks,
+        capacity_cost: t.capacity_cost.clone(),
+        failure_policy: match t.failure_policy {
+            Sl1FailurePolicy::RetryThenWarn => Sl1FailurePolicyView::RetryThenWarn,
+            Sl1FailurePolicy::Drop => Sl1FailurePolicyView::Drop,
+        },
+        max_attempts: t.max_attempts,
+    }
+}
+
+fn transform_state_to_view(
+    state: &crate::scenario_language_v1::Sl1TransformState,
+) -> Sl1TransformStateView {
+    use crate::scenario_language_v1::Sl1TransformState as S;
+    match state {
+        S::Idle => Sl1TransformStateView::Idle,
+        S::Running {
+            scheduled_at,
+            started_at,
+            attempt,
+        } => Sl1TransformStateView::Running {
+            scheduled_at: *scheduled_at,
+            started_at: *started_at,
+            attempt: *attempt,
+        },
+        S::Starved {
+            scheduled_at,
+            since,
+            attempts,
+        } => Sl1TransformStateView::Starved {
+            scheduled_at: *scheduled_at,
+            since: *since,
+            attempts: *attempts,
+        },
+        S::Blocked {
+            scheduled_at,
+            since,
+            attempts,
+        } => Sl1TransformStateView::Blocked {
+            scheduled_at: *scheduled_at,
+            since: *since,
+            attempts: *attempts,
+        },
+        S::Late {
+            scheduled_at,
+            attempt,
+            since,
+        } => Sl1TransformStateView::Late {
+            scheduled_at: *scheduled_at,
+            attempt: *attempt,
+            since: *since,
+        },
+    }
+}
+
 /// Compute group-by-color batches over path views. Renderer caches one
 /// `Path2D` per color and re-uses it across frames.
 ///
@@ -242,6 +327,7 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
     out.tick = world.tick;
     out.movers.clear();
     out.sl1_place_inventories.clear();
+    out.sl1_transform_states.clear();
 
     for m in world.movers.values() {
         let (pos, on_path) = match m.state() {
@@ -287,6 +373,12 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
                 thing_id: thing_id.clone(),
                 count,
                 freshness: freshness_to_view(*state),
+            });
+        }
+        for (transform_id, state) in runtime.transforms.iter() {
+            out.sl1_transform_states.push(Sl1TransformRuntimeView {
+                transform_id: transform_id.clone(),
+                state: transform_state_to_view(state),
             });
         }
     }
