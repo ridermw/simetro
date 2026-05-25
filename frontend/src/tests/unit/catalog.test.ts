@@ -33,6 +33,49 @@ const REQUIRED_STRING_FIELDS = [
   "status",
 ] as const satisfies readonly (keyof SceneCatalogEntry)[];
 
+const NEW_SCENARIO_PACK_IDS = [
+  "clinic-triage-desk",
+  "greenhouse-water-watch",
+  "library-reshelving-clock",
+  "microgrid-starter",
+  "sensor-calibration-lab",
+  "circuit-garden",
+  "kitchen-prep-board",
+  "archive-index-table",
+  "reef-nursery",
+  "robot-arm-workbench",
+  "stormwater-pump-room",
+  "bakery-oven-shift",
+  "warehouse-cold-chain",
+  "observatory-night-queue",
+  "recycling-sort-floor",
+  "forge-heat-map",
+  "seed-bank-vault",
+  "drone-repair-bay",
+  "weather-balloon-yard",
+  "crystal-growth-rig",
+  "datacenter-cooling-surge",
+  "hospital-bed-command",
+  "food-bank-allocation",
+  "security-alert-fusion",
+  "satellite-downlink-window",
+  "bioreactor-balance",
+  "disaster-supply-staging",
+  "fabric-dye-lab",
+  "museum-conservation-bench",
+  "wildfire-watch-grid",
+  "chip-fab-yield-crisis",
+  "regional-blackstart",
+  "airport-ground-stop",
+  "pandemic-supply-web",
+  "fusion-shot-campaign",
+  "quantum-control-room",
+  "deep-sea-habitat-grid",
+  "city-budget-war-room",
+  "planetary-defense-array",
+  "autonomous-farm-season",
+] as const;
+
 describe("scene catalog", () => {
   it("defines the first gallery slice with required static metadata", () => {
     const demo = findSceneById("demo-paths");
@@ -87,6 +130,25 @@ describe("scene catalog", () => {
     expect(isLocalScenePath("/games/demo-paths.json")).toBe(false);
     expect(isLocalScenePath("games/../secrets.json")).toBe(false);
     expect(isLocalScenePath("games/nested/demo-paths.json")).toBe(false);
+  });
+
+  it("adds the 40-scene complex scenario pack with balanced difficulty and scene kinds", () => {
+    const pack = NEW_SCENARIO_PACK_IDS.map((id) => {
+      const scene = findSceneById(id);
+      expect(scene, `${id} should be registered in SCENE_CATALOG`).toBeDefined();
+      return scene;
+    }).filter((scene): scene is SceneCatalogEntry => scene !== undefined);
+
+    expect(pack).toHaveLength(40);
+    expect(new Set(pack.map((scene) => scene.id)).size).toBe(40);
+    expect(pack.filter((scene) => scene.world_kind === "sl1_scenario")).toHaveLength(20);
+    expect(pack.filter((scene) => scene.world_kind === "transit_loop")).toHaveLength(20);
+    expect(pack.filter((scene) => scene.status === "draft")).toHaveLength(20);
+    expect(pack.filter((scene) => scene.status === "ready")).toHaveLength(20);
+
+    for (const difficulty of ["intro", "easy", "medium", "hard"] as const) {
+      expect(pack.filter((scene) => scene.difficulty === difficulty)).toHaveLength(10);
+    }
   });
 
   it("describes screenshot capture without adding a live provider dependency", () => {
