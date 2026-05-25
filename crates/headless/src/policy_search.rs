@@ -736,6 +736,26 @@ pub fn cmd_policy_search(
         }
     };
 
+    // Preflight: parse + strict-load the scene before emitting any
+    // JSONL. A malformed scene file is a process-level IO/config
+    // problem (exit code 4), not a per-trial policy-artifact problem
+    // (which would be exit code 2). Catching it here keeps the
+    // documented exit-code contract honest.
+    if let Err(e) = serde_json::from_str::<Value>(&scene_json) {
+        eprintln!(
+            "policy-search: scene {scene} is not valid JSON: {e}",
+            scene = scene.display()
+        );
+        return 4;
+    }
+    if let Err(e) = load_scene_str(&scene_json, seed) {
+        eprintln!(
+            "policy-search: scene {scene} failed to load: {e}",
+            scene = scene.display()
+        );
+        return 4;
+    }
+
     let baseline_policy = match baseline_policy_path {
         Some(p) => match load_policy(p) {
             Ok(p) => p,

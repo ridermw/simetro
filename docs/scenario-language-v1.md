@@ -761,10 +761,20 @@ typed and surfaces as `Blocked`.
 
 ### Exit codes
 
-- `0` — every trial produced a comparable score.
-- `2` — at least one trial blocked (policy artifact invalid).
-- `3` — at least one trial failed (engine panic).
-- `4` — scene or IO error before any trial row was emitted.
+| code | meaning |
+|---|---|
+| 0 | every trial produced a comparable score |
+| 2 | at least one trial blocked (policy artifact invalid) |
+| 3 | at least one trial failed (engine panic) |
+| 4 | scene/IO error before any trial row was emitted |
+
+The scene file is preflight-parsed and preflight-loaded
+(`load_scene_str`) before any JSONL is written. A malformed or
+SL1-invalid scene file therefore exits with code 4 (process-level
+IO/config problem), not code 2 (policy artifact problem). This
+keeps the contract honest: code 2 always means "a policy artifact
+was rejected", and code 4 always means "we never got far enough
+to run a trial".
 
 ### JSONL output schema
 

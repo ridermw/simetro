@@ -244,6 +244,56 @@ fn policy_with_unknown_agent_is_blocked_and_exit_is_2() {
 }
 
 #[test]
+fn malformed_scene_file_exits_with_4_before_any_jsonl() {
+    // A scene file that isn't valid JSON is a process-level IO/config
+    // problem, NOT a policy artifact problem — it must produce exit
+    // code 4 (scene/IO error) and not exit code 2 (policy blocked).
+    // It must also NOT emit any trial JSONL rows.
+    let bad_scene_path = std::env::temp_dir().join(format!(
+        "simetro-policy-bad-scene-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
+    ));
+    fs::write(&bad_scene_path, "{ this is not valid json").expect("write bad scene");
+    let out = tmp_path("bad-scene");
+    let status = Command::new(bin())
+        .args([
+            "policy-search",
+            "--scene",
+            bad_scene_path.to_str().unwrap(),
+            "--baseline-policy",
+            baseline_policy().to_str().unwrap(),
+            "--candidate-policy",
+            aggressive_policy().to_str().unwrap(),
+            "--ticks",
+            "200",
+            "--seed",
+            "42",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .status()
+        .expect("run policy-search");
+    assert_eq!(
+        status.code(),
+        Some(4),
+        "expected exit 4 for malformed scene JSON, got {status:?}"
+    );
+    // Output file must not exist OR be empty: scene preflight rejected
+    // the run before any JSONL was written.
+    let wrote = fs::read_to_string(&out).unwrap_or_default();
+    assert!(
+        wrote.is_empty(),
+        "expected no JSONL written when scene fails preflight, got: {wrote}"
+    );
+    let _ = fs::remove_file(&bad_scene_path);
+    let _ = fs::remove_file(&out);
+}
+
+#[test]
 fn policy_with_invalid_override_key_blocks_at_load_time() {
     // Top-level policy parse failure (artifact JSON has typo) → process
     // exits 2 BEFORE any trial JSONL is written. This covers the
