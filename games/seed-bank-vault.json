@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "name": "seed-bank-vault",
+  "theme": {
+    "palette": [
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "seed-bank-vault",
+    "title": "Seed Bank Vault",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A global seed bank with mirrored left and right cold-storage arms branching from a central vault and intake/drying gateway.",
+    "tags": [
+      "seed_bank",
+      "easy",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Seed Bank Vault colour theme.",
+    "layout_note": "11 nodes forming a seed_bank topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting seed_bank roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.60\u20131.20.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "vault",
+        "pos": [
+          0,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "corr-l",
+        "pos": [
+          -160,
+          0
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "cold-l1",
+        "pos": [
+          -300,
+          120
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "cold-l2",
+        "pos": [
+          -300,
+          -120
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "lab-l",
+        "pos": [
+          -420,
+          0
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "corr-r",
+        "pos": [
+          160,
+          0
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "cold-r1",
+        "pos": [
+          300,
+          120
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "cold-r2",
+        "pos": [
+          300,
+          -120
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "lab-r",
+        "pos": [
+          420,
+          0
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "intake",
+        "pos": [
+          0,
+          200
+        ],
+        "shape": "triangle",
+        "color": 6
+      },
+      {
+        "id": "drying",
+        "pos": [
+          0,
+          -200
+        ],
+        "shape": "triangle",
+        "color": 6
+      }
+    ],
+    "paths": [
+      {
+        "id": "vault-cl",
+        "from": "vault",
+        "to": "corr-l",
+        "color": 3
+      },
+      {
+        "id": "vault-cr",
+        "from": "vault",
+        "to": "corr-r",
+        "color": 3
+      },
+      {
+        "id": "cl-l1",
+        "from": "corr-l",
+        "to": "cold-l1",
+        "color": 4
+      },
+      {
+        "id": "cl-l2",
+        "from": "corr-l",
+        "to": "cold-l2",
+        "color": 4
+      },
+      {
+        "id": "l1-lab",
+        "from": "cold-l1",
+        "to": "lab-l",
+        "color": 5
+      },
+      {
+        "id": "l2-lab",
+        "from": "cold-l2",
+        "to": "lab-l",
+        "color": 5
+      },
+      {
+        "id": "cr-r1",
+        "from": "corr-r",
+        "to": "cold-r1",
+        "color": 4
+      },
+      {
+        "id": "cr-r2",
+        "from": "corr-r",
+        "to": "cold-r2",
+        "color": 4
+      },
+      {
+        "id": "r1-lab",
+        "from": "cold-r1",
+        "to": "lab-r",
+        "color": 5
+      },
+      {
+        "id": "r2-lab",
+        "from": "cold-r2",
+        "to": "lab-r",
+        "color": 5
+      },
+      {
+        "id": "intake-vault",
+        "from": "intake",
+        "to": "vault",
+        "color": 2
+      },
+      {
+        "id": "vault-drying",
+        "from": "vault",
+        "to": "drying",
+        "color": 6
+      }
+    ],
+    "movers": [
+      {
+        "id": "tray-1",
+        "on_path": "vault-cl",
+        "speed": 0.6
+      },
+      {
+        "id": "tray-2",
+        "on_path": "vault-cr",
+        "speed": 0.6
+      },
+      {
+        "id": "tray-3",
+        "on_path": "cl-l1",
+        "speed": 0.9
+      },
+      {
+        "id": "tray-4",
+        "on_path": "cr-r2",
+        "speed": 0.9
+      },
+      {
+        "id": "tray-5",
+        "on_path": "intake-vault",
+        "speed": 1.2
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

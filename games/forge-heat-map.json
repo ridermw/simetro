@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "name": "forge-heat-map",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "forge-heat-map",
+    "title": "Forge Heat Map",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A metal forge where billets travel an outer heat-map ring with hot shortcuts to inner quench stations.",
+    "tags": [
+      "forge",
+      "easy",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Forge Heat Map colour theme.",
+    "layout_note": "11 nodes forming a forge topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting forge roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.80\u20131.80.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "zone-0",
+        "pos": [
+          0,
+          -180
+        ],
+        "shape": "triangle",
+        "color": 2
+      },
+      {
+        "id": "zone-1",
+        "pos": [
+          176,
+          -127
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "zone-2",
+        "pos": [
+          250,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "zone-3",
+        "pos": [
+          176,
+          127
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "zone-4",
+        "pos": [
+          0,
+          180
+        ],
+        "shape": "circle",
+        "color": 6
+      },
+      {
+        "id": "zone-5",
+        "pos": [
+          -176,
+          127
+        ],
+        "shape": "triangle",
+        "color": 2
+      },
+      {
+        "id": "zone-6",
+        "pos": [
+          -250,
+          0
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "zone-7",
+        "pos": [
+          -176,
+          -127
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "hot-0",
+        "pos": [
+          -80,
+          60
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "hot-1",
+        "pos": [
+          80,
+          60
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "hot-2",
+        "pos": [
+          0,
+          -80
+        ],
+        "shape": "square",
+        "color": 3
+      }
+    ],
+    "paths": [
+      {
+        "id": "rp-0",
+        "from": "zone-0",
+        "to": "zone-1",
+        "color": 2
+      },
+      {
+        "id": "rp-1",
+        "from": "zone-1",
+        "to": "zone-2",
+        "color": 3
+      },
+      {
+        "id": "rp-2",
+        "from": "zone-2",
+        "to": "zone-3",
+        "color": 4
+      },
+      {
+        "id": "rp-3",
+        "from": "zone-3",
+        "to": "zone-4",
+        "color": 5
+      },
+      {
+        "id": "rp-4",
+        "from": "zone-4",
+        "to": "zone-5",
+        "color": 6
+      },
+      {
+        "id": "rp-5",
+        "from": "zone-5",
+        "to": "zone-6",
+        "color": 2
+      },
+      {
+        "id": "rp-6",
+        "from": "zone-6",
+        "to": "zone-7",
+        "color": 3
+      },
+      {
+        "id": "rp-7",
+        "from": "zone-7",
+        "to": "zone-0",
+        "color": 4
+      },
+      {
+        "id": "spoke-hot0",
+        "from": "zone-0",
+        "to": "hot-0",
+        "color": 4
+      },
+      {
+        "id": "spoke-hot1",
+        "from": "zone-2",
+        "to": "hot-0",
+        "color": 4
+      },
+      {
+        "id": "spoke-hot2",
+        "from": "zone-4",
+        "to": "hot-1",
+        "color": 5
+      },
+      {
+        "id": "spoke-hot3",
+        "from": "zone-6",
+        "to": "hot-1",
+        "color": 5
+      },
+      {
+        "id": "spoke-hot4",
+        "from": "zone-7",
+        "to": "hot-2",
+        "color": 3
+      },
+      {
+        "id": "hot01-link",
+        "from": "hot-0",
+        "to": "hot-1",
+        "color": 4
+      },
+      {
+        "id": "hot12-link",
+        "from": "hot-1",
+        "to": "hot-2",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "billet-a",
+        "on_path": "rp-0",
+        "speed": 0.8
+      },
+      {
+        "id": "billet-b",
+        "on_path": "rp-3",
+        "speed": 1.2
+      },
+      {
+        "id": "billet-c",
+        "on_path": "spoke-hot0",
+        "speed": 1.5
+      },
+      {
+        "id": "billet-d",
+        "on_path": "spoke-hot2",
+        "speed": 1.0
+      },
+      {
+        "id": "billet-e",
+        "on_path": "hot01-link",
+        "speed": 1.8
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

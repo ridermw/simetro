@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "airport-ground-stop",
+  "theme": {
+    "palette": [
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "airport-ground-stop",
+    "title": "Airport Ground Stop",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An airport ground stop where an AI flow manager must route flight plans through gate assignment, pushback, taxiway sequencing, and runway departure queues while preventing gridlock.",
+    "tags": [
+      "airport",
+      "hard",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "gate-desk",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "flight_queue": 60
+        },
+        "storage": {
+          "flight_plan": {
+            "capacity": 250,
+            "initial": 25
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "flight_plan"
+        ],
+        "failure_domains": [
+          "airport",
+          "gates"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "flight_queue.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "pushback-coord",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "pushback_slots": 30
+        },
+        "storage": {
+          "flight_plan": {
+            "capacity": 200,
+            "initial": 15
+          },
+          "gate_assignment": {
+            "capacity": 120,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "flight_plan"
+        ],
+        "produces": [
+          "gate_assignment"
+        ],
+        "failure_domains": [
+          "airport",
+          "pushback"
+        ],
+        "operating_states": {
+          "congested": {
+            "when": "pushback_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "taxiway-ctrl",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "taxi_movements": 50
+        },
+        "storage": {
+          "gate_assignment": {
+            "capacity": 120,
+            "initial": 10
+          },
+          "pushback_clearance": {
+            "capacity": 100,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "gate_assignment"
+        ],
+        "produces": [
+          "pushback_clearance"
+        ],
+        "failure_domains": [
+          "airport",
+          "taxiway"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "taxi_movements.used_percent >= 88",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "runway-sequencer",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "runway_queue": 25
+        },
+        "storage": {
+          "pushback_clearance": {
+            "capacity": 100,
+            "initial": 7
+          },
+          "dep_sequence": {
+            "capacity": 80,
+            "initial": 5
+          }
+        },
+        "accepts": [
+          "pushback_clearance"
+        ],
+        "produces": [
+          "dep_sequence"
+        ],
+        "failure_domains": [
+          "airport",
+          "runway"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "runway_queue.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "departure-board",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "board_slots": 80
+        },
+        "storage": {
+          "dep_sequence": {
+            "capacity": 80,
+            "initial": 5
+          },
+          "atc_report": {
+            "capacity": 60,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "dep_sequence"
+        ],
+        "produces": [
+          "atc_report"
+        ],
+        "failure_domains": [
+          "airport",
+          "atc"
+        ],
+        "operating_states": {
+          "stale": {
+            "when": "board_slots.used_percent >= 90",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "flow-manager",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "airport"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "gate-push",
+        "type": "flight_flow",
+        "from": "gate-desk",
+        "to": "pushback-coord",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 50
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "flight_plan"
+        ],
+        "queue_capacity": 300,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "push-taxi",
+        "type": "taxi_flow",
+        "from": "pushback-coord",
+        "to": "taxiway-ctrl",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "gate_assignment"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "taxi-runway",
+        "type": "runway_feed",
+        "from": "taxiway-ctrl",
+        "to": "runway-sequencer",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 25
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "pushback_clearance"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "runway-board",
+        "type": "board_feed",
+        "from": "runway-sequencer",
+        "to": "departure-board",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "dep_sequence"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "flow-gate",
+        "type": "control_bus",
+        "from": "flow-manager",
+        "to": "gate-desk",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "flow-push",
+        "type": "control_bus",
+        "from": "flow-manager",
+        "to": "pushback-coord",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "flight_plan",
+        "kind": "work_order",
+        "tags": [
+          "flight",
+          "plan",
+          "atc"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "gate_assignment",
+        "kind": "work_order",
+        "tags": [
+          "gate",
+          "assignment",
+          "pushback"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "pushback_clearance",
+        "kind": "work_order",
+        "tags": [
+          "clearance",
+          "pushback",
+          "taxi"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "dep_sequence",
+        "kind": "data_record",
+        "tags": [
+          "departure",
+          "sequence",
+          "runway"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "atc_report",
+        "kind": "compliance_record",
+        "tags": [
+          "atc",
+          "report",
+          "ops"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "assign-gate",
+        "type": "gate_assignment",
+        "runs_on": "pushback-coord",
+        "inputs": [
+          {
+            "thing": "flight_plan",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "gate_assignment",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 6,
+        "duration_ticks": 2,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "pushback_slots": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "clear-taxi",
+        "type": "taxi_clearance",
+        "runs_on": "taxiway-ctrl",
+        "inputs": [
+          {
+            "thing": "gate_assignment",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "pushback_clearance",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 3,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "taxi_movements": 6
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "sequence-dep",
+        "type": "departure_sequencing",
+        "runs_on": "runway-sequencer",
+        "inputs": [
+          {
+            "thing": "pushback_clearance",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "dep_sequence",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 12,
+        "duration_ticks": 5,
+        "deadline_ticks": 24,
+        "capacity_cost": {
+          "runway_queue": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "publish-board",
+        "type": "atc_reporting",
+        "runs_on": "departure-board",
+        "inputs": [
+          {
+            "thing": "dep_sequence",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "atc_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "board_slots": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "dep-demand",
+        "type": "departure_clearance",
+        "target": {
+          "type": "place",
+          "id": "departure-board"
+        },
+        "requires": [
+          "atc_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 160,
+          "start_tick": 120
+        },
+        "deadline_ticks": 240,
+        "priority": "high",
+        "value": 120,
+        "penalty": {
+          "score": -600,
+          "warning": "ground_stop_extension"
+        }
+      },
+      {
+        "id": "ops-audit",
+        "type": "atc_ops_audit",
+        "target": {
+          "type": "place",
+          "id": "departure-board"
+        },
+        "requires": [
+          "atc_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "atc_audit_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "flight-surge",
+        "type": "source_multiplier",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "gate-desk",
+        "thing": "flight_plan",
+        "multiplier": 5.0
+      },
+      {
+        "id": "taxi-closure",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 500,
+        "target": "taxiway-ctrl",
+        "capacity": "taxi_movements",
+        "reduction_percent": 45
+      },
+      {
+        "id": "dep-rush",
+        "type": "demand_growth",
+        "at_tick": 900,
+        "duration_ticks": 400,
+        "target": "dep-demand",
+        "spawn_multiplier": 3
+      }
+    ],
+    "objectives": [
+      {
+        "id": "gate-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "gate-desk",
+        "capacity": "flight_queue",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "reports-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "departure-board",
+        "thing": "atc_report",
+        "max_stale_ticks": 700
+      },
+      {
+        "id": "deps-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "dep-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "gate-flood",
+        "type": "place_state",
+        "place": "gate-desk",
+        "state": "overloaded",
+        "grace_ticks": 45
+      },
+      {
+        "id": "report-stale",
+        "type": "stale_target",
+        "place": "departure-board",
+        "thing": "atc_report",
+        "threshold_ticks": 850,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "airport-ground-stop-survived",
+        "type": "survive_until",
+        "at_tick": 6400
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "gate-util",
+          "source": "place_capacity_used_percent",
+          "place": "gate-desk",
+          "capacity": "flight_queue"
+        },
+        {
+          "id": "taxi-util",
+          "source": "place_capacity_used_percent",
+          "place": "taxiway-ctrl",
+          "capacity": "taxi_movements"
+        },
+        {
+          "id": "runway-util",
+          "source": "place_capacity_used_percent",
+          "place": "runway-sequencer",
+          "capacity": "runway_queue"
+        },
+        {
+          "id": "report-inv",
+          "source": "place_inventory_count",
+          "place": "departure-board",
+          "thing": "atc_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "atc-dash",
+          "type": "live",
+          "depends_on": [
+            "atc_report",
+            "dep_sequence"
+          ],
+          "freshness_slo_ticks": 400
+        }
+      ],
+      "alerts": [
+        {
+          "id": "gate-high",
+          "metric": "gate-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 83
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "taxi-strained",
+          "metric": "taxi-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 86
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

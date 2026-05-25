@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "name": "museum-conservation-bench",
+  "theme": {
+    "palette": [
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "museum-conservation-bench",
+    "title": "Museum Conservation Bench",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A conservation studio with a main six-node treatment spine and two side branches (wet cleaning and X-ray stabilisation) that rejoin before documentation.",
+    "tags": [
+      "conservation",
+      "medium",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Museum Conservation Bench colour theme.",
+    "layout_note": "12 nodes forming a conservation topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting conservation roles.",
+    "mover_path_note": "6 movers on distinct paths at speeds 0.50\u20130.90.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "intake-bay",
+        "pos": [
+          -380,
+          0
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "exam-bench",
+        "pos": [
+          -200,
+          0
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "treatment-a",
+        "pos": [
+          -60,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "treatment-b",
+        "pos": [
+          100,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "doc-station",
+        "pos": [
+          260,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "climate-store",
+        "pos": [
+          420,
+          0
+        ],
+        "shape": "square",
+        "color": 6
+      },
+      {
+        "id": "clean-bath",
+        "pos": [
+          -120,
+          180
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "consol-chamber",
+        "pos": [
+          20,
+          180
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "dry-rack",
+        "pos": [
+          160,
+          180
+        ],
+        "shape": "triangle",
+        "color": 5
+      },
+      {
+        "id": "x-ray",
+        "pos": [
+          -120,
+          -180
+        ],
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "stabilise",
+        "pos": [
+          20,
+          -180
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "inert-box",
+        "pos": [
+          160,
+          -180
+        ],
+        "shape": "triangle",
+        "color": 5
+      }
+    ],
+    "paths": [
+      {
+        "id": "in-exam",
+        "from": "intake-bay",
+        "to": "exam-bench",
+        "color": 3
+      },
+      {
+        "id": "exam-ta",
+        "from": "exam-bench",
+        "to": "treatment-a",
+        "color": 4
+      },
+      {
+        "id": "ta-tb",
+        "from": "treatment-a",
+        "to": "treatment-b",
+        "color": 4
+      },
+      {
+        "id": "tb-doc",
+        "from": "treatment-b",
+        "to": "doc-station",
+        "color": 5
+      },
+      {
+        "id": "doc-store",
+        "from": "doc-station",
+        "to": "climate-store",
+        "color": 6
+      },
+      {
+        "id": "exam-clean",
+        "from": "exam-bench",
+        "to": "clean-bath",
+        "color": 3
+      },
+      {
+        "id": "clean-consol",
+        "from": "clean-bath",
+        "to": "consol-chamber",
+        "color": 4
+      },
+      {
+        "id": "consol-dry",
+        "from": "consol-chamber",
+        "to": "dry-rack",
+        "color": 5
+      },
+      {
+        "id": "dry-tb",
+        "from": "dry-rack",
+        "to": "treatment-b",
+        "color": 5
+      },
+      {
+        "id": "exam-xray",
+        "from": "exam-bench",
+        "to": "x-ray",
+        "color": 3
+      },
+      {
+        "id": "xray-stab",
+        "from": "x-ray",
+        "to": "stabilise",
+        "color": 4
+      },
+      {
+        "id": "stab-inert",
+        "from": "stabilise",
+        "to": "inert-box",
+        "color": 5
+      },
+      {
+        "id": "inert-tb",
+        "from": "inert-box",
+        "to": "treatment-b",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "artifact-1",
+        "on_path": "in-exam",
+        "speed": 0.5
+      },
+      {
+        "id": "artifact-2",
+        "on_path": "exam-clean",
+        "speed": 0.7
+      },
+      {
+        "id": "artifact-3",
+        "on_path": "exam-xray",
+        "speed": 0.7
+      },
+      {
+        "id": "artifact-4",
+        "on_path": "ta-tb",
+        "speed": 0.9
+      },
+      {
+        "id": "artifact-5",
+        "on_path": "doc-store",
+        "speed": 0.6
+      },
+      {
+        "id": "artifact-6",
+        "on_path": "dry-tb",
+        "speed": 0.8
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

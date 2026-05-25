@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "name": "disaster-supply-staging",
+  "theme": {
+    "palette": [
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "disaster-supply-staging",
+    "title": "Disaster Supply Staging",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A disaster-response staging network with three supply hubs forming a triangle, each dispatching relief convoys to two delivery zones.",
+    "tags": [
+      "disaster_supply",
+      "medium",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Disaster Supply Staging colour theme.",
+    "layout_note": "12 nodes forming a disaster_supply topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting disaster_supply roles.",
+    "mover_path_note": "6 movers on distinct paths at speeds 0.80\u20132.00.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "hub-north",
+        "pos": [
+          0,
+          220
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "hub-west",
+        "pos": [
+          -260,
+          -120
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "hub-east",
+        "pos": [
+          260,
+          -120
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "drop-n1",
+        "pos": [
+          -120,
+          360
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "drop-n2",
+        "pos": [
+          120,
+          360
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "drop-w1",
+        "pos": [
+          -420,
+          -60
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "drop-w2",
+        "pos": [
+          -300,
+          -260
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "drop-e1",
+        "pos": [
+          300,
+          -260
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "drop-e2",
+        "pos": [
+          420,
+          -60
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "staging",
+        "pos": [
+          0,
+          0
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "heli-pad",
+        "pos": [
+          0,
+          -300
+        ],
+        "shape": "diamond",
+        "color": 6
+      },
+      {
+        "id": "warehouse",
+        "pos": [
+          0,
+          100
+        ],
+        "shape": "square",
+        "color": 3
+      }
+    ],
+    "paths": [
+      {
+        "id": "hn-hw",
+        "from": "hub-north",
+        "to": "hub-west",
+        "color": 2
+      },
+      {
+        "id": "hw-he",
+        "from": "hub-west",
+        "to": "hub-east",
+        "color": 2
+      },
+      {
+        "id": "he-hn",
+        "from": "hub-east",
+        "to": "hub-north",
+        "color": 2
+      },
+      {
+        "id": "hn-n1",
+        "from": "hub-north",
+        "to": "drop-n1",
+        "color": 4
+      },
+      {
+        "id": "hn-n2",
+        "from": "hub-north",
+        "to": "drop-n2",
+        "color": 5
+      },
+      {
+        "id": "hw-w1",
+        "from": "hub-west",
+        "to": "drop-w1",
+        "color": 4
+      },
+      {
+        "id": "hw-w2",
+        "from": "hub-west",
+        "to": "drop-w2",
+        "color": 5
+      },
+      {
+        "id": "he-e1",
+        "from": "hub-east",
+        "to": "drop-e1",
+        "color": 4
+      },
+      {
+        "id": "he-e2",
+        "from": "hub-east",
+        "to": "drop-e2",
+        "color": 5
+      },
+      {
+        "id": "stage-hn",
+        "from": "staging",
+        "to": "hub-north",
+        "color": 3
+      },
+      {
+        "id": "stage-hw",
+        "from": "staging",
+        "to": "hub-west",
+        "color": 3
+      },
+      {
+        "id": "heli-he",
+        "from": "heli-pad",
+        "to": "hub-east",
+        "color": 6
+      },
+      {
+        "id": "ware-stage",
+        "from": "warehouse",
+        "to": "staging",
+        "color": 3
+      }
+    ],
+    "movers": [
+      {
+        "id": "convoy-a",
+        "on_path": "hn-hw",
+        "speed": 0.8
+      },
+      {
+        "id": "convoy-b",
+        "on_path": "hw-he",
+        "speed": 0.9
+      },
+      {
+        "id": "convoy-c",
+        "on_path": "hn-n1",
+        "speed": 1.4
+      },
+      {
+        "id": "convoy-d",
+        "on_path": "hw-w2",
+        "speed": 1.2
+      },
+      {
+        "id": "convoy-e",
+        "on_path": "heli-he",
+        "speed": 2.0
+      },
+      {
+        "id": "convoy-f",
+        "on_path": "stage-hn",
+        "speed": 1.1
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

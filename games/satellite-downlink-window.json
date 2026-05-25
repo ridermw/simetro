@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "satellite-downlink-window",
+  "theme": {
+    "palette": [
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "satellite-downlink-window",
+    "title": "Satellite Downlink Window",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A ground station managing satellite pass windows where RF contacts flow from dish antenna through demodulation and telemetry decoding to a science archive.",
+    "tags": [
+      "satellite",
+      "medium",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "dish-antenna",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "contact_slots": 20
+        },
+        "storage": {
+          "pass_schedule": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "pass_schedule"
+        ],
+        "failure_domains": [
+          "ground-station",
+          "antenna"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "contact_slots.used_percent >= 85",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "demodulator",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "demod_channels": 30
+        },
+        "storage": {
+          "pass_schedule": {
+            "capacity": 80,
+            "initial": 6
+          },
+          "rf_contact": {
+            "capacity": 120,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "pass_schedule"
+        ],
+        "produces": [
+          "rf_contact"
+        ],
+        "failure_domains": [
+          "ground-station",
+          "rf"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "demod_channels.used_percent >= 88",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "telemetry-decoder",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "decode_frames": 60
+        },
+        "storage": {
+          "rf_contact": {
+            "capacity": 120,
+            "initial": 10
+          },
+          "raw_telemetry": {
+            "capacity": 200,
+            "initial": 15
+          }
+        },
+        "accepts": [
+          "rf_contact"
+        ],
+        "produces": [
+          "raw_telemetry"
+        ],
+        "failure_domains": [
+          "ground-station",
+          "decode"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "decode_frames.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "ground-archive",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "archive_slots": 200
+        },
+        "storage": {
+          "raw_telemetry": {
+            "capacity": 200,
+            "initial": 12
+          },
+          "decoded_packet": {
+            "capacity": 150,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "raw_telemetry"
+        ],
+        "produces": [
+          "decoded_packet"
+        ],
+        "failure_domains": [
+          "ground-station",
+          "archive"
+        ],
+        "operating_states": {
+          "near_full": {
+            "when": "archive_slots.used_percent >= 90",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "science-archive",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "science_slots": 80
+        },
+        "storage": {
+          "decoded_packet": {
+            "capacity": 150,
+            "initial": 8
+          },
+          "obs_product": {
+            "capacity": 60,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "decoded_packet"
+        ],
+        "produces": [
+          "obs_product"
+        ],
+        "failure_domains": [
+          "ground-station",
+          "science"
+        ],
+        "operating_states": {
+          "stale": {
+            "when": "science_slots.used_percent >= 90",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "ground-controller",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "ground-station"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "dish-demod",
+        "type": "rf_feed",
+        "from": "dish-antenna",
+        "to": "demodulator",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "pass_schedule"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "demod-decode",
+        "type": "baseband_feed",
+        "from": "demodulator",
+        "to": "telemetry-decoder",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "rf_contact"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "decode-archive",
+        "type": "telemetry_pipe",
+        "from": "telemetry-decoder",
+        "to": "ground-archive",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 60
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "raw_telemetry"
+        ],
+        "queue_capacity": 300,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "archive-science",
+        "type": "science_feed",
+        "from": "ground-archive",
+        "to": "science-archive",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "decoded_packet"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "ctrl-dish",
+        "type": "control_bus",
+        "from": "ground-controller",
+        "to": "dish-antenna",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "ctrl-demod",
+        "type": "control_bus",
+        "from": "ground-controller",
+        "to": "demodulator",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "pass_schedule",
+        "kind": "work_order",
+        "tags": [
+          "pass",
+          "schedule",
+          "window"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "rf_contact",
+        "kind": "sensor_data",
+        "tags": [
+          "rf",
+          "signal",
+          "contact"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "raw_telemetry",
+        "kind": "data_frame",
+        "tags": [
+          "telemetry",
+          "raw",
+          "downlink"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "decoded_packet",
+        "kind": "data_record",
+        "tags": [
+          "decoded",
+          "packet",
+          "science"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "obs_product",
+        "kind": "compliance_record",
+        "tags": [
+          "product",
+          "archived",
+          "publication"
+        ],
+        "freshness_budget_ticks": 800
+      }
+    ],
+    "transforms": [
+      {
+        "id": "acquire-signal",
+        "type": "rf_acquisition",
+        "runs_on": "demodulator",
+        "inputs": [
+          {
+            "thing": "pass_schedule",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "rf_contact",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 3,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "demod_channels": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "decode-telemetry",
+        "type": "frame_decode",
+        "runs_on": "telemetry-decoder",
+        "inputs": [
+          {
+            "thing": "rf_contact",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "raw_telemetry",
+            "amount": 3
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "decode_frames": 6
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "archive-packet",
+        "type": "packet_ingest",
+        "runs_on": "ground-archive",
+        "inputs": [
+          {
+            "thing": "raw_telemetry",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "decoded_packet",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 15,
+        "duration_ticks": 6,
+        "deadline_ticks": 30,
+        "capacity_cost": {
+          "archive_slots": 10
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "publish-product",
+        "type": "science_pipeline",
+        "runs_on": "science-archive",
+        "inputs": [
+          {
+            "thing": "decoded_packet",
+            "amount": 4
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "obs_product",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "science_slots": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "downlink-demand",
+        "type": "downlink_window",
+        "target": {
+          "type": "place",
+          "id": "science-archive"
+        },
+        "requires": [
+          "obs_product"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 200,
+          "start_tick": 150
+        },
+        "deadline_ticks": 280,
+        "priority": "high",
+        "value": 100,
+        "penalty": {
+          "score": -500,
+          "warning": "downlink_window_missed"
+        }
+      },
+      {
+        "id": "telemetry-audit",
+        "type": "telemetry_check",
+        "target": {
+          "type": "place",
+          "id": "science-archive"
+        },
+        "requires": [
+          "decoded_packet"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "telemetry_audit_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "contact-burst",
+        "type": "source_multiplier",
+        "at_tick": 500,
+        "duration_ticks": 500,
+        "target": "dish-antenna",
+        "thing": "pass_schedule",
+        "multiplier": 3.0
+      },
+      {
+        "id": "archive-quota",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "ground-archive",
+        "capacity": "archive_slots",
+        "reduction_percent": 40
+      },
+      {
+        "id": "downlink-rush",
+        "type": "demand_growth",
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "downlink-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "dish-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "dish-antenna",
+        "capacity": "contact_slots",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "products-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "science-archive",
+        "thing": "obs_product",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "downlinks-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "downlink-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "dish-overload",
+        "type": "place_state",
+        "place": "dish-antenna",
+        "state": "overloaded",
+        "grace_ticks": 50
+      },
+      {
+        "id": "product-stale",
+        "type": "stale_target",
+        "place": "science-archive",
+        "thing": "obs_product",
+        "threshold_ticks": 900,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "satellite-downlink-window-survived",
+        "type": "survive_until",
+        "at_tick": 5200
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "dish-util",
+          "source": "place_capacity_used_percent",
+          "place": "dish-antenna",
+          "capacity": "contact_slots"
+        },
+        {
+          "id": "demod-load",
+          "source": "place_capacity_used_percent",
+          "place": "demodulator",
+          "capacity": "demod_channels"
+        },
+        {
+          "id": "archive-util",
+          "source": "place_capacity_used_percent",
+          "place": "ground-archive",
+          "capacity": "archive_slots"
+        },
+        {
+          "id": "product-inv",
+          "source": "place_inventory_count",
+          "place": "science-archive",
+          "thing": "obs_product"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "downlink-dash",
+          "type": "live",
+          "depends_on": [
+            "obs_product",
+            "decoded_packet"
+          ],
+          "freshness_slo_ticks": 500
+        }
+      ],
+      "alerts": [
+        {
+          "id": "dish-high",
+          "metric": "dish-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 83
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "demod-strained",
+          "metric": "demod-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

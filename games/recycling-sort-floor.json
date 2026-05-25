@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "recycling-sort-floor",
+  "theme": {
+    "palette": [
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "recycling-sort-floor",
+    "title": "Recycling Sort Floor",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A recycling sort floor where mixed waste streams are sorted, quarantined for contaminants, and baled for commodity markets under surge pressure.",
+    "tags": [
+      "recycling",
+      "easy",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "intake-conveyor",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "conveyor_load": 80
+        },
+        "storage": {
+          "mixed_waste": {
+            "capacity": 300,
+            "initial": 30
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "mixed_waste"
+        ],
+        "failure_domains": [
+          "recycling",
+          "intake"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "conveyor_load.used_percent >= 85",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "sort-station",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "sort_bins": 60
+        },
+        "storage": {
+          "mixed_waste": {
+            "capacity": 300,
+            "initial": 20
+          },
+          "sorted_fraction": {
+            "capacity": 200,
+            "initial": 15
+          }
+        },
+        "accepts": [
+          "mixed_waste"
+        ],
+        "produces": [
+          "sorted_fraction"
+        ],
+        "failure_domains": [
+          "recycling",
+          "sorting"
+        ],
+        "operating_states": {
+          "congested": {
+            "when": "sort_bins.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "quarantine-bin",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "quarantine_slots": 20
+        },
+        "storage": {
+          "sorted_fraction": {
+            "capacity": 100,
+            "initial": 5
+          },
+          "quarantine_item": {
+            "capacity": 60,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "sorted_fraction"
+        ],
+        "produces": [
+          "quarantine_item"
+        ],
+        "failure_domains": [
+          "recycling",
+          "quarantine"
+        ],
+        "operating_states": {
+          "full": {
+            "when": "quarantine_slots.used_percent >= 90",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "baling-press",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "press_throughput": 40
+        },
+        "storage": {
+          "sorted_fraction": {
+            "capacity": 150,
+            "initial": 10
+          },
+          "baled_unit": {
+            "capacity": 100,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "sorted_fraction"
+        ],
+        "produces": [
+          "baled_unit"
+        ],
+        "failure_domains": [
+          "recycling",
+          "baling"
+        ],
+        "operating_states": {
+          "jammed": {
+            "when": "press_throughput.used_percent >= 88",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "commodity-store",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "store_bays": 120
+        },
+        "storage": {
+          "baled_unit": {
+            "capacity": 100,
+            "initial": 6
+          },
+          "commodity_manifest": {
+            "capacity": 60,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "baled_unit"
+        ],
+        "produces": [
+          "commodity_manifest"
+        ],
+        "failure_domains": [
+          "recycling",
+          "store"
+        ],
+        "operating_states": {
+          "near_full": {
+            "when": "store_bays.used_percent >= 90",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "floor-supervisor",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "recycling"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "intake-sort",
+        "type": "waste_conveyor",
+        "from": "intake-conveyor",
+        "to": "sort-station",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 60
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "mixed_waste"
+        ],
+        "queue_capacity": 400,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "sort-quar",
+        "type": "reject_feed",
+        "from": "sort-station",
+        "to": "quarantine-bin",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "sorted_fraction"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "sort-bale",
+        "type": "bale_feed",
+        "from": "sort-station",
+        "to": "baling-press",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "sorted_fraction"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "bale-store",
+        "type": "store_feed",
+        "from": "baling-press",
+        "to": "commodity-store",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "baled_unit"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "super-intake",
+        "type": "control_bus",
+        "from": "floor-supervisor",
+        "to": "intake-conveyor",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "super-sort",
+        "type": "control_bus",
+        "from": "floor-supervisor",
+        "to": "sort-station",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "mixed_waste",
+        "kind": "material_unit",
+        "tags": [
+          "waste",
+          "mixed",
+          "unsorted"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "sorted_fraction",
+        "kind": "material_unit",
+        "tags": [
+          "sorted",
+          "clean",
+          "recyclable"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "quarantine_item",
+        "kind": "audit_record",
+        "tags": [
+          "contaminated",
+          "quarantined",
+          "reject"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "baled_unit",
+        "kind": "material_unit",
+        "tags": [
+          "baled",
+          "compressed",
+          "ready"
+        ],
+        "freshness_budget_ticks": 300
+      },
+      {
+        "id": "commodity_manifest",
+        "kind": "compliance_record",
+        "tags": [
+          "manifest",
+          "commodity",
+          "sold"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "sort-waste",
+        "type": "optical_sorting",
+        "runs_on": "sort-station",
+        "inputs": [
+          {
+            "thing": "mixed_waste",
+            "amount": 5
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "sorted_fraction",
+            "amount": 3
+          }
+        ],
+        "cadence_ticks": 4,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
+        "capacity_cost": {
+          "sort_bins": 6
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "quarantine-reject",
+        "type": "contamination_check",
+        "runs_on": "quarantine-bin",
+        "inputs": [
+          {
+            "thing": "sorted_fraction",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "quarantine_item",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 3,
+        "deadline_ticks": 15,
+        "capacity_cost": {
+          "quarantine_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "press-bale",
+        "type": "hydraulic_baling",
+        "runs_on": "baling-press",
+        "inputs": [
+          {
+            "thing": "sorted_fraction",
+            "amount": 4
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "baled_unit",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 12,
+        "duration_ticks": 5,
+        "deadline_ticks": 24,
+        "capacity_cost": {
+          "press_throughput": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "log-manifest",
+        "type": "commodity_logging",
+        "runs_on": "commodity-store",
+        "inputs": [
+          {
+            "thing": "baled_unit",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "commodity_manifest",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "store_bays": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "bale-demand",
+        "type": "commodity_delivery",
+        "target": {
+          "type": "place",
+          "id": "commodity-store"
+        },
+        "requires": [
+          "baled_unit"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 180,
+          "start_tick": 120
+        },
+        "deadline_ticks": 250,
+        "priority": "high",
+        "value": 80,
+        "penalty": {
+          "score": -400,
+          "warning": "commodity_delivery_missed"
+        }
+      },
+      {
+        "id": "manifest-demand",
+        "type": "compliance_audit",
+        "target": {
+          "type": "place",
+          "id": "commodity-store"
+        },
+        "requires": [
+          "commodity_manifest"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "manifest_overdue"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "waste-surge",
+        "type": "source_multiplier",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "intake-conveyor",
+        "thing": "mixed_waste",
+        "multiplier": 4.0
+      },
+      {
+        "id": "press-jam",
+        "type": "quota_reduction",
+        "at_tick": 1400,
+        "duration_ticks": 400,
+        "target": "baling-press",
+        "capacity": "press_throughput",
+        "reduction_percent": 40
+      },
+      {
+        "id": "bale-rush",
+        "type": "demand_growth",
+        "at_tick": 800,
+        "duration_ticks": 300,
+        "target": "bale-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "intake-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "intake-conveyor",
+        "capacity": "conveyor_load",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "bales-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "commodity-store",
+        "thing": "baled_unit",
+        "max_stale_ticks": 700
+      },
+      {
+        "id": "deliveries-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "bale-demand",
+        "max_missed": 3
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "intake-flood",
+        "type": "place_state",
+        "place": "intake-conveyor",
+        "state": "overloaded",
+        "grace_ticks": 60
+      },
+      {
+        "id": "bale-stale",
+        "type": "stale_target",
+        "place": "commodity-store",
+        "thing": "baled_unit",
+        "threshold_ticks": 800,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "recycling-sort-floor-survived",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "intake-util",
+          "source": "place_capacity_used_percent",
+          "place": "intake-conveyor",
+          "capacity": "conveyor_load"
+        },
+        {
+          "id": "press-load",
+          "source": "place_capacity_used_percent",
+          "place": "baling-press",
+          "capacity": "press_throughput"
+        },
+        {
+          "id": "store-level",
+          "source": "place_capacity_used_percent",
+          "place": "commodity-store",
+          "capacity": "store_bays"
+        },
+        {
+          "id": "bale-inv",
+          "source": "place_inventory_count",
+          "place": "commodity-store",
+          "thing": "baled_unit"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "sort-dash",
+          "type": "live",
+          "depends_on": [
+            "baled_unit",
+            "commodity_manifest"
+          ],
+          "freshness_slo_ticks": 450
+        }
+      ],
+      "alerts": [
+        {
+          "id": "intake-high",
+          "metric": "intake-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 83
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "press-strained",
+          "metric": "press-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 86
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

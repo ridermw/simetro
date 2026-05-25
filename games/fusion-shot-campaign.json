@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "fusion-shot-campaign",
+  "theme": {
+    "palette": [
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "fusion-shot-campaign",
+    "title": "Fusion Shot Campaign",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An inertial-confinement fusion campaign where the AI shot director sequences laser charges, target injection, optical alignment, and ignition to maximise yield measurements.",
+    "tags": [
+      "fusion",
+      "hard",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "laser-charge",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "charge_capacity": 50
+        },
+        "storage": {
+          "laser_config": {
+            "capacity": 200,
+            "initial": 20
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "laser_config"
+        ],
+        "failure_domains": [
+          "fusion",
+          "laser"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "charge_capacity.used_percent >= 88",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "target-injection",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "inject_slots": 20
+        },
+        "storage": {
+          "laser_config": {
+            "capacity": 150,
+            "initial": 12
+          },
+          "target_alignment": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "laser_config"
+        ],
+        "produces": [
+          "target_alignment"
+        ],
+        "failure_domains": [
+          "fusion",
+          "injection"
+        ],
+        "operating_states": {
+          "congested": {
+            "when": "inject_slots.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "alignment-optics",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "optic_paths": 30
+        },
+        "storage": {
+          "target_alignment": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "shot_trigger": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "target_alignment"
+        ],
+        "produces": [
+          "shot_trigger"
+        ],
+        "failure_domains": [
+          "fusion",
+          "optics"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "optic_paths.used_percent >= 88",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "ignition-chamber",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "shot_capacity": 15
+        },
+        "storage": {
+          "shot_trigger": {
+            "capacity": 60,
+            "initial": 5
+          },
+          "shot_event": {
+            "capacity": 40,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "shot_trigger"
+        ],
+        "produces": [
+          "shot_event"
+        ],
+        "failure_domains": [
+          "fusion",
+          "ignition"
+        ],
+        "operating_states": {
+          "critical": {
+            "when": "shot_capacity.used_percent >= 90",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "diag-recorder",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "record_slots": 80
+        },
+        "storage": {
+          "shot_event": {
+            "capacity": 40,
+            "initial": 3
+          },
+          "yield_measurement": {
+            "capacity": 50,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "shot_event"
+        ],
+        "produces": [
+          "yield_measurement"
+        ],
+        "failure_domains": [
+          "fusion",
+          "diagnostics"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "record_slots.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "shot-director",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "fusion"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "charge-inject",
+        "type": "laser_feed",
+        "from": "laser-charge",
+        "to": "target-injection",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "laser_config"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "inject-optics",
+        "type": "alignment_feed",
+        "from": "target-injection",
+        "to": "alignment-optics",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 15
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "target_alignment"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "optics-chamber",
+        "type": "ignition_feed",
+        "from": "alignment-optics",
+        "to": "ignition-chamber",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 12
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "shot_trigger"
+        ],
+        "queue_capacity": 80,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "chamber-diag",
+        "type": "diag_feed",
+        "from": "ignition-chamber",
+        "to": "diag-recorder",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 10
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "shot_event"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "dir-charge",
+        "type": "control_bus",
+        "from": "shot-director",
+        "to": "laser-charge",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "dir-inject",
+        "type": "control_bus",
+        "from": "shot-director",
+        "to": "target-injection",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "laser_config",
+        "kind": "work_order",
+        "tags": [
+          "laser",
+          "config",
+          "energy"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "target_alignment",
+        "kind": "work_order",
+        "tags": [
+          "target",
+          "alignment",
+          "precision"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "shot_trigger",
+        "kind": "control_command",
+        "tags": [
+          "trigger",
+          "fire",
+          "ignition"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "shot_event",
+        "kind": "sensor_data",
+        "tags": [
+          "shot",
+          "plasma",
+          "event"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "yield_measurement",
+        "kind": "compliance_record",
+        "tags": [
+          "yield",
+          "measurement",
+          "fusion"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "align-target",
+        "type": "target_alignment",
+        "runs_on": "target-injection",
+        "inputs": [
+          {
+            "thing": "laser_config",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "target_alignment",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "inject_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "set-optics",
+        "type": "optical_alignment",
+        "runs_on": "alignment-optics",
+        "inputs": [
+          {
+            "thing": "target_alignment",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "shot_trigger",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "optic_paths": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "fire-shot",
+        "type": "ignition_pulse",
+        "runs_on": "ignition-chamber",
+        "inputs": [
+          {
+            "thing": "shot_trigger",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "shot_event",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 20,
+        "duration_ticks": 5,
+        "deadline_ticks": 40,
+        "capacity_cost": {
+          "shot_capacity": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "record-yield",
+        "type": "yield_recording",
+        "runs_on": "diag-recorder",
+        "inputs": [
+          {
+            "thing": "shot_event",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "yield_measurement",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "record_slots": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "shot-demand",
+        "type": "fusion_shot",
+        "target": {
+          "type": "place",
+          "id": "diag-recorder"
+        },
+        "requires": [
+          "yield_measurement"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 200,
+          "start_tick": 150
+        },
+        "deadline_ticks": 300,
+        "priority": "high",
+        "value": 150,
+        "penalty": {
+          "score": -700,
+          "warning": "shot_window_missed"
+        }
+      },
+      {
+        "id": "yield-audit",
+        "type": "campaign_review",
+        "target": {
+          "type": "place",
+          "id": "diag-recorder"
+        },
+        "requires": [
+          "yield_measurement"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 60,
+        "penalty": {
+          "score": -200,
+          "warning": "campaign_review_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "charge-surge",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 600,
+        "target": "laser-charge",
+        "thing": "laser_config",
+        "multiplier": 4.0
+      },
+      {
+        "id": "optic-fault",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "alignment-optics",
+        "capacity": "optic_paths",
+        "reduction_percent": 45
+      },
+      {
+        "id": "shot-rush",
+        "type": "demand_growth",
+        "at_tick": 1000,
+        "duration_ticks": 400,
+        "target": "shot-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "chamber-safe",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "ignition-chamber",
+        "capacity": "shot_capacity",
+        "min_percent": 0,
+        "max_percent": 85
+      },
+      {
+        "id": "yields-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "diag-recorder",
+        "thing": "yield_measurement",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "shots-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "shot-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "charge-overload",
+        "type": "place_state",
+        "place": "laser-charge",
+        "state": "overloaded",
+        "grace_ticks": 40
+      },
+      {
+        "id": "yield-stale",
+        "type": "stale_target",
+        "place": "diag-recorder",
+        "thing": "yield_measurement",
+        "threshold_ticks": 900,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "fusion-shot-campaign-survived",
+        "type": "survive_until",
+        "at_tick": 6400
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "charge-util",
+          "source": "place_capacity_used_percent",
+          "place": "laser-charge",
+          "capacity": "charge_capacity"
+        },
+        {
+          "id": "optic-util",
+          "source": "place_capacity_used_percent",
+          "place": "alignment-optics",
+          "capacity": "optic_paths"
+        },
+        {
+          "id": "chamber-util",
+          "source": "place_capacity_used_percent",
+          "place": "ignition-chamber",
+          "capacity": "shot_capacity"
+        },
+        {
+          "id": "yield-inv",
+          "source": "place_inventory_count",
+          "place": "diag-recorder",
+          "thing": "yield_measurement"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "fusion-dash",
+          "type": "live",
+          "depends_on": [
+            "yield_measurement",
+            "shot_event"
+          ],
+          "freshness_slo_ticks": 450
+        }
+      ],
+      "alerts": [
+        {
+          "id": "charge-high",
+          "metric": "charge-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "chamber-high",
+          "metric": "chamber-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 87
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

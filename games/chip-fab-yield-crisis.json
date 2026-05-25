@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "chip-fab-yield-crisis",
+  "theme": {
+    "palette": [
+      "#1a1423",
+      "#fff7ed",
+      "#06d6a0",
+      "#ef476f",
+      "#118ab2",
+      "#ffd166",
+      "#c77dff"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "chip-fab-yield-crisis",
+    "title": "Chip Fab Yield Crisis",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A semiconductor fab where wafer lots move through lithography, etching, and inspection to yield analytics during a process-defect crisis demanding rapid lot disposition.",
+    "tags": [
+      "chip_fab",
+      "hard",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "wafer-input",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "lot_queue": 40
+        },
+        "storage": {
+          "wafer_lot": {
+            "capacity": 150,
+            "initial": 15
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "wafer_lot"
+        ],
+        "failure_domains": [
+          "fab",
+          "input"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "lot_queue.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "litho-module",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "exposure_slots": 30
+        },
+        "storage": {
+          "wafer_lot": {
+            "capacity": 150,
+            "initial": 12
+          },
+          "patterned_wafer": {
+            "capacity": 120,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "wafer_lot"
+        ],
+        "produces": [
+          "patterned_wafer"
+        ],
+        "failure_domains": [
+          "fab",
+          "litho"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "exposure_slots.used_percent >= 88",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "etch-chamber",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "etch_batches": 25
+        },
+        "storage": {
+          "patterned_wafer": {
+            "capacity": 120,
+            "initial": 10
+          },
+          "etched_layer": {
+            "capacity": 100,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "patterned_wafer"
+        ],
+        "produces": [
+          "etched_layer"
+        ],
+        "failure_domains": [
+          "fab",
+          "etch"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "etch_batches.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "inspection-bay",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "inspect_slots": 20
+        },
+        "storage": {
+          "etched_layer": {
+            "capacity": 100,
+            "initial": 6
+          },
+          "inspection_result": {
+            "capacity": 80,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "etched_layer"
+        ],
+        "produces": [
+          "inspection_result"
+        ],
+        "failure_domains": [
+          "fab",
+          "inspection"
+        ],
+        "operating_states": {
+          "congested": {
+            "when": "inspect_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "yield-analytics",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "analysis_slots": 60
+        },
+        "storage": {
+          "inspection_result": {
+            "capacity": 80,
+            "initial": 5
+          },
+          "lot_disposition": {
+            "capacity": 50,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "inspection_result"
+        ],
+        "produces": [
+          "lot_disposition"
+        ],
+        "failure_domains": [
+          "fab",
+          "yield"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "analysis_slots.used_percent >= 88",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "process-engineer",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "fab"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "input-litho",
+        "type": "wafer_transport",
+        "from": "wafer-input",
+        "to": "litho-module",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "wafer_lot"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "litho-etch",
+        "type": "process_feed",
+        "from": "litho-module",
+        "to": "etch-chamber",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 25
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "patterned_wafer"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "etch-inspect",
+        "type": "inspection_feed",
+        "from": "etch-chamber",
+        "to": "inspection-bay",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "etched_layer"
+        ],
+        "queue_capacity": 120,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "inspect-yield",
+        "type": "analytics_feed",
+        "from": "inspection-bay",
+        "to": "yield-analytics",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 15
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "inspection_result"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "eng-litho",
+        "type": "control_bus",
+        "from": "process-engineer",
+        "to": "litho-module",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "eng-input",
+        "type": "control_bus",
+        "from": "process-engineer",
+        "to": "wafer-input",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "wafer_lot",
+        "kind": "material_unit",
+        "tags": [
+          "wafer",
+          "lot",
+          "fab"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "patterned_wafer",
+        "kind": "material_unit",
+        "tags": [
+          "patterned",
+          "litho",
+          "exposed"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "etched_layer",
+        "kind": "material_unit",
+        "tags": [
+          "etched",
+          "etch",
+          "layer"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "inspection_result",
+        "kind": "audit_record",
+        "tags": [
+          "inspection",
+          "defect",
+          "yield"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "lot_disposition",
+        "kind": "compliance_record",
+        "tags": [
+          "disposition",
+          "lot",
+          "pass_fail"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "expose-wafer",
+        "type": "lithography",
+        "runs_on": "litho-module",
+        "inputs": [
+          {
+            "thing": "wafer_lot",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "patterned_wafer",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "exposure_slots": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "etch-wafer",
+        "type": "plasma_etch",
+        "runs_on": "etch-chamber",
+        "inputs": [
+          {
+            "thing": "patterned_wafer",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "etched_layer",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 5,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "etch_batches": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "inspect-wafer",
+        "type": "sem_inspection",
+        "runs_on": "inspection-bay",
+        "inputs": [
+          {
+            "thing": "etched_layer",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "inspection_result",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 12,
+        "duration_ticks": 5,
+        "deadline_ticks": 24,
+        "capacity_cost": {
+          "inspect_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "analyse-yield",
+        "type": "yield_analysis",
+        "runs_on": "yield-analytics",
+        "inputs": [
+          {
+            "thing": "inspection_result",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "lot_disposition",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "analysis_slots": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "disposition-demand",
+        "type": "lot_close",
+        "target": {
+          "type": "place",
+          "id": "yield-analytics"
+        },
+        "requires": [
+          "lot_disposition"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 160,
+          "start_tick": 120
+        },
+        "deadline_ticks": 240,
+        "priority": "high",
+        "value": 120,
+        "penalty": {
+          "score": -600,
+          "warning": "lot_hold_overdue"
+        }
+      },
+      {
+        "id": "yield-audit",
+        "type": "yield_review",
+        "target": {
+          "type": "place",
+          "id": "yield-analytics"
+        },
+        "requires": [
+          "lot_disposition"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "yield_audit_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "lot-surge",
+        "type": "source_multiplier",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "wafer-input",
+        "thing": "wafer_lot",
+        "multiplier": 4.0
+      },
+      {
+        "id": "litho-fault",
+        "type": "quota_reduction",
+        "at_tick": 1400,
+        "duration_ticks": 500,
+        "target": "litho-module",
+        "capacity": "exposure_slots",
+        "reduction_percent": 45
+      },
+      {
+        "id": "disposition-rush",
+        "type": "demand_growth",
+        "at_tick": 800,
+        "duration_ticks": 400,
+        "target": "disposition-demand",
+        "spawn_multiplier": 3
+      }
+    ],
+    "objectives": [
+      {
+        "id": "litho-safe",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "litho-module",
+        "capacity": "exposure_slots",
+        "min_percent": 0,
+        "max_percent": 82
+      },
+      {
+        "id": "disposition-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "yield-analytics",
+        "thing": "lot_disposition",
+        "max_stale_ticks": 700
+      },
+      {
+        "id": "lots-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "disposition-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "litho-saturate",
+        "type": "place_state",
+        "place": "litho-module",
+        "state": "saturated",
+        "grace_ticks": 45
+      },
+      {
+        "id": "disposition-stale",
+        "type": "stale_target",
+        "place": "yield-analytics",
+        "thing": "lot_disposition",
+        "threshold_ticks": 850,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "chip-fab-yield-crisis-survived",
+        "type": "survive_until",
+        "at_tick": 6400
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "litho-util",
+          "source": "place_capacity_used_percent",
+          "place": "litho-module",
+          "capacity": "exposure_slots"
+        },
+        {
+          "id": "etch-util",
+          "source": "place_capacity_used_percent",
+          "place": "etch-chamber",
+          "capacity": "etch_batches"
+        },
+        {
+          "id": "inspect-util",
+          "source": "place_capacity_used_percent",
+          "place": "inspection-bay",
+          "capacity": "inspect_slots"
+        },
+        {
+          "id": "disp-inv",
+          "source": "place_inventory_count",
+          "place": "yield-analytics",
+          "thing": "lot_disposition"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "yield-dash",
+          "type": "live",
+          "depends_on": [
+            "lot_disposition",
+            "inspection_result"
+          ],
+          "freshness_slo_ticks": 400
+        }
+      ],
+      "alerts": [
+        {
+          "id": "litho-high",
+          "metric": "litho-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "etch-strained",
+          "metric": "etch-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 83
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

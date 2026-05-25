@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "name": "kitchen-prep-board",
+  "theme": {
+    "palette": [
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "kitchen-prep-board",
+    "title": "Kitchen Prep Board",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A restaurant prep board where ingredient stations, chopping blocks, grills, and plating zones form a branching kitchen flow.",
+    "tags": [
+      "kitchen",
+      "intro",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Kitchen Prep Board colour theme.",
+    "layout_note": "9 nodes forming a kitchen topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting kitchen roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.90–1.50.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "store",
+        "pos": [
+          -340,
+          -40
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "chop",
+        "pos": [
+          -170,
+          -40
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "grill",
+        "pos": [
+          0,
+          -40
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "sauce",
+        "pos": [
+          170,
+          -40
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "plate",
+        "pos": [
+          340,
+          -40
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "fridge",
+        "pos": [
+          -230,
+          170
+        ],
+        "shape": "triangle",
+        "color": 2
+      },
+      {
+        "id": "fryer",
+        "pos": [
+          60,
+          -220
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "herb",
+        "pos": [
+          -400,
+          120
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "trash",
+        "pos": [
+          300,
+          -220
+        ],
+        "shape": "triangle",
+        "color": 5
+      }
+    ],
+    "paths": [
+      {
+        "id": "store-chop",
+        "from": "store",
+        "to": "chop",
+        "color": 3
+      },
+      {
+        "id": "chop-grill",
+        "from": "chop",
+        "to": "grill",
+        "color": 4
+      },
+      {
+        "id": "grill-sauce",
+        "from": "grill",
+        "to": "sauce",
+        "color": 3
+      },
+      {
+        "id": "sauce-plate",
+        "from": "sauce",
+        "to": "plate",
+        "color": 5
+      },
+      {
+        "id": "fridge-chop",
+        "from": "fridge",
+        "to": "chop",
+        "color": 2
+      },
+      {
+        "id": "grill-fryer",
+        "from": "grill",
+        "to": "fryer",
+        "color": 4
+      },
+      {
+        "id": "herb-fridge",
+        "from": "herb",
+        "to": "fridge",
+        "color": 2
+      },
+      {
+        "id": "fryer-trash",
+        "from": "fryer",
+        "to": "trash",
+        "color": 5
+      },
+      {
+        "id": "plate-store",
+        "from": "plate",
+        "to": "store",
+        "color": 2
+      },
+      {
+        "id": "trash-sauce",
+        "from": "trash",
+        "to": "sauce",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "ticket-a",
+        "on_path": "store-chop",
+        "speed": 1.2
+      },
+      {
+        "id": "ticket-b",
+        "on_path": "chop-grill",
+        "speed": 0.9
+      },
+      {
+        "id": "ticket-c",
+        "on_path": "fridge-chop",
+        "speed": 1.5
+      },
+      {
+        "id": "ticket-d",
+        "on_path": "grill-fryer",
+        "speed": 1.1
+      },
+      {
+        "id": "ticket-e",
+        "on_path": "sauce-plate",
+        "speed": 1.3
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

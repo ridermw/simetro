@@ -1,0 +1,385 @@
+{
+  "schema_version": 1,
+  "name": "planetary-defense-array",
+  "theme": {
+    "palette": [
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "planetary-defense-array",
+    "title": "Planetary Defense Array",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A planetary-defense sensor network: an outer radar octagon with diagonal threat feeds, an inner interceptor pentagon, and a command hub with launch-authorization paths.",
+    "tags": [
+      "planetary",
+      "hard",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Planetary Defense Array colour theme.",
+    "layout_note": "16 nodes forming a planetary topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting planetary roles.",
+    "mover_path_note": "7 movers on distinct paths at speeds 1.50\u20132.40.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "radar-0",
+        "pos": [
+          0,
+          -260
+        ],
+        "shape": "triangle",
+        "color": 2
+      },
+      {
+        "id": "radar-1",
+        "pos": [
+          212,
+          -183
+        ],
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "radar-2",
+        "pos": [
+          300,
+          0
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "radar-3",
+        "pos": [
+          212,
+          183
+        ],
+        "shape": "square",
+        "color": 5
+      },
+      {
+        "id": "radar-4",
+        "pos": [
+          0,
+          260
+        ],
+        "shape": "triangle",
+        "color": 6
+      },
+      {
+        "id": "radar-5",
+        "pos": [
+          -212,
+          183
+        ],
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "radar-6",
+        "pos": [
+          -300,
+          0
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "radar-7",
+        "pos": [
+          -212,
+          -183
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "intercept-0",
+        "pos": [
+          0,
+          -130
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "intercept-1",
+        "pos": [
+          142,
+          -40
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "intercept-2",
+        "pos": [
+          88,
+          105
+        ],
+        "shape": "hexagon",
+        "color": 6
+      },
+      {
+        "id": "intercept-3",
+        "pos": [
+          -88,
+          105
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "intercept-4",
+        "pos": [
+          -142,
+          -40
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "command-hub",
+        "pos": [
+          0,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "threat-assess",
+        "pos": [
+          0,
+          330
+        ],
+        "shape": "square",
+        "color": 6
+      },
+      {
+        "id": "launch-auth",
+        "pos": [
+          0,
+          -330
+        ],
+        "shape": "square",
+        "color": 6
+      }
+    ],
+    "paths": [
+      {
+        "id": "or-0",
+        "from": "radar-0",
+        "to": "radar-1",
+        "color": 2
+      },
+      {
+        "id": "or-1",
+        "from": "radar-1",
+        "to": "radar-2",
+        "color": 3
+      },
+      {
+        "id": "or-2",
+        "from": "radar-2",
+        "to": "radar-3",
+        "color": 4
+      },
+      {
+        "id": "or-3",
+        "from": "radar-3",
+        "to": "radar-4",
+        "color": 5
+      },
+      {
+        "id": "or-4",
+        "from": "radar-4",
+        "to": "radar-5",
+        "color": 6
+      },
+      {
+        "id": "or-5",
+        "from": "radar-5",
+        "to": "radar-6",
+        "color": 3
+      },
+      {
+        "id": "or-6",
+        "from": "radar-6",
+        "to": "radar-7",
+        "color": 4
+      },
+      {
+        "id": "or-7",
+        "from": "radar-7",
+        "to": "radar-0",
+        "color": 5
+      },
+      {
+        "id": "ir-0",
+        "from": "intercept-0",
+        "to": "intercept-1",
+        "color": 4
+      },
+      {
+        "id": "ir-1",
+        "from": "intercept-1",
+        "to": "intercept-2",
+        "color": 5
+      },
+      {
+        "id": "ir-2",
+        "from": "intercept-2",
+        "to": "intercept-3",
+        "color": 6
+      },
+      {
+        "id": "ir-3",
+        "from": "intercept-3",
+        "to": "intercept-4",
+        "color": 4
+      },
+      {
+        "id": "ir-4",
+        "from": "intercept-4",
+        "to": "intercept-0",
+        "color": 3
+      },
+      {
+        "id": "sp-0",
+        "from": "radar-0",
+        "to": "intercept-0",
+        "color": 2
+      },
+      {
+        "id": "sp-1",
+        "from": "radar-1",
+        "to": "intercept-1",
+        "color": 3
+      },
+      {
+        "id": "sp-2",
+        "from": "radar-2",
+        "to": "intercept-2",
+        "color": 4
+      },
+      {
+        "id": "sp-3",
+        "from": "radar-3",
+        "to": "intercept-3",
+        "color": 5
+      },
+      {
+        "id": "sp-4",
+        "from": "radar-4",
+        "to": "intercept-4",
+        "color": 6
+      },
+      {
+        "id": "ch-0",
+        "from": "command-hub",
+        "to": "intercept-0",
+        "color": 4
+      },
+      {
+        "id": "ch-1",
+        "from": "command-hub",
+        "to": "intercept-1",
+        "color": 5
+      },
+      {
+        "id": "ch-2",
+        "from": "command-hub",
+        "to": "intercept-2",
+        "color": 6
+      },
+      {
+        "id": "ch-3",
+        "from": "command-hub",
+        "to": "intercept-3",
+        "color": 4
+      },
+      {
+        "id": "ch-4",
+        "from": "command-hub",
+        "to": "intercept-4",
+        "color": 3
+      },
+      {
+        "id": "threat-r0",
+        "from": "threat-assess",
+        "to": "radar-0",
+        "color": 6
+      },
+      {
+        "id": "launch-r4",
+        "from": "launch-auth",
+        "to": "radar-4",
+        "color": 6
+      },
+      {
+        "id": "launch-ch",
+        "from": "launch-auth",
+        "to": "command-hub",
+        "color": 6
+      }
+    ],
+    "movers": [
+      {
+        "id": "track-a",
+        "on_path": "or-0",
+        "speed": 1.6
+      },
+      {
+        "id": "track-b",
+        "on_path": "or-4",
+        "speed": 1.8
+      },
+      {
+        "id": "lock-a",
+        "on_path": "sp-1",
+        "speed": 2.0
+      },
+      {
+        "id": "lock-b",
+        "on_path": "sp-3",
+        "speed": 1.9
+      },
+      {
+        "id": "fire-a",
+        "on_path": "ch-2",
+        "speed": 2.2
+      },
+      {
+        "id": "fire-b",
+        "on_path": "ir-0",
+        "speed": 2.4
+      },
+      {
+        "id": "auth",
+        "on_path": "launch-ch",
+        "speed": 1.5
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

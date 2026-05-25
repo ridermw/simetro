@@ -1,0 +1,688 @@
+{
+  "schema_version": 1,
+  "name": "clinic-triage-desk",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "clinic-triage-desk",
+    "title": "Clinic Triage Desk",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A busy walk-in clinic where triage nurses, assessment rooms, treatment bays, and discharge coordinators must process patient surges without losing anyone in the queue. Agents balance throughput against staff capacity limits.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "clinic",
+      "triage",
+      "healthcare",
+      "intro",
+      "draft"
+    ],
+    "palette_note": "Warm clinical palette: dark background, neutral foreground, blue intake flow, red alert, green discharge, amber vitals, violet operator oversight. Hospital-legible contrast throughout.",
+    "layout_note": "Six SL1 places form a left-to-right patient pipeline: intake bay at the far left, triage desk, assessment room, treatment bay, discharge hub at upper right, and nurse station above. Layout reads as a patient journey from door to departure.",
+    "node_language_note": "Place roles encode clinical function: source=intake-bay, processor=triage-desk/treatment-bay, buffer=assessment-room, dashboard=discharge-hub, operator=nurse-station. Shape varies by role: circle=source/operator, hexagon=processor, square=buffer/dashboard.",
+    "mover_path_note": "No legacy movers; SL1 links carry patient flow. Six links span intake-to-discharge plus two bidirectional nurse oversight buses. All link compatibilities match the thing IDs defined in things[].",
+    "review_note": "Draft status pending SL1 canvas renderer. Loading succeeds and schema validates. PR 12 will wire the visual overlay and flip to ready."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "intake-bay",
+        "role": "source",
+        "pos": [
+          -380,
+          -160
+        ],
+        "shape": "circle",
+        "color": 2,
+        "capacity": {
+          "patient_slots": 40
+        },
+        "storage": {
+          "patient_record": {
+            "capacity": 200,
+            "initial": 20
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "patient_record"
+        ],
+        "failure_domains": [
+          "clinic",
+          "east-wing"
+        ],
+        "operating_states": {
+          "crowded": {
+            "when": "patient_slots.used_percent >= 75",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "triage-desk",
+        "role": "processor",
+        "pos": [
+          -120,
+          -60
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "triage_slots": 8
+        },
+        "storage": {
+          "patient_record": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "triage_assessment": {
+            "capacity": 60,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "patient_record"
+        ],
+        "produces": [
+          "triage_assessment"
+        ],
+        "failure_domains": [
+          "clinic",
+          "triage-zone"
+        ],
+        "operating_states": {
+          "strained": {
+            "when": "triage_slots.used_percent >= 80",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "assessment-room",
+        "role": "buffer",
+        "pos": [
+          100,
+          40
+        ],
+        "shape": "square",
+        "color": 4,
+        "capacity": {
+          "room_capacity": 12
+        },
+        "storage": {
+          "triage_assessment": {
+            "capacity": 50,
+            "initial": 6
+          },
+          "vital_signs": {
+            "capacity": 50,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "triage_assessment"
+        ],
+        "produces": [
+          "vital_signs"
+        ],
+        "failure_domains": [
+          "clinic",
+          "assessment-zone"
+        ],
+        "operating_states": {
+          "full": {
+            "when": "room_capacity.used_percent >= 90",
+            "grace_ticks": 2
+          }
+        }
+      },
+      {
+        "id": "treatment-bay",
+        "role": "processor",
+        "pos": [
+          320,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 1,
+        "capacity": {
+          "treatment_slots": 16
+        },
+        "storage": {
+          "vital_signs": {
+            "capacity": 40,
+            "initial": 4
+          },
+          "treatment_order": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "vital_signs"
+        ],
+        "produces": [
+          "treatment_order"
+        ],
+        "failure_domains": [
+          "clinic",
+          "treatment-zone"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "treatment_slots.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "discharge-hub",
+        "role": "dashboard",
+        "pos": [
+          540,
+          -100
+        ],
+        "shape": "square",
+        "color": 5,
+        "capacity": {
+          "discharge_slots": 20
+        },
+        "storage": {
+          "treatment_order": {
+            "capacity": 30,
+            "initial": 2
+          },
+          "discharge_summary": {
+            "capacity": 30,
+            "initial": 2
+          }
+        },
+        "accepts": [
+          "treatment_order"
+        ],
+        "produces": [
+          "discharge_summary"
+        ],
+        "failure_domains": [
+          "clinic",
+          "admin"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "discharge_slots.used_percent >= 70",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "nurse-station",
+        "role": "operator",
+        "pos": [
+          100,
+          -220
+        ],
+        "shape": "circle",
+        "color": 6,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "clinic"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "intake-to-triage",
+        "type": "patient_transfer",
+        "from": "intake-bay",
+        "to": "triage-desk",
+        "direction": "forward",
+        "capacity": {
+          "patients_per_tick": 4
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "patient_record"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "triage-to-assessment",
+        "type": "clinical_handoff",
+        "from": "triage-desk",
+        "to": "assessment-room",
+        "direction": "forward",
+        "capacity": {
+          "assessments_per_tick": 3
+        },
+        "travel_ticks": 3,
+        "compatibility": [
+          "triage_assessment"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "assessment-to-treatment",
+        "type": "clinical_escalation",
+        "from": "assessment-room",
+        "to": "treatment-bay",
+        "direction": "forward",
+        "capacity": {
+          "patients_per_tick": 3
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "vital_signs"
+        ],
+        "queue_capacity": 20,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "treatment-to-discharge",
+        "type": "discharge_pipeline",
+        "from": "treatment-bay",
+        "to": "discharge-hub",
+        "direction": "forward",
+        "capacity": {
+          "orders_per_tick": 4
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "treatment_order"
+        ],
+        "queue_capacity": 20,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "nurse-to-triage",
+        "type": "oversight_bus",
+        "from": "nurse-station",
+        "to": "triage-desk",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 32,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 6
+        }
+      },
+      {
+        "id": "nurse-to-treatment",
+        "type": "oversight_bus",
+        "from": "nurse-station",
+        "to": "treatment-bay",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 32,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 6
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "patient_record",
+        "kind": "intake_document",
+        "tags": [
+          "patient",
+          "admission"
+        ],
+        "freshness_budget_ticks": 200
+      },
+      {
+        "id": "triage_assessment",
+        "kind": "clinical_note",
+        "tags": [
+          "triage",
+          "severity"
+        ],
+        "freshness_budget_ticks": 150
+      },
+      {
+        "id": "vital_signs",
+        "kind": "measurement",
+        "tags": [
+          "clinical",
+          "vitals"
+        ],
+        "freshness_budget_ticks": 100
+      },
+      {
+        "id": "treatment_order",
+        "kind": "order",
+        "tags": [
+          "treatment",
+          "physician"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "discharge_summary",
+        "kind": "report",
+        "tags": [
+          "discharge",
+          "admin"
+        ],
+        "freshness_budget_ticks": 300
+      }
+    ],
+    "transforms": [
+      {
+        "id": "triage-patient",
+        "type": "clinical_triage",
+        "runs_on": "triage-desk",
+        "inputs": [
+          {
+            "thing": "patient_record",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "triage_assessment",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 3,
+        "duration_ticks": 2,
+        "deadline_ticks": 6,
+        "capacity_cost": {
+          "triage_slots": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "assess-vitals",
+        "type": "vital_check",
+        "runs_on": "assessment-room",
+        "inputs": [
+          {
+            "thing": "triage_assessment",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "vital_signs",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "room_capacity": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "write-treatment",
+        "type": "order_generation",
+        "runs_on": "treatment-bay",
+        "inputs": [
+          {
+            "thing": "vital_signs",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "treatment_order",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 15,
+        "capacity_cost": {
+          "treatment_slots": 2
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "process-discharge",
+        "type": "discharge_processing",
+        "runs_on": "discharge-hub",
+        "inputs": [
+          {
+            "thing": "treatment_order",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "discharge_summary",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 20,
+        "duration_ticks": 5,
+        "deadline_ticks": 40,
+        "capacity_cost": {
+          "discharge_slots": 2
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "urgent-triage-demand",
+        "type": "triage_request",
+        "target": {
+          "type": "place",
+          "id": "triage-desk"
+        },
+        "requires": [
+          "triage_assessment"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 30,
+          "start_tick": 60
+        },
+        "deadline_ticks": 60,
+        "priority": "high",
+        "value": 80,
+        "penalty": {
+          "score": -400,
+          "warning": "triage_backlog"
+        }
+      },
+      {
+        "id": "discharge-summary-demand",
+        "type": "admin_report",
+        "target": {
+          "type": "place",
+          "id": "discharge-hub"
+        },
+        "requires": [
+          "discharge_summary"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 120,
+          "start_tick": 180
+        },
+        "deadline_ticks": 180,
+        "priority": "normal",
+        "value": 40,
+        "penalty": {
+          "score": -100,
+          "warning": "discharge_delayed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "patient-surge",
+        "type": "source_multiplier",
+        "at_tick": 800,
+        "duration_ticks": 400,
+        "target": "intake-bay",
+        "thing": "patient_record",
+        "multiplier": 3.0
+      },
+      {
+        "id": "staff-shortage",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 300,
+        "target": "triage-desk",
+        "capacity": "triage_slots",
+        "reduction_percent": 40
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-discharge-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "discharge-hub",
+        "thing": "discharge_summary",
+        "max_stale_ticks": 600
+      },
+      {
+        "id": "complete-triage-demand",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "urgent-triage-demand",
+        "max_missed": 3
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "triage-overload-fail",
+        "type": "place_state",
+        "place": "triage-desk",
+        "state": "strained",
+        "grace_ticks": 60
+      },
+      {
+        "id": "discharge-stale-fail",
+        "type": "stale_target",
+        "place": "discharge-hub",
+        "thing": "discharge_summary",
+        "threshold_ticks": 800,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "survive-surge",
+        "type": "survive_until",
+        "at_tick": 3600
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "triage-load",
+          "source": "place_capacity_used_percent",
+          "place": "triage-desk",
+          "capacity": "triage_slots"
+        },
+        {
+          "id": "treatment-load",
+          "source": "place_capacity_used_percent",
+          "place": "treatment-bay",
+          "capacity": "treatment_slots"
+        },
+        {
+          "id": "discharge-inv",
+          "source": "place_inventory_count",
+          "place": "discharge-hub",
+          "thing": "discharge_summary"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "clinic-ops-dash",
+          "type": "live",
+          "depends_on": [
+            "discharge_summary",
+            "treatment_order"
+          ],
+          "freshness_slo_ticks": 300
+        }
+      ],
+      "alerts": [
+        {
+          "id": "triage-critical",
+          "metric": "triage-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "discharge-low",
+          "metric": "discharge-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

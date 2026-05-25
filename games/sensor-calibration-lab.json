@@ -1,0 +1,693 @@
+{
+  "schema_version": 1,
+  "name": "sensor-calibration-lab",
+  "theme": {
+    "palette": [
+      "#1a1423",
+      "#fff7ed",
+      "#06d6a0",
+      "#ef476f",
+      "#118ab2",
+      "#ffd166",
+      "#c77dff"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "sensor-calibration-lab",
+    "title": "Sensor Calibration Lab",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A metrological calibration laboratory where raw sensor outputs must be corrected against certified reference standards before temperature drift and equipment wear degrade measurement traceability.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "calibration",
+      "sensor",
+      "lab",
+      "intro",
+      "draft"
+    ],
+    "palette_note": "Precision metrology palette: dark background, steel foreground, blue raw inputs, amber offsets, green reference, teal validated, violet operator. Clinical and legible.",
+    "layout_note": "Six SL1 places form a measurement-to-certification pipeline: test bench left, calibration rack, reference standard above, validation suite right, log terminal far right, tech station above center.",
+    "node_language_note": "Place roles: source=test-bench, processor=calibration-rack/validation-suite, buffer=reference-standard, dashboard=log-terminal, operator=tech-station. Shapes: square=bench/terminal, hexagon=processor, diamond=reference, circle=operator.",
+    "mover_path_note": "No legacy movers; SL1 links carry sample and result flows. Six links span bench-to-log plus two bidirectional tech control buses.",
+    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "test-bench",
+        "role": "source",
+        "pos": [
+          -360,
+          -100
+        ],
+        "shape": "square",
+        "color": 2,
+        "capacity": {
+          "bench_slots": 24
+        },
+        "storage": {
+          "raw_measurement": {
+            "capacity": 200,
+            "initial": 20
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "raw_measurement"
+        ],
+        "failure_domains": [
+          "lab",
+          "measurement"
+        ],
+        "operating_states": {
+          "busy": {
+            "when": "bench_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "calibration-rack",
+        "role": "processor",
+        "pos": [
+          -80,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "rack_slots": 12
+        },
+        "storage": {
+          "raw_measurement": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "calibration_offset": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "raw_measurement"
+        ],
+        "produces": [
+          "calibration_offset"
+        ],
+        "failure_domains": [
+          "lab",
+          "calibration"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "rack_slots.used_percent >= 85",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "reference-standard",
+        "role": "buffer",
+        "pos": [
+          120,
+          -100
+        ],
+        "shape": "diamond",
+        "color": 4,
+        "capacity": {
+          "standard_slots": 10
+        },
+        "storage": {
+          "calibration_offset": {
+            "capacity": 50,
+            "initial": 5
+          },
+          "reference_value": {
+            "capacity": 50,
+            "initial": 5
+          }
+        },
+        "accepts": [
+          "calibration_offset"
+        ],
+        "produces": [
+          "reference_value"
+        ],
+        "failure_domains": [
+          "lab",
+          "reference"
+        ],
+        "operating_states": {
+          "drift_risk": {
+            "when": "standard_slots.used_percent >= 80",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "validation-suite",
+        "role": "processor",
+        "pos": [
+          300,
+          60
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "validation_slots": 16
+        },
+        "storage": {
+          "reference_value": {
+            "capacity": 40,
+            "initial": 4
+          },
+          "validated_reading": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "reference_value"
+        ],
+        "produces": [
+          "validated_reading"
+        ],
+        "failure_domains": [
+          "lab",
+          "validation"
+        ],
+        "operating_states": {
+          "bottleneck": {
+            "when": "validation_slots.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "log-terminal",
+        "role": "dashboard",
+        "pos": [
+          500,
+          -80
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "log_slots": 100
+        },
+        "storage": {
+          "validated_reading": {
+            "capacity": 30,
+            "initial": 3
+          },
+          "calibration_log": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "validated_reading"
+        ],
+        "produces": [
+          "calibration_log"
+        ],
+        "failure_domains": [
+          "lab",
+          "logging"
+        ],
+        "operating_states": {
+          "log_full": {
+            "when": "log_slots.used_percent >= 90",
+            "grace_ticks": 15
+          }
+        }
+      },
+      {
+        "id": "tech-station",
+        "role": "operator",
+        "pos": [
+          100,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "lab"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "bench-to-rack",
+        "type": "sample_feed",
+        "from": "test-bench",
+        "to": "calibration-rack",
+        "direction": "forward",
+        "capacity": {
+          "samples_per_tick": 4
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "raw_measurement"
+        ],
+        "queue_capacity": 80,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "rack-to-reference",
+        "type": "offset_feed",
+        "from": "calibration-rack",
+        "to": "reference-standard",
+        "direction": "forward",
+        "capacity": {
+          "offsets_per_tick": 3
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "calibration_offset"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "reference-to-validation",
+        "type": "value_feed",
+        "from": "reference-standard",
+        "to": "validation-suite",
+        "direction": "forward",
+        "capacity": {
+          "values_per_tick": 3
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "reference_value"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "validation-to-log",
+        "type": "result_feed",
+        "from": "validation-suite",
+        "to": "log-terminal",
+        "direction": "forward",
+        "capacity": {
+          "readings_per_tick": 5
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "validated_reading"
+        ],
+        "queue_capacity": 20,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "tech-to-rack",
+        "type": "control_bus",
+        "from": "tech-station",
+        "to": "calibration-rack",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "tech-to-validation",
+        "type": "control_bus",
+        "from": "tech-station",
+        "to": "validation-suite",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "raw_measurement",
+        "kind": "sensor_output",
+        "tags": [
+          "raw",
+          "sensor",
+          "measurement"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "calibration_offset",
+        "kind": "correction_value",
+        "tags": [
+          "calibration",
+          "offset",
+          "trim"
+        ],
+        "freshness_budget_ticks": 200
+      },
+      {
+        "id": "reference_value",
+        "kind": "standard_value",
+        "tags": [
+          "reference",
+          "standard",
+          "traceable"
+        ],
+        "freshness_budget_ticks": 300
+      },
+      {
+        "id": "validated_reading",
+        "kind": "certified_value",
+        "tags": [
+          "validated",
+          "certified",
+          "measurement"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "calibration_log",
+        "kind": "audit_record",
+        "tags": [
+          "log",
+          "audit",
+          "calibration"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "apply-offset",
+        "type": "offset_correction",
+        "runs_on": "calibration-rack",
+        "inputs": [
+          {
+            "thing": "raw_measurement",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "calibration_offset",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 4,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
+        "capacity_cost": {
+          "rack_slots": 2
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "compare-reference",
+        "type": "reference_comparison",
+        "runs_on": "reference-standard",
+        "inputs": [
+          {
+            "thing": "calibration_offset",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "reference_value",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 6,
+        "duration_ticks": 3,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "standard_slots": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "validate-reading",
+        "type": "uncertainty_assessment",
+        "runs_on": "validation-suite",
+        "inputs": [
+          {
+            "thing": "reference_value",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "validated_reading",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "validation_slots": 2
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "log-result",
+        "type": "audit_logging",
+        "runs_on": "log-terminal",
+        "inputs": [
+          {
+            "thing": "validated_reading",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "calibration_log",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 30,
+        "duration_ticks": 5,
+        "deadline_ticks": 60,
+        "capacity_cost": {
+          "log_slots": 2
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "batch-calibration-demand",
+        "type": "calibration_batch",
+        "target": {
+          "type": "place",
+          "id": "calibration-rack"
+        },
+        "requires": [
+          "calibration_offset"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "high",
+        "value": 60,
+        "penalty": {
+          "score": -300,
+          "warning": "calibration_overdue"
+        }
+      },
+      {
+        "id": "validation-sweep",
+        "type": "validation_audit",
+        "target": {
+          "type": "place",
+          "id": "validation-suite"
+        },
+        "requires": [
+          "validated_reading"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 200,
+          "start_tick": 150
+        },
+        "deadline_ticks": 250,
+        "priority": "normal",
+        "value": 40,
+        "penalty": {
+          "score": -120,
+          "warning": "validation_gap"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "temp-drift",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 300,
+        "target": "test-bench",
+        "thing": "raw_measurement",
+        "multiplier": 2.5
+      },
+      {
+        "id": "equipment-wear",
+        "type": "quota_reduction",
+        "at_tick": 1200,
+        "duration_ticks": 400,
+        "target": "calibration-rack",
+        "capacity": "rack_slots",
+        "reduction_percent": 40
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-log-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "log-terminal",
+        "thing": "calibration_log",
+        "max_stale_ticks": 900
+      },
+      {
+        "id": "complete-calibration",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "batch-calibration-demand",
+        "max_missed": 3
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "rack-overload-fail",
+        "type": "place_state",
+        "place": "calibration-rack",
+        "state": "overloaded",
+        "grace_ticks": 90
+      },
+      {
+        "id": "log-stale-fail",
+        "type": "stale_target",
+        "place": "log-terminal",
+        "thing": "calibration_log",
+        "threshold_ticks": 1200,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "certified-batch",
+        "type": "survive_until",
+        "at_tick": 3600
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "rack-load",
+          "source": "place_capacity_used_percent",
+          "place": "calibration-rack",
+          "capacity": "rack_slots"
+        },
+        {
+          "id": "validation-load",
+          "source": "place_capacity_used_percent",
+          "place": "validation-suite",
+          "capacity": "validation_slots"
+        },
+        {
+          "id": "log-inv",
+          "source": "place_inventory_count",
+          "place": "log-terminal",
+          "thing": "calibration_log"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "lab-dash",
+          "type": "live",
+          "depends_on": [
+            "calibration_log",
+            "validated_reading"
+          ],
+          "freshness_slo_ticks": 600
+        }
+      ],
+      "alerts": [
+        {
+          "id": "rack-critical",
+          "metric": "rack-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "log-low",
+          "metric": "log-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 2
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

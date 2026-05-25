@@ -1,0 +1,326 @@
+{
+  "schema_version": 1,
+  "name": "wildfire-watch-grid",
+  "theme": {
+    "palette": [
+      "#1a1423",
+      "#fff7ed",
+      "#06d6a0",
+      "#ef476f",
+      "#118ab2",
+      "#ffd166",
+      "#c77dff"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "wildfire-watch-grid",
+    "title": "Wildfire Watch Grid",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A fire-monitoring network laid out as a 3\u00d74 irregular grid of sensor towers and incident-command posts with diagonal fire-spread shortcuts.",
+    "tags": [
+      "wildfire",
+      "medium",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Wildfire Watch Grid colour theme.",
+    "layout_note": "12 nodes forming a wildfire topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting wildfire roles.",
+    "mover_path_note": "6 movers on distinct paths at speeds 1.20\u20132.00.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "node-0",
+        "pos": [
+          -340,
+          240
+        ],
+        "shape": "triangle",
+        "color": 2
+      },
+      {
+        "id": "node-1",
+        "pos": [
+          -130,
+          240
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "node-2",
+        "pos": [
+          100,
+          240
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "node-3",
+        "pos": [
+          330,
+          240
+        ],
+        "shape": "triangle",
+        "color": 5
+      },
+      {
+        "id": "node-4",
+        "pos": [
+          -310,
+          60
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "node-5",
+        "pos": [
+          -120,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "node-6",
+        "pos": [
+          120,
+          60
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "node-7",
+        "pos": [
+          310,
+          60
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "node-8",
+        "pos": [
+          -330,
+          -120
+        ],
+        "shape": "square",
+        "color": 6
+      },
+      {
+        "id": "node-9",
+        "pos": [
+          -110,
+          -100
+        ],
+        "shape": "diamond",
+        "color": 3
+      },
+      {
+        "id": "node-10",
+        "pos": [
+          130,
+          -130
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "node-11",
+        "pos": [
+          320,
+          -120
+        ],
+        "shape": "square",
+        "color": 6
+      }
+    ],
+    "paths": [
+      {
+        "id": "h-0-0",
+        "from": "node-0",
+        "to": "node-1",
+        "color": 2
+      },
+      {
+        "id": "h-0-1",
+        "from": "node-1",
+        "to": "node-2",
+        "color": 2
+      },
+      {
+        "id": "h-0-2",
+        "from": "node-2",
+        "to": "node-3",
+        "color": 2
+      },
+      {
+        "id": "h-1-0",
+        "from": "node-4",
+        "to": "node-5",
+        "color": 3
+      },
+      {
+        "id": "h-1-1",
+        "from": "node-5",
+        "to": "node-6",
+        "color": 3
+      },
+      {
+        "id": "h-1-2",
+        "from": "node-6",
+        "to": "node-7",
+        "color": 3
+      },
+      {
+        "id": "h-2-0",
+        "from": "node-8",
+        "to": "node-9",
+        "color": 6
+      },
+      {
+        "id": "h-2-1",
+        "from": "node-9",
+        "to": "node-10",
+        "color": 6
+      },
+      {
+        "id": "h-2-2",
+        "from": "node-10",
+        "to": "node-11",
+        "color": 6
+      },
+      {
+        "id": "v-0-0",
+        "from": "node-0",
+        "to": "node-4",
+        "color": 3
+      },
+      {
+        "id": "v-0-1",
+        "from": "node-4",
+        "to": "node-8",
+        "color": 3
+      },
+      {
+        "id": "v-1-0",
+        "from": "node-1",
+        "to": "node-5",
+        "color": 4
+      },
+      {
+        "id": "v-1-1",
+        "from": "node-5",
+        "to": "node-9",
+        "color": 4
+      },
+      {
+        "id": "v-2-0",
+        "from": "node-2",
+        "to": "node-6",
+        "color": 5
+      },
+      {
+        "id": "v-2-1",
+        "from": "node-6",
+        "to": "node-10",
+        "color": 5
+      },
+      {
+        "id": "v-3-0",
+        "from": "node-3",
+        "to": "node-7",
+        "color": 6
+      },
+      {
+        "id": "v-3-1",
+        "from": "node-7",
+        "to": "node-11",
+        "color": 6
+      },
+      {
+        "id": "diag-0-5",
+        "from": "node-0",
+        "to": "node-5",
+        "color": 3
+      },
+      {
+        "id": "diag-1-6",
+        "from": "node-1",
+        "to": "node-6",
+        "color": 3
+      },
+      {
+        "id": "diag-4-9",
+        "from": "node-4",
+        "to": "node-9",
+        "color": 3
+      },
+      {
+        "id": "diag-5-10",
+        "from": "node-5",
+        "to": "node-10",
+        "color": 3
+      },
+      {
+        "id": "diag-6-11",
+        "from": "node-6",
+        "to": "node-11",
+        "color": 3
+      },
+      {
+        "id": "diag-3-6",
+        "from": "node-3",
+        "to": "node-6",
+        "color": 3
+      }
+    ],
+    "movers": [
+      {
+        "id": "scout-a",
+        "on_path": "h-0-0",
+        "speed": 1.4
+      },
+      {
+        "id": "scout-b",
+        "on_path": "h-1-1",
+        "speed": 1.6
+      },
+      {
+        "id": "scout-c",
+        "on_path": "v-1-0",
+        "speed": 1.2
+      },
+      {
+        "id": "scout-d",
+        "on_path": "diag-0-5",
+        "speed": 1.8
+      },
+      {
+        "id": "scout-e",
+        "on_path": "diag-5-10",
+        "speed": 2.0
+      },
+      {
+        "id": "scout-f",
+        "on_path": "v-3-1",
+        "speed": 1.5
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

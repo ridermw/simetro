@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "name": "robot-arm-workbench",
+  "theme": {
+    "palette": [
+      "#1a1423",
+      "#fff7ed",
+      "#06d6a0",
+      "#ef476f",
+      "#118ab2",
+      "#ffd166",
+      "#c77dff"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "robot-arm-workbench",
+    "title": "Robot Arm Workbench",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "An assembly workbench where a central workcell dispatches robot arms to seven tool stations in a spoke layout.",
+    "tags": [
+      "robotics",
+      "intro",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Robot Arm Workbench colour theme.",
+    "layout_note": "8 nodes forming a robotics topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting robotics roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.90–1.60.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "workcell",
+        "pos": [
+          0,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "tool-0",
+        "pos": [
+          0,
+          -200
+        ],
+        "shape": "circle",
+        "color": 3
+      },
+      {
+        "id": "tool-1",
+        "pos": [
+          203,
+          -124
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "tool-2",
+        "pos": [
+          253,
+          44
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "tool-3",
+        "pos": [
+          112,
+          180
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "tool-4",
+        "pos": [
+          -112,
+          180
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "tool-5",
+        "pos": [
+          -253,
+          44
+        ],
+        "shape": "square",
+        "color": 5
+      },
+      {
+        "id": "tool-6",
+        "pos": [
+          -203,
+          -124
+        ],
+        "shape": "diamond",
+        "color": 3
+      }
+    ],
+    "paths": [
+      {
+        "id": "arm-0",
+        "from": "workcell",
+        "to": "tool-0",
+        "color": 3
+      },
+      {
+        "id": "arm-1",
+        "from": "workcell",
+        "to": "tool-1",
+        "color": 4
+      },
+      {
+        "id": "arm-2",
+        "from": "workcell",
+        "to": "tool-2",
+        "color": 5
+      },
+      {
+        "id": "arm-3",
+        "from": "workcell",
+        "to": "tool-3",
+        "color": 3
+      },
+      {
+        "id": "arm-4",
+        "from": "workcell",
+        "to": "tool-4",
+        "color": 4
+      },
+      {
+        "id": "arm-5",
+        "from": "workcell",
+        "to": "tool-5",
+        "color": 5
+      },
+      {
+        "id": "arm-6",
+        "from": "workcell",
+        "to": "tool-6",
+        "color": 3
+      },
+      {
+        "id": "cross-01",
+        "from": "tool-0",
+        "to": "tool-1",
+        "color": 3
+      },
+      {
+        "id": "cross-34",
+        "from": "tool-3",
+        "to": "tool-4",
+        "color": 4
+      },
+      {
+        "id": "cross-56",
+        "from": "tool-5",
+        "to": "tool-6",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "robot-a",
+        "on_path": "arm-0",
+        "speed": 1.4
+      },
+      {
+        "id": "robot-b",
+        "on_path": "arm-2",
+        "speed": 1.0
+      },
+      {
+        "id": "robot-c",
+        "on_path": "arm-4",
+        "speed": 1.2
+      },
+      {
+        "id": "robot-d",
+        "on_path": "arm-6",
+        "speed": 0.9
+      },
+      {
+        "id": "robot-e",
+        "on_path": "cross-01",
+        "speed": 1.6
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

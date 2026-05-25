@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "name": "city-budget-war-room",
+  "theme": {
+    "palette": [
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "city-budget-war-room",
+    "title": "City Budget War Room",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A municipal budget network with department request nodes, committee review nodes, and treasury allocation nodes in three cross-linked columns.",
+    "tags": [
+      "budget",
+      "hard",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. City Budget War Room colour theme.",
+    "layout_note": "15 nodes forming a budget topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 3 distinct shapes, 5 distinct colors reflecting budget roles.",
+    "mover_path_note": "7 movers on distinct paths at speeds 0.90\u20131.80.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "public-works",
+        "pos": [
+          -380,
+          240
+        ],
+        "shape": "square",
+        "color": 2
+      },
+      {
+        "id": "health",
+        "pos": [
+          -380,
+          120
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "education",
+        "pos": [
+          -380,
+          0
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "transit",
+        "pos": [
+          -380,
+          -120
+        ],
+        "shape": "square",
+        "color": 5
+      },
+      {
+        "id": "housing",
+        "pos": [
+          -380,
+          -240
+        ],
+        "shape": "square",
+        "color": 2
+      },
+      {
+        "id": "budget-comm",
+        "pos": [
+          0,
+          180
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "finance-comm",
+        "pos": [
+          0,
+          90
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "audit-comm",
+        "pos": [
+          0,
+          0
+        ],
+        "shape": "hexagon",
+        "color": 5
+      },
+      {
+        "id": "strategy-comm",
+        "pos": [
+          0,
+          -90
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "capital-comm",
+        "pos": [
+          0,
+          -180
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "revenue",
+        "pos": [
+          380,
+          240
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "reserves",
+        "pos": [
+          380,
+          120
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "grants",
+        "pos": [
+          380,
+          0
+        ],
+        "shape": "circle",
+        "color": 6
+      },
+      {
+        "id": "bonds",
+        "pos": [
+          380,
+          -120
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "contingency",
+        "pos": [
+          380,
+          -240
+        ],
+        "shape": "circle",
+        "color": 5
+      }
+    ],
+    "paths": [
+      {
+        "id": "dc-0-0",
+        "from": "public-works",
+        "to": "budget-comm",
+        "color": 2
+      },
+      {
+        "id": "dc-0-1",
+        "from": "public-works",
+        "to": "finance-comm",
+        "color": 2
+      },
+      {
+        "id": "dc-1-1",
+        "from": "health",
+        "to": "finance-comm",
+        "color": 3
+      },
+      {
+        "id": "dc-1-2",
+        "from": "health",
+        "to": "audit-comm",
+        "color": 3
+      },
+      {
+        "id": "dc-2-2",
+        "from": "education",
+        "to": "audit-comm",
+        "color": 4
+      },
+      {
+        "id": "dc-2-3",
+        "from": "education",
+        "to": "strategy-comm",
+        "color": 4
+      },
+      {
+        "id": "dc-3-3",
+        "from": "transit",
+        "to": "strategy-comm",
+        "color": 5
+      },
+      {
+        "id": "dc-3-4",
+        "from": "transit",
+        "to": "capital-comm",
+        "color": 5
+      },
+      {
+        "id": "dc-4-4",
+        "from": "housing",
+        "to": "capital-comm",
+        "color": 2
+      },
+      {
+        "id": "dc-4-0",
+        "from": "housing",
+        "to": "budget-comm",
+        "color": 2
+      },
+      {
+        "id": "ct-0-0",
+        "from": "budget-comm",
+        "to": "revenue",
+        "color": 3
+      },
+      {
+        "id": "ct-0-4",
+        "from": "budget-comm",
+        "to": "contingency",
+        "color": 3
+      },
+      {
+        "id": "ct-1-0",
+        "from": "finance-comm",
+        "to": "revenue",
+        "color": 4
+      },
+      {
+        "id": "ct-1-1",
+        "from": "finance-comm",
+        "to": "reserves",
+        "color": 4
+      },
+      {
+        "id": "ct-2-1",
+        "from": "audit-comm",
+        "to": "reserves",
+        "color": 5
+      },
+      {
+        "id": "ct-2-2",
+        "from": "audit-comm",
+        "to": "grants",
+        "color": 5
+      },
+      {
+        "id": "ct-3-2",
+        "from": "strategy-comm",
+        "to": "grants",
+        "color": 3
+      },
+      {
+        "id": "ct-3-3",
+        "from": "strategy-comm",
+        "to": "bonds",
+        "color": 3
+      },
+      {
+        "id": "ct-4-3",
+        "from": "capital-comm",
+        "to": "bonds",
+        "color": 4
+      },
+      {
+        "id": "ct-4-4",
+        "from": "capital-comm",
+        "to": "contingency",
+        "color": 4
+      },
+      {
+        "id": "tf-0",
+        "from": "revenue",
+        "to": "reserves",
+        "color": 4
+      },
+      {
+        "id": "tf-1",
+        "from": "reserves",
+        "to": "grants",
+        "color": 5
+      },
+      {
+        "id": "tf-2",
+        "from": "grants",
+        "to": "bonds",
+        "color": 6
+      },
+      {
+        "id": "tf-3",
+        "from": "bonds",
+        "to": "contingency",
+        "color": 4
+      },
+      {
+        "id": "tf-4",
+        "from": "contingency",
+        "to": "revenue",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "request-a",
+        "on_path": "dc-0-0",
+        "speed": 0.9
+      },
+      {
+        "id": "request-b",
+        "on_path": "dc-2-2",
+        "speed": 1.1
+      },
+      {
+        "id": "approval-a",
+        "on_path": "ct-1-1",
+        "speed": 1.3
+      },
+      {
+        "id": "approval-b",
+        "on_path": "ct-3-3",
+        "speed": 1.2
+      },
+      {
+        "id": "transfer-a",
+        "on_path": "tf-0",
+        "speed": 1.5
+      },
+      {
+        "id": "transfer-b",
+        "on_path": "tf-2",
+        "speed": 1.6
+      },
+      {
+        "id": "transfer-c",
+        "on_path": "dc-4-0",
+        "speed": 1.8
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

@@ -1,0 +1,692 @@
+{
+  "schema_version": 1,
+  "name": "bakery-oven-shift",
+  "theme": {
+    "palette": [
+      "#101820",
+      "#f2f7f5",
+      "#00a8e8",
+      "#ff6b6b",
+      "#84dcc6",
+      "#ffd166",
+      "#9b5de5"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "bakery-oven-shift",
+    "title": "Bakery Oven Shift",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A commercial bakery where ingredient stores, prep stations, proofing racks, and ovens must keep the sales counter stocked through holiday rushes and oven faults.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "bakery",
+      "oven",
+      "food",
+      "easy",
+      "draft"
+    ],
+    "palette_note": "Warm bakery palette: dark background, cream foreground, amber flour/dough, orange bake, golden product, warm brown sales. Evokes a working commercial kitchen.",
+    "layout_note": "Six SL1 places form an ingredient-to-counter pipeline: ingredient store far left, prep station, proofing rack above, main oven center-right, sales counter far right, shift supervisor above.",
+    "node_language_note": "Place roles: source=ingredient-store, processor=prep-station/main-oven, buffer=proofing-rack, dashboard=sales-counter, operator=shift-supervisor.",
+    "mover_path_note": "No legacy movers; SL1 links carry food flows. Six links span store-to-counter plus two bidirectional supervisor control buses.",
+    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "ingredient-store",
+        "role": "source",
+        "pos": [
+          -380,
+          -100
+        ],
+        "shape": "circle",
+        "color": 2,
+        "capacity": {
+          "store_capacity": 500
+        },
+        "storage": {
+          "raw_ingredient": {
+            "capacity": 1000,
+            "initial": 100
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "raw_ingredient"
+        ],
+        "failure_domains": [
+          "bakery",
+          "supply"
+        ],
+        "operating_states": {
+          "running_low": {
+            "when": "store_capacity.used_percent >= 90",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "prep-station",
+        "role": "processor",
+        "pos": [
+          -120,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "prep_slots": 16
+        },
+        "storage": {
+          "raw_ingredient": {
+            "capacity": 200,
+            "initial": 20
+          },
+          "dough_batch": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "raw_ingredient"
+        ],
+        "produces": [
+          "dough_batch"
+        ],
+        "failure_domains": [
+          "bakery",
+          "prep"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "prep_slots.used_percent >= 85",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "proofing-rack",
+        "role": "buffer",
+        "pos": [
+          100,
+          -80
+        ],
+        "shape": "square",
+        "color": 4,
+        "capacity": {
+          "rack_slots": 30
+        },
+        "storage": {
+          "dough_batch": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "proved_dough": {
+            "capacity": 50,
+            "initial": 5
+          }
+        },
+        "accepts": [
+          "dough_batch"
+        ],
+        "produces": [
+          "proved_dough"
+        ],
+        "failure_domains": [
+          "bakery",
+          "proofing"
+        ],
+        "operating_states": {
+          "full": {
+            "when": "rack_slots.used_percent >= 80",
+            "grace_ticks": 12
+          }
+        }
+      },
+      {
+        "id": "main-oven",
+        "role": "processor",
+        "pos": [
+          280,
+          60
+        ],
+        "shape": "hexagon",
+        "color": 5,
+        "capacity": {
+          "oven_slots": 12
+        },
+        "storage": {
+          "proved_dough": {
+            "capacity": 40,
+            "initial": 4
+          },
+          "baked_product": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "proved_dough"
+        ],
+        "produces": [
+          "baked_product"
+        ],
+        "failure_domains": [
+          "bakery",
+          "oven"
+        ],
+        "operating_states": {
+          "overtemp": {
+            "when": "oven_slots.used_percent >= 90",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "sales-counter",
+        "role": "dashboard",
+        "pos": [
+          500,
+          -60
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "display_slots": 40
+        },
+        "storage": {
+          "baked_product": {
+            "capacity": 40,
+            "initial": 4
+          },
+          "sales_record": {
+            "capacity": 30,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "baked_product"
+        ],
+        "produces": [
+          "sales_record"
+        ],
+        "failure_domains": [
+          "bakery",
+          "sales"
+        ],
+        "operating_states": {
+          "empty": {
+            "when": "display_slots.used_percent >= 80",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "shift-supervisor",
+        "role": "operator",
+        "pos": [
+          100,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "bakery"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "store-to-prep",
+        "type": "ingredient_feed",
+        "from": "ingredient-store",
+        "to": "prep-station",
+        "direction": "forward",
+        "capacity": {
+          "units_per_tick": 20
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "raw_ingredient"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "prep-to-proofing",
+        "type": "dough_transport",
+        "from": "prep-station",
+        "to": "proofing-rack",
+        "direction": "forward",
+        "capacity": {
+          "batches_per_tick": 4
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "dough_batch"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "proofing-to-oven",
+        "type": "baking_feed",
+        "from": "proofing-rack",
+        "to": "main-oven",
+        "direction": "forward",
+        "capacity": {
+          "batches_per_tick": 3
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "proved_dough"
+        ],
+        "queue_capacity": 25,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "oven-to-counter",
+        "type": "product_delivery",
+        "from": "main-oven",
+        "to": "sales-counter",
+        "direction": "forward",
+        "capacity": {
+          "products_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "baked_product"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "supervisor-to-prep",
+        "type": "control_bus",
+        "from": "shift-supervisor",
+        "to": "prep-station",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "supervisor-to-oven",
+        "type": "control_bus",
+        "from": "shift-supervisor",
+        "to": "main-oven",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "raw_ingredient",
+        "kind": "bulk_material",
+        "tags": [
+          "flour",
+          "yeast",
+          "ingredient"
+        ],
+        "freshness_budget_ticks": 2000
+      },
+      {
+        "id": "dough_batch",
+        "kind": "work_in_progress",
+        "tags": [
+          "dough",
+          "batch",
+          "prep"
+        ],
+        "freshness_budget_ticks": 180
+      },
+      {
+        "id": "proved_dough",
+        "kind": "work_in_progress",
+        "tags": [
+          "proved",
+          "risen",
+          "ready"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "baked_product",
+        "kind": "finished_good",
+        "tags": [
+          "baked",
+          "product",
+          "bread"
+        ],
+        "freshness_budget_ticks": 400
+      },
+      {
+        "id": "sales_record",
+        "kind": "transaction_record",
+        "tags": [
+          "sales",
+          "revenue",
+          "retail"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "mix-dough",
+        "type": "dough_mixing",
+        "runs_on": "prep-station",
+        "inputs": [
+          {
+            "thing": "raw_ingredient",
+            "amount": 5
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "dough_batch",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 5,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "prep_slots": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "prove-dough",
+        "type": "proofing_cycle",
+        "runs_on": "proofing-rack",
+        "inputs": [
+          {
+            "thing": "dough_batch",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "proved_dough",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 40,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "rack_slots": 5
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      },
+      {
+        "id": "bake-bread",
+        "type": "oven_cycle",
+        "runs_on": "main-oven",
+        "inputs": [
+          {
+            "thing": "proved_dough",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "baked_product",
+            "amount": 3
+          }
+        ],
+        "cadence_ticks": 30,
+        "duration_ticks": 20,
+        "deadline_ticks": 50,
+        "capacity_cost": {
+          "oven_slots": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "record-sale",
+        "type": "pos_transaction",
+        "runs_on": "sales-counter",
+        "inputs": [
+          {
+            "thing": "baked_product",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "sales_record",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 15,
+        "duration_ticks": 3,
+        "deadline_ticks": 30,
+        "capacity_cost": {
+          "display_slots": 2
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "morning-rush",
+        "type": "retail_demand",
+        "target": {
+          "type": "place",
+          "id": "sales-counter"
+        },
+        "requires": [
+          "baked_product"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 120
+        },
+        "deadline_ticks": 90,
+        "priority": "high",
+        "value": 80,
+        "penalty": {
+          "score": -400,
+          "warning": "morning_rush_missed"
+        }
+      },
+      {
+        "id": "wholesale-order",
+        "type": "bulk_order",
+        "target": {
+          "type": "place",
+          "id": "sales-counter"
+        },
+        "requires": [
+          "sales_record"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 400,
+          "start_tick": 300
+        },
+        "deadline_ticks": 500,
+        "priority": "normal",
+        "value": 60,
+        "penalty": {
+          "score": -200,
+          "warning": "wholesale_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "holiday-rush",
+        "type": "demand_growth",
+        "at_tick": 800,
+        "duration_ticks": 500,
+        "target": "morning-rush",
+        "spawn_multiplier": 3
+      },
+      {
+        "id": "oven-fault",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 300,
+        "target": "main-oven",
+        "capacity": "oven_slots",
+        "reduction_percent": 50
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-products-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "sales-counter",
+        "thing": "baked_product",
+        "max_stale_ticks": 400
+      },
+      {
+        "id": "fill-morning-rush",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "morning-rush",
+        "max_missed": 4
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "oven-overtemp-fail",
+        "type": "place_state",
+        "place": "main-oven",
+        "state": "overtemp",
+        "grace_ticks": 60
+      },
+      {
+        "id": "products-stale-fail",
+        "type": "stale_target",
+        "place": "sales-counter",
+        "thing": "baked_product",
+        "threshold_ticks": 600,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "full-shift",
+        "type": "survive_until",
+        "at_tick": 3600
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "oven-load",
+          "source": "place_capacity_used_percent",
+          "place": "main-oven",
+          "capacity": "oven_slots"
+        },
+        {
+          "id": "rack-level",
+          "source": "place_capacity_used_percent",
+          "place": "proofing-rack",
+          "capacity": "rack_slots"
+        },
+        {
+          "id": "product-inv",
+          "source": "place_inventory_count",
+          "place": "sales-counter",
+          "thing": "baked_product"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "bakery-dash",
+          "type": "live",
+          "depends_on": [
+            "baked_product",
+            "sales_record"
+          ],
+          "freshness_slo_ticks": 300
+        }
+      ],
+      "alerts": [
+        {
+          "id": "oven-critical",
+          "metric": "oven-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 90
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "product-low",
+          "metric": "product-inv",
+          "predicate": {
+            "type": "lt",
+            "threshold": 3
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

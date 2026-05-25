@@ -1,0 +1,693 @@
+{
+  "schema_version": 1,
+  "name": "microgrid-starter",
+  "theme": {
+    "palette": [
+      "#061826",
+      "#f8f9fa",
+      "#4cc9f0",
+      "#f72585",
+      "#80ed99",
+      "#f9c74f",
+      "#b5179e"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "microgrid-starter",
+    "title": "Microgrid Starter",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A rooftop solar microgrid where battery banks, inverters, and local distribution must serve peak loads through cloud cover and inverter thermal limits.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "microgrid",
+      "solar",
+      "energy",
+      "intro",
+      "draft"
+    ],
+    "palette_note": "Electric energy palette: dark background, warm foreground, amber solar, cyan battery, green inverter, teal distribution, violet operator. Distinct from transit scenes.",
+    "layout_note": "Six SL1 places form a generation-to-metering chain: solar array top-left, battery bank, inverter hub center, local grid, meter panel right, grid operator above center.",
+    "node_language_note": "Place roles: source=solar-array, buffer=battery-bank, processor=inverter-hub/local-grid, dashboard=meter-panel, operator=grid-operator. Shapes: triangle=source, square=buffer/dashboard, hexagon=inverter, diamond=grid.",
+    "mover_path_note": "No legacy movers; SL1 links carry power and telemetry. Six links span solar-to-meter plus two bidirectional control buses.",
+    "review_note": "Draft pending SL1 renderer. Validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "solar-array",
+        "role": "source",
+        "pos": [
+          -380,
+          -100
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "generation_kw": 80
+        },
+        "storage": {
+          "solar_reading": {
+            "capacity": 400,
+            "initial": 40
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "solar_reading"
+        ],
+        "failure_domains": [
+          "microgrid",
+          "generation"
+        ],
+        "operating_states": {
+          "peak_gen": {
+            "when": "generation_kw.used_percent >= 90",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "battery-bank",
+        "role": "buffer",
+        "pos": [
+          -80,
+          60
+        ],
+        "shape": "square",
+        "color": 3,
+        "capacity": {
+          "battery_capacity": 200
+        },
+        "storage": {
+          "solar_reading": {
+            "capacity": 200,
+            "initial": 20
+          },
+          "battery_state": {
+            "capacity": 100,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "solar_reading"
+        ],
+        "produces": [
+          "battery_state"
+        ],
+        "failure_domains": [
+          "microgrid",
+          "storage"
+        ],
+        "operating_states": {
+          "low_soc": {
+            "when": "battery_capacity.used_percent >= 85",
+            "grace_ticks": 8
+          }
+        }
+      },
+      {
+        "id": "inverter-hub",
+        "role": "processor",
+        "pos": [
+          120,
+          -20
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "inverter_slots": 30
+        },
+        "storage": {
+          "battery_state": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "power_allocation": {
+            "capacity": 60,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "battery_state"
+        ],
+        "produces": [
+          "power_allocation"
+        ],
+        "failure_domains": [
+          "microgrid",
+          "conversion"
+        ],
+        "operating_states": {
+          "thermal": {
+            "when": "inverter_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "local-grid",
+        "role": "processor",
+        "pos": [
+          320,
+          60
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "load_capacity": 150
+        },
+        "storage": {
+          "power_allocation": {
+            "capacity": 60,
+            "initial": 6
+          },
+          "grid_event": {
+            "capacity": 40,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "power_allocation"
+        ],
+        "produces": [
+          "grid_event"
+        ],
+        "failure_domains": [
+          "microgrid",
+          "distribution"
+        ],
+        "operating_states": {
+          "overload": {
+            "when": "load_capacity.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "meter-panel",
+        "role": "dashboard",
+        "pos": [
+          520,
+          -80
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "meter_slots": 40
+        },
+        "storage": {
+          "grid_event": {
+            "capacity": 30,
+            "initial": 3
+          },
+          "load_report": {
+            "capacity": 20,
+            "initial": 2
+          }
+        },
+        "accepts": [
+          "grid_event"
+        ],
+        "produces": [
+          "load_report"
+        ],
+        "failure_domains": [
+          "microgrid",
+          "metering"
+        ],
+        "operating_states": {
+          "report_lag": {
+            "when": "meter_slots.used_percent >= 70",
+            "grace_ticks": 10
+          }
+        }
+      },
+      {
+        "id": "grid-operator",
+        "role": "operator",
+        "pos": [
+          120,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "microgrid"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "solar-to-battery",
+        "type": "power_feed",
+        "from": "solar-array",
+        "to": "battery-bank",
+        "direction": "forward",
+        "capacity": {
+          "kw_per_tick": 20
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "solar_reading"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "battery-to-inverter",
+        "type": "dc_bus",
+        "from": "battery-bank",
+        "to": "inverter-hub",
+        "direction": "forward",
+        "capacity": {
+          "kw_per_tick": 15
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "battery_state"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "inverter-to-grid",
+        "type": "ac_distribution",
+        "from": "inverter-hub",
+        "to": "local-grid",
+        "direction": "forward",
+        "capacity": {
+          "kw_per_tick": 12
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "power_allocation"
+        ],
+        "queue_capacity": 40,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "grid-to-meter",
+        "type": "telemetry_feed",
+        "from": "local-grid",
+        "to": "meter-panel",
+        "direction": "forward",
+        "capacity": {
+          "events_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "grid_event"
+        ],
+        "queue_capacity": 20,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "operator-to-inverter",
+        "type": "control_bus",
+        "from": "grid-operator",
+        "to": "inverter-hub",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "operator-to-battery",
+        "type": "control_bus",
+        "from": "grid-operator",
+        "to": "battery-bank",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "solar_reading",
+        "kind": "sensor_reading",
+        "tags": [
+          "solar",
+          "generation",
+          "power"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "battery_state",
+        "kind": "state_vector",
+        "tags": [
+          "battery",
+          "soc",
+          "storage"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "power_allocation",
+        "kind": "control_plan",
+        "tags": [
+          "power",
+          "dispatch",
+          "grid"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "grid_event",
+        "kind": "event",
+        "tags": [
+          "grid",
+          "event",
+          "load"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "load_report",
+        "kind": "report",
+        "tags": [
+          "load",
+          "metering",
+          "summary"
+        ],
+        "freshness_budget_ticks": 300
+      }
+    ],
+    "transforms": [
+      {
+        "id": "charge-battery",
+        "type": "charge_cycle",
+        "runs_on": "battery-bank",
+        "inputs": [
+          {
+            "thing": "solar_reading",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "battery_state",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "battery_capacity": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "invert-power",
+        "type": "dc_ac_conversion",
+        "runs_on": "inverter-hub",
+        "inputs": [
+          {
+            "thing": "battery_state",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "power_allocation",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 4,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
+        "capacity_cost": {
+          "inverter_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "route-power",
+        "type": "load_dispatch",
+        "runs_on": "local-grid",
+        "inputs": [
+          {
+            "thing": "power_allocation",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "grid_event",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 6,
+        "duration_ticks": 2,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "load_capacity": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "meter-report",
+        "type": "telemetry_rollup",
+        "runs_on": "meter-panel",
+        "inputs": [
+          {
+            "thing": "grid_event",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "load_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 30,
+        "duration_ticks": 5,
+        "deadline_ticks": 60,
+        "capacity_cost": {
+          "meter_slots": 3
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "peak-load-demand",
+        "type": "load_service",
+        "target": {
+          "type": "place",
+          "id": "local-grid"
+        },
+        "requires": [
+          "grid_event"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "high",
+        "value": 70,
+        "penalty": {
+          "score": -350,
+          "warning": "load_not_served"
+        }
+      },
+      {
+        "id": "daily-load-report",
+        "type": "metering_report",
+        "target": {
+          "type": "place",
+          "id": "meter-panel"
+        },
+        "requires": [
+          "load_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 300,
+          "start_tick": 200
+        },
+        "deadline_ticks": 400,
+        "priority": "low",
+        "value": 30,
+        "penalty": {
+          "score": -80,
+          "warning": "load_report_stale"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "cloud-cover",
+        "type": "source_multiplier",
+        "at_tick": 700,
+        "duration_ticks": 500,
+        "target": "solar-array",
+        "thing": "solar_reading",
+        "multiplier": 0.15
+      },
+      {
+        "id": "load-spike",
+        "type": "quota_reduction",
+        "at_tick": 1200,
+        "duration_ticks": 250,
+        "target": "inverter-hub",
+        "capacity": "inverter_slots",
+        "reduction_percent": 45
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-load-report-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "meter-panel",
+        "thing": "load_report",
+        "max_stale_ticks": 600
+      },
+      {
+        "id": "complete-peak-load",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "peak-load-demand",
+        "max_missed": 3
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "grid-overload-fail",
+        "type": "place_state",
+        "place": "local-grid",
+        "state": "overload",
+        "grace_ticks": 60
+      },
+      {
+        "id": "load-report-stale-fail",
+        "type": "stale_target",
+        "place": "meter-panel",
+        "thing": "load_report",
+        "threshold_ticks": 800,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "stable-grid",
+        "type": "survive_until",
+        "at_tick": 4200
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "battery-level",
+          "source": "place_capacity_used_percent",
+          "place": "battery-bank",
+          "capacity": "battery_capacity"
+        },
+        {
+          "id": "grid-load",
+          "source": "place_capacity_used_percent",
+          "place": "local-grid",
+          "capacity": "load_capacity"
+        },
+        {
+          "id": "load-report-inv",
+          "source": "place_inventory_count",
+          "place": "meter-panel",
+          "thing": "load_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "microgrid-dash",
+          "type": "live",
+          "depends_on": [
+            "load_report",
+            "grid_event"
+          ],
+          "freshness_slo_ticks": 300
+        }
+      ],
+      "alerts": [
+        {
+          "id": "grid-critical",
+          "metric": "grid-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "battery-low",
+          "metric": "battery-level",
+          "predicate": {
+            "type": "lt",
+            "threshold": 20
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

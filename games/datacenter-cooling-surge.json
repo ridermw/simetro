@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "datacenter-cooling-surge",
+  "theme": {
+    "palette": [
+      "#1a1423",
+      "#fff7ed",
+      "#06d6a0",
+      "#ef476f",
+      "#118ab2",
+      "#ffd166",
+      "#c77dff"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "datacenter-cooling-surge",
+    "title": "Datacenter Cooling Surge",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A datacenter where thermal sensors, chiller plants, and coolant distribution loops must prevent hot-aisle temperature runaway during a compute surge.",
+    "tags": [
+      "datacenter",
+      "medium",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "sensor-array",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "sensor_slots": 100
+        },
+        "storage": {
+          "thermal_reading": {
+            "capacity": 400,
+            "initial": 40
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "thermal_reading"
+        ],
+        "failure_domains": [
+          "datacenter",
+          "sensing"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "sensor_slots.used_percent >= 85",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "chiller-plant",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "chiller_capacity": 60
+        },
+        "storage": {
+          "thermal_reading": {
+            "capacity": 400,
+            "initial": 30
+          },
+          "chiller_setpoint": {
+            "capacity": 150,
+            "initial": 15
+          }
+        },
+        "accepts": [
+          "thermal_reading"
+        ],
+        "produces": [
+          "chiller_setpoint"
+        ],
+        "failure_domains": [
+          "datacenter",
+          "cooling"
+        ],
+        "operating_states": {
+          "at_limit": {
+            "when": "chiller_capacity.used_percent >= 90",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "distribution-loop",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "flow_capacity": 80
+        },
+        "storage": {
+          "chiller_setpoint": {
+            "capacity": 150,
+            "initial": 12
+          },
+          "coolant_flow": {
+            "capacity": 120,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "chiller_setpoint"
+        ],
+        "produces": [
+          "coolant_flow"
+        ],
+        "failure_domains": [
+          "datacenter",
+          "distribution"
+        ],
+        "operating_states": {
+          "restricted": {
+            "when": "flow_capacity.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "hot-aisle",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "thermal_load": 70
+        },
+        "storage": {
+          "coolant_flow": {
+            "capacity": 120,
+            "initial": 8
+          },
+          "rack_temp_event": {
+            "capacity": 100,
+            "initial": 5
+          }
+        },
+        "accepts": [
+          "coolant_flow"
+        ],
+        "produces": [
+          "rack_temp_event"
+        ],
+        "failure_domains": [
+          "datacenter",
+          "aisle"
+        ],
+        "operating_states": {
+          "critical": {
+            "when": "thermal_load.used_percent >= 88",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "rack-monitor",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "monitor_slots": 80
+        },
+        "storage": {
+          "rack_temp_event": {
+            "capacity": 100,
+            "initial": 5
+          },
+          "cooling_report": {
+            "capacity": 60,
+            "initial": 3
+          }
+        },
+        "accepts": [
+          "rack_temp_event"
+        ],
+        "produces": [
+          "cooling_report"
+        ],
+        "failure_domains": [
+          "datacenter",
+          "monitoring"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "monitor_slots.used_percent >= 90",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "facility-engineer",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "datacenter"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "sensor-chiller",
+        "type": "sensor_bus",
+        "from": "sensor-array",
+        "to": "chiller-plant",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 80
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "thermal_reading"
+        ],
+        "queue_capacity": 500,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "chiller-loop",
+        "type": "chilled_water_main",
+        "from": "chiller-plant",
+        "to": "distribution-loop",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 50
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "chiller_setpoint"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "loop-aisle",
+        "type": "crac_feed",
+        "from": "distribution-loop",
+        "to": "hot-aisle",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "coolant_flow"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "aisle-rack",
+        "type": "rack_telemetry",
+        "from": "hot-aisle",
+        "to": "rack-monitor",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "rack_temp_event"
+        ],
+        "queue_capacity": 120,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "eng-chiller",
+        "type": "control_bus",
+        "from": "facility-engineer",
+        "to": "chiller-plant",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "eng-sensor",
+        "type": "control_bus",
+        "from": "facility-engineer",
+        "to": "sensor-array",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "thermal_reading",
+        "kind": "sensor_data",
+        "tags": [
+          "temperature",
+          "thermal",
+          "sensor"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "chiller_setpoint",
+        "kind": "control_command",
+        "tags": [
+          "chiller",
+          "setpoint",
+          "cooling"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "coolant_flow",
+        "kind": "fluid_stream",
+        "tags": [
+          "coolant",
+          "flow",
+          "chilled"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "rack_temp_event",
+        "kind": "sensor_data",
+        "tags": [
+          "rack",
+          "temperature",
+          "event"
+        ],
+        "freshness_budget_ticks": 180
+      },
+      {
+        "id": "cooling_report",
+        "kind": "compliance_record",
+        "tags": [
+          "cooling",
+          "report",
+          "sla"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "compute-setpoint",
+        "type": "chiller_control",
+        "runs_on": "chiller-plant",
+        "inputs": [
+          {
+            "thing": "thermal_reading",
+            "amount": 4
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "chiller_setpoint",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "chiller_capacity": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "distribute-coolant",
+        "type": "coolant_distribution",
+        "runs_on": "distribution-loop",
+        "inputs": [
+          {
+            "thing": "chiller_setpoint",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "coolant_flow",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 6,
+        "duration_ticks": 3,
+        "deadline_ticks": 12,
+        "capacity_cost": {
+          "flow_capacity": 6
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "cool-racks",
+        "type": "rack_cooling",
+        "runs_on": "hot-aisle",
+        "inputs": [
+          {
+            "thing": "coolant_flow",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "rack_temp_event",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "thermal_load": 8
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "generate-report",
+        "type": "thermal_audit",
+        "runs_on": "rack-monitor",
+        "inputs": [
+          {
+            "thing": "rack_temp_event",
+            "amount": 4
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "cooling_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "monitor_slots": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "cooling-sla",
+        "type": "thermal_compliance",
+        "target": {
+          "type": "place",
+          "id": "rack-monitor"
+        },
+        "requires": [
+          "cooling_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 180,
+          "start_tick": 120
+        },
+        "deadline_ticks": 260,
+        "priority": "high",
+        "value": 100,
+        "penalty": {
+          "score": -600,
+          "warning": "thermal_sla_breach"
+        }
+      },
+      {
+        "id": "ops-report",
+        "type": "facility_audit",
+        "target": {
+          "type": "place",
+          "id": "rack-monitor"
+        },
+        "requires": [
+          "cooling_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "ops_report_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "heat-surge",
+        "type": "source_multiplier",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "sensor-array",
+        "thing": "thermal_reading",
+        "multiplier": 5.0
+      },
+      {
+        "id": "chiller-fault",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "chiller-plant",
+        "capacity": "chiller_capacity",
+        "reduction_percent": 40
+      },
+      {
+        "id": "sla-rush",
+        "type": "demand_growth",
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "cooling-sla",
+        "spawn_multiplier": 3
+      }
+    ],
+    "objectives": [
+      {
+        "id": "aisle-safe",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "hot-aisle",
+        "capacity": "thermal_load",
+        "min_percent": 0,
+        "max_percent": 82
+      },
+      {
+        "id": "reports-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "rack-monitor",
+        "thing": "cooling_report",
+        "max_stale_ticks": 700
+      },
+      {
+        "id": "sla-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "cooling-sla",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "aisle-critical",
+        "type": "place_state",
+        "place": "hot-aisle",
+        "state": "critical",
+        "grace_ticks": 45
+      },
+      {
+        "id": "report-stale",
+        "type": "stale_target",
+        "place": "rack-monitor",
+        "thing": "cooling_report",
+        "threshold_ticks": 850,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "datacenter-cooling-surge-survived",
+        "type": "survive_until",
+        "at_tick": 5200
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "chiller-util",
+          "source": "place_capacity_used_percent",
+          "place": "chiller-plant",
+          "capacity": "chiller_capacity"
+        },
+        {
+          "id": "aisle-util",
+          "source": "place_capacity_used_percent",
+          "place": "hot-aisle",
+          "capacity": "thermal_load"
+        },
+        {
+          "id": "loop-util",
+          "source": "place_capacity_used_percent",
+          "place": "distribution-loop",
+          "capacity": "flow_capacity"
+        },
+        {
+          "id": "report-inv",
+          "source": "place_inventory_count",
+          "place": "rack-monitor",
+          "thing": "cooling_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "cooling-dash",
+          "type": "live",
+          "depends_on": [
+            "cooling_report",
+            "rack_temp_event"
+          ],
+          "freshness_slo_ticks": 400
+        }
+      ],
+      "alerts": [
+        {
+          "id": "aisle-high",
+          "metric": "aisle-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "chiller-strain",
+          "metric": "chiller-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 88
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

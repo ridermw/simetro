@@ -1,0 +1,421 @@
+{
+  "schema_version": 1,
+  "name": "quantum-control-room",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "quantum-control-room",
+    "title": "Quantum Control Room",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A cryogenic qubit control room laid out as a dense 4\u00d74 mesh of dilution fridges, FPGA controllers, and readout chains with diagonal cross-links.",
+    "tags": [
+      "quantum",
+      "hard",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Quantum Control Room colour theme.",
+    "layout_note": "16 nodes forming a quantum topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting quantum roles.",
+    "mover_path_note": "7 movers on distinct paths at speeds 1.30\u20132.40.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "qc-0-0",
+        "pos": [
+          -270,
+          210
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "qc-0-1",
+        "pos": [
+          -90,
+          210
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "qc-0-2",
+        "pos": [
+          90,
+          210
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "qc-0-3",
+        "pos": [
+          270,
+          210
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "qc-1-0",
+        "pos": [
+          -270,
+          70
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "qc-1-1",
+        "pos": [
+          -90,
+          70
+        ],
+        "shape": "diamond",
+        "color": 4
+      },
+      {
+        "id": "qc-1-2",
+        "pos": [
+          90,
+          70
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "qc-1-3",
+        "pos": [
+          270,
+          70
+        ],
+        "shape": "square",
+        "color": 6
+      },
+      {
+        "id": "qc-2-0",
+        "pos": [
+          -270,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "qc-2-1",
+        "pos": [
+          -90,
+          -70
+        ],
+        "shape": "hexagon",
+        "color": 5
+      },
+      {
+        "id": "qc-2-2",
+        "pos": [
+          90,
+          -70
+        ],
+        "shape": "hexagon",
+        "color": 6
+      },
+      {
+        "id": "qc-2-3",
+        "pos": [
+          270,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "qc-3-0",
+        "pos": [
+          -270,
+          -210
+        ],
+        "shape": "circle",
+        "color": 5
+      },
+      {
+        "id": "qc-3-1",
+        "pos": [
+          -90,
+          -210
+        ],
+        "shape": "square",
+        "color": 6
+      },
+      {
+        "id": "qc-3-2",
+        "pos": [
+          90,
+          -210
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "qc-3-3",
+        "pos": [
+          270,
+          -210
+        ],
+        "shape": "circle",
+        "color": 4
+      }
+    ],
+    "paths": [
+      {
+        "id": "qh-0-0",
+        "from": "qc-0-0",
+        "to": "qc-0-1",
+        "color": 2
+      },
+      {
+        "id": "qh-0-1",
+        "from": "qc-0-1",
+        "to": "qc-0-2",
+        "color": 3
+      },
+      {
+        "id": "qh-0-2",
+        "from": "qc-0-2",
+        "to": "qc-0-3",
+        "color": 4
+      },
+      {
+        "id": "qh-1-0",
+        "from": "qc-1-0",
+        "to": "qc-1-1",
+        "color": 3
+      },
+      {
+        "id": "qh-1-1",
+        "from": "qc-1-1",
+        "to": "qc-1-2",
+        "color": 4
+      },
+      {
+        "id": "qh-1-2",
+        "from": "qc-1-2",
+        "to": "qc-1-3",
+        "color": 5
+      },
+      {
+        "id": "qh-2-0",
+        "from": "qc-2-0",
+        "to": "qc-2-1",
+        "color": 4
+      },
+      {
+        "id": "qh-2-1",
+        "from": "qc-2-1",
+        "to": "qc-2-2",
+        "color": 5
+      },
+      {
+        "id": "qh-2-2",
+        "from": "qc-2-2",
+        "to": "qc-2-3",
+        "color": 6
+      },
+      {
+        "id": "qh-3-0",
+        "from": "qc-3-0",
+        "to": "qc-3-1",
+        "color": 5
+      },
+      {
+        "id": "qh-3-1",
+        "from": "qc-3-1",
+        "to": "qc-3-2",
+        "color": 6
+      },
+      {
+        "id": "qh-3-2",
+        "from": "qc-3-2",
+        "to": "qc-3-3",
+        "color": 3
+      },
+      {
+        "id": "qv-0-0",
+        "from": "qc-0-0",
+        "to": "qc-1-0",
+        "color": 2
+      },
+      {
+        "id": "qv-0-1",
+        "from": "qc-1-0",
+        "to": "qc-2-0",
+        "color": 3
+      },
+      {
+        "id": "qv-0-2",
+        "from": "qc-2-0",
+        "to": "qc-3-0",
+        "color": 4
+      },
+      {
+        "id": "qv-1-0",
+        "from": "qc-0-1",
+        "to": "qc-1-1",
+        "color": 3
+      },
+      {
+        "id": "qv-1-1",
+        "from": "qc-1-1",
+        "to": "qc-2-1",
+        "color": 4
+      },
+      {
+        "id": "qv-1-2",
+        "from": "qc-2-1",
+        "to": "qc-3-1",
+        "color": 5
+      },
+      {
+        "id": "qv-2-0",
+        "from": "qc-0-2",
+        "to": "qc-1-2",
+        "color": 4
+      },
+      {
+        "id": "qv-2-1",
+        "from": "qc-1-2",
+        "to": "qc-2-2",
+        "color": 5
+      },
+      {
+        "id": "qv-2-2",
+        "from": "qc-2-2",
+        "to": "qc-3-2",
+        "color": 6
+      },
+      {
+        "id": "qv-3-0",
+        "from": "qc-0-3",
+        "to": "qc-1-3",
+        "color": 5
+      },
+      {
+        "id": "qv-3-1",
+        "from": "qc-1-3",
+        "to": "qc-2-3",
+        "color": 6
+      },
+      {
+        "id": "qv-3-2",
+        "from": "qc-2-3",
+        "to": "qc-3-3",
+        "color": 3
+      },
+      {
+        "id": "qd-00-11",
+        "from": "qc-0-0",
+        "to": "qc-1-1",
+        "color": 2
+      },
+      {
+        "id": "qd-02-13",
+        "from": "qc-0-2",
+        "to": "qc-1-3",
+        "color": 4
+      },
+      {
+        "id": "qd-10-21",
+        "from": "qc-1-0",
+        "to": "qc-2-1",
+        "color": 3
+      },
+      {
+        "id": "qd-12-23",
+        "from": "qc-1-2",
+        "to": "qc-2-3",
+        "color": 5
+      },
+      {
+        "id": "qd-21-32",
+        "from": "qc-2-1",
+        "to": "qc-3-2",
+        "color": 5
+      },
+      {
+        "id": "qd-01-12",
+        "from": "qc-0-1",
+        "to": "qc-1-2",
+        "color": 3
+      },
+      {
+        "id": "qd-20-31",
+        "from": "qc-2-0",
+        "to": "qc-3-1",
+        "color": 4
+      },
+      {
+        "id": "qd-11-22",
+        "from": "qc-1-1",
+        "to": "qc-2-2",
+        "color": 4
+      }
+    ],
+    "movers": [
+      {
+        "id": "qubit-a",
+        "on_path": "qh-0-0",
+        "speed": 1.5
+      },
+      {
+        "id": "qubit-b",
+        "on_path": "qh-2-2",
+        "speed": 1.8
+      },
+      {
+        "id": "qubit-c",
+        "on_path": "qv-1-1",
+        "speed": 1.3
+      },
+      {
+        "id": "qubit-d",
+        "on_path": "qv-3-0",
+        "speed": 2.0
+      },
+      {
+        "id": "qubit-e",
+        "on_path": "qd-00-11",
+        "speed": 2.2
+      },
+      {
+        "id": "qubit-f",
+        "on_path": "qd-12-23",
+        "speed": 1.9
+      },
+      {
+        "id": "qubit-g",
+        "on_path": "qd-11-22",
+        "speed": 2.4
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

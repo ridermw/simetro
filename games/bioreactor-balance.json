@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "name": "bioreactor-balance",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "bioreactor-balance",
+    "title": "Bioreactor Balance",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A bioprocess plant with dual top/bottom pipelines (inoculation\u2192harvest and media\u2192formulation) bridged by three cross-connectors.",
+    "tags": [
+      "bioreactor",
+      "medium",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Bioreactor Balance colour theme.",
+    "layout_note": "13 nodes forming a bioreactor topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 5 distinct colors reflecting bioreactor roles.",
+    "mover_path_note": "6 movers on distinct paths at speeds 0.70\u20131.40.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "inoc",
+        "pos": [
+          -320,
+          140
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "seed-tank",
+        "pos": [
+          -160,
+          140
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "bioreactor",
+        "pos": [
+          0,
+          140
+        ],
+        "shape": "hexagon",
+        "color": 4
+      },
+      {
+        "id": "centrifuge",
+        "pos": [
+          160,
+          140
+        ],
+        "shape": "square",
+        "color": 5
+      },
+      {
+        "id": "harvest",
+        "pos": [
+          320,
+          140
+        ],
+        "shape": "diamond",
+        "color": 6
+      },
+      {
+        "id": "media",
+        "pos": [
+          -320,
+          -140
+        ],
+        "shape": "circle",
+        "color": 2
+      },
+      {
+        "id": "buffer-tank",
+        "pos": [
+          -160,
+          -140
+        ],
+        "shape": "square",
+        "color": 4
+      },
+      {
+        "id": "fermenter",
+        "pos": [
+          0,
+          -140
+        ],
+        "shape": "hexagon",
+        "color": 3
+      },
+      {
+        "id": "filter",
+        "pos": [
+          160,
+          -140
+        ],
+        "shape": "diamond",
+        "color": 5
+      },
+      {
+        "id": "formulate",
+        "pos": [
+          320,
+          -140
+        ],
+        "shape": "triangle",
+        "color": 6
+      },
+      {
+        "id": "bridge-left",
+        "pos": [
+          -160,
+          0
+        ],
+        "shape": "triangle",
+        "color": 3
+      },
+      {
+        "id": "bridge-mid",
+        "pos": [
+          80,
+          0
+        ],
+        "shape": "triangle",
+        "color": 4
+      },
+      {
+        "id": "bridge-right",
+        "pos": [
+          320,
+          0
+        ],
+        "shape": "triangle",
+        "color": 5
+      }
+    ],
+    "paths": [
+      {
+        "id": "tp-0",
+        "from": "inoc",
+        "to": "seed-tank",
+        "color": 2
+      },
+      {
+        "id": "tp-1",
+        "from": "seed-tank",
+        "to": "bioreactor",
+        "color": 3
+      },
+      {
+        "id": "tp-2",
+        "from": "bioreactor",
+        "to": "centrifuge",
+        "color": 4
+      },
+      {
+        "id": "tp-3",
+        "from": "centrifuge",
+        "to": "harvest",
+        "color": 5
+      },
+      {
+        "id": "bp-0",
+        "from": "media",
+        "to": "buffer-tank",
+        "color": 2
+      },
+      {
+        "id": "bp-1",
+        "from": "buffer-tank",
+        "to": "fermenter",
+        "color": 4
+      },
+      {
+        "id": "bp-2",
+        "from": "fermenter",
+        "to": "filter",
+        "color": 3
+      },
+      {
+        "id": "bp-3",
+        "from": "filter",
+        "to": "formulate",
+        "color": 5
+      },
+      {
+        "id": "xb-l-top",
+        "from": "inoc",
+        "to": "bridge-left",
+        "color": 3
+      },
+      {
+        "id": "xb-l-bot",
+        "from": "bridge-left",
+        "to": "buffer-tank",
+        "color": 3
+      },
+      {
+        "id": "xb-m-top",
+        "from": "bioreactor",
+        "to": "bridge-mid",
+        "color": 4
+      },
+      {
+        "id": "xb-m-bot",
+        "from": "bridge-mid",
+        "to": "fermenter",
+        "color": 4
+      },
+      {
+        "id": "xb-r-top",
+        "from": "harvest",
+        "to": "bridge-right",
+        "color": 5
+      },
+      {
+        "id": "xb-r-bot",
+        "from": "bridge-right",
+        "to": "formulate",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "culture-a",
+        "on_path": "tp-0",
+        "speed": 0.7
+      },
+      {
+        "id": "culture-b",
+        "on_path": "bp-2",
+        "speed": 0.9
+      },
+      {
+        "id": "culture-c",
+        "on_path": "xb-l-top",
+        "speed": 1.2
+      },
+      {
+        "id": "culture-d",
+        "on_path": "xb-m-bot",
+        "speed": 1.0
+      },
+      {
+        "id": "culture-e",
+        "on_path": "tp-3",
+        "speed": 1.4
+      },
+      {
+        "id": "culture-f",
+        "on_path": "bp-0",
+        "speed": 0.8
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "regional-blackstart",
+  "theme": {
+    "palette": [
+      "#0b1020",
+      "#e8eaed",
+      "#7aa2f7",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#bb9af7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "regional-blackstart",
+    "title": "Regional Blackstart",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A power-system blackstart restoration where a darkened grid is re-energized step by step \u2014 cranking buses, selecting feeders, and restoring load zones \u2014 while managing frequency stability.",
+    "tags": [
+      "power_grid",
+      "hard",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "blackstart-unit",
+        "role": "source",
+        "pos": [
+          -360,
+          -70
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "crank_capacity": 30
+        },
+        "storage": {
+          "restoration_order": {
+            "capacity": 120,
+            "initial": 12
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "restoration_order"
+        ],
+        "failure_domains": [
+          "grid",
+          "blackstart"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "crank_capacity.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "cranking-bus",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "bus_slots": 25
+        },
+        "storage": {
+          "restoration_order": {
+            "capacity": 120,
+            "initial": 10
+          },
+          "cranked_bus": {
+            "capacity": 100,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "restoration_order"
+        ],
+        "produces": [
+          "cranked_bus"
+        ],
+        "failure_domains": [
+          "grid",
+          "cranking"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "bus_slots.used_percent >= 88",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "feeder-selector",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "feeder_slots": 40
+        },
+        "storage": {
+          "cranked_bus": {
+            "capacity": 100,
+            "initial": 8
+          },
+          "energized_feeder": {
+            "capacity": 120,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "cranked_bus"
+        ],
+        "produces": [
+          "energized_feeder"
+        ],
+        "failure_domains": [
+          "grid",
+          "feeders"
+        ],
+        "operating_states": {
+          "congested": {
+            "when": "feeder_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "zone-energizer",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "zone_slots": 35
+        },
+        "storage": {
+          "energized_feeder": {
+            "capacity": 120,
+            "initial": 8
+          },
+          "load_block": {
+            "capacity": 100,
+            "initial": 6
+          }
+        },
+        "accepts": [
+          "energized_feeder"
+        ],
+        "produces": [
+          "load_block"
+        ],
+        "failure_domains": [
+          "grid",
+          "zones"
+        ],
+        "operating_states": {
+          "overloaded": {
+            "when": "zone_slots.used_percent >= 85",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "frequency-dashboard",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "reading_slots": 80
+        },
+        "storage": {
+          "load_block": {
+            "capacity": 100,
+            "initial": 6
+          },
+          "grid_report": {
+            "capacity": 60,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "load_block"
+        ],
+        "produces": [
+          "grid_report"
+        ],
+        "failure_domains": [
+          "grid",
+          "telemetry"
+        ],
+        "operating_states": {
+          "stale": {
+            "when": "reading_slots.used_percent >= 90",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "system-operator",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "grid"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "bsu-crankbus",
+        "type": "power_flow",
+        "from": "blackstart-unit",
+        "to": "cranking-bus",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 25
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "restoration_order"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "crankbus-feeder",
+        "type": "feeder_feed",
+        "from": "cranking-bus",
+        "to": "feeder-selector",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 35
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "cranked_bus"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "feeder-zone",
+        "type": "zone_feed",
+        "from": "feeder-selector",
+        "to": "zone-energizer",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "energized_feeder"
+        ],
+        "queue_capacity": 150,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "zone-freq",
+        "type": "telemetry_feed",
+        "from": "zone-energizer",
+        "to": "frequency-dashboard",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "load_block"
+        ],
+        "queue_capacity": 120,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "op-bsu",
+        "type": "control_bus",
+        "from": "system-operator",
+        "to": "blackstart-unit",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "op-crankbus",
+        "type": "control_bus",
+        "from": "system-operator",
+        "to": "cranking-bus",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "restoration_order",
+        "kind": "work_order",
+        "tags": [
+          "restoration",
+          "order",
+          "grid"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "cranked_bus",
+        "kind": "sensor_data",
+        "tags": [
+          "cranked",
+          "bus",
+          "voltage"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "energized_feeder",
+        "kind": "sensor_data",
+        "tags": [
+          "energized",
+          "feeder",
+          "line"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "load_block",
+        "kind": "data_record",
+        "tags": [
+          "load",
+          "zone",
+          "block"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "grid_report",
+        "kind": "compliance_record",
+        "tags": [
+          "stable",
+          "frequency",
+          "report"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "crank-bus",
+        "type": "bus_energization",
+        "runs_on": "cranking-bus",
+        "inputs": [
+          {
+            "thing": "restoration_order",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "cranked_bus",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "bus_slots": 4
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "select-feeder",
+        "type": "feeder_switching",
+        "runs_on": "feeder-selector",
+        "inputs": [
+          {
+            "thing": "cranked_bus",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "energized_feeder",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 20,
+        "capacity_cost": {
+          "feeder_slots": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "energize-zone",
+        "type": "zone_restoration",
+        "runs_on": "zone-energizer",
+        "inputs": [
+          {
+            "thing": "energized_feeder",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "load_block",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 15,
+        "duration_ticks": 6,
+        "deadline_ticks": 30,
+        "capacity_cost": {
+          "zone_slots": 6
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "report-grid",
+        "type": "frequency_reporting",
+        "runs_on": "frequency-dashboard",
+        "inputs": [
+          {
+            "thing": "load_block",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "grid_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "reading_slots": 8
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "zone-demand",
+        "type": "zone_restoration_request",
+        "target": {
+          "type": "place",
+          "id": "frequency-dashboard"
+        },
+        "requires": [
+          "grid_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 160,
+          "start_tick": 120
+        },
+        "deadline_ticks": 240,
+        "priority": "high",
+        "value": 120,
+        "penalty": {
+          "score": -600,
+          "warning": "restoration_overdue"
+        }
+      },
+      {
+        "id": "grid-audit",
+        "type": "stability_check",
+        "target": {
+          "type": "place",
+          "id": "frequency-dashboard"
+        },
+        "requires": [
+          "grid_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 50,
+        "penalty": {
+          "score": -150,
+          "warning": "stability_audit_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "demand-spike",
+        "type": "source_multiplier",
+        "at_tick": 500,
+        "duration_ticks": 600,
+        "target": "blackstart-unit",
+        "thing": "restoration_order",
+        "multiplier": 4.0
+      },
+      {
+        "id": "feeder-fault",
+        "type": "quota_reduction",
+        "at_tick": 1500,
+        "duration_ticks": 400,
+        "target": "feeder-selector",
+        "capacity": "feeder_slots",
+        "reduction_percent": 40
+      },
+      {
+        "id": "zone-rush",
+        "type": "demand_growth",
+        "at_tick": 900,
+        "duration_ticks": 400,
+        "target": "zone-demand",
+        "spawn_multiplier": 3
+      }
+    ],
+    "objectives": [
+      {
+        "id": "crank-safe",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "cranking-bus",
+        "capacity": "bus_slots",
+        "min_percent": 0,
+        "max_percent": 82
+      },
+      {
+        "id": "reports-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "frequency-dashboard",
+        "thing": "grid_report",
+        "max_stale_ticks": 700
+      },
+      {
+        "id": "zones-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "zone-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "crank-sat",
+        "type": "place_state",
+        "place": "cranking-bus",
+        "state": "saturated",
+        "grace_ticks": 45
+      },
+      {
+        "id": "report-stale",
+        "type": "stale_target",
+        "place": "frequency-dashboard",
+        "thing": "grid_report",
+        "threshold_ticks": 850,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "regional-blackstart-survived",
+        "type": "survive_until",
+        "at_tick": 6400
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "bsu-util",
+          "source": "place_capacity_used_percent",
+          "place": "blackstart-unit",
+          "capacity": "crank_capacity"
+        },
+        {
+          "id": "crank-load",
+          "source": "place_capacity_used_percent",
+          "place": "cranking-bus",
+          "capacity": "bus_slots"
+        },
+        {
+          "id": "zone-load",
+          "source": "place_capacity_used_percent",
+          "place": "zone-energizer",
+          "capacity": "zone_slots"
+        },
+        {
+          "id": "report-inv",
+          "source": "place_inventory_count",
+          "place": "frequency-dashboard",
+          "thing": "grid_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "grid-dash",
+          "type": "live",
+          "depends_on": [
+            "grid_report",
+            "load_block"
+          ],
+          "freshness_slo_ticks": 400
+        }
+      ],
+      "alerts": [
+        {
+          "id": "crank-high",
+          "metric": "crank-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "zone-strained",
+          "metric": "zone-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 83
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}

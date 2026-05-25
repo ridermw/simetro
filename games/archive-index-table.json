@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "name": "archive-index-table",
+  "theme": {
+    "palette": [
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "archive-index-table",
+    "title": "Archive Index Table",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A document archive where index trolleys travel a three-level tree of stacks and shelves, returning through a shared reading room.",
+    "tags": [
+      "archive",
+      "intro",
+      "legacy",
+      "transit_loop",
+      "draft"
+    ],
+    "palette_note": "Transit palette: dark background, ring/spine paths in distinct hue steps. Archive Index Table colour theme.",
+    "layout_note": "8 nodes forming a archive topology. Positions span across canvas.",
+    "node_language_note": "Nodes use 5 distinct shapes, 4 distinct colors reflecting archive roles.",
+    "mover_path_note": "5 movers on distinct paths at speeds 0.80–1.10.",
+    "review_note": "Draft pending final art pass. Schema validates against PR-7 strict loader."
+  },
+  "pieces": {
+    "nodes": [
+      {
+        "id": "main-desk",
+        "pos": [
+          0,
+          200
+        ],
+        "shape": "hexagon",
+        "color": 2
+      },
+      {
+        "id": "stacks-a",
+        "pos": [
+          -200,
+          40
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "stacks-b",
+        "pos": [
+          200,
+          40
+        ],
+        "shape": "square",
+        "color": 3
+      },
+      {
+        "id": "shelf-a1",
+        "pos": [
+          -310,
+          -140
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "shelf-a2",
+        "pos": [
+          -110,
+          -140
+        ],
+        "shape": "triangle",
+        "color": 5
+      },
+      {
+        "id": "shelf-b1",
+        "pos": [
+          110,
+          -140
+        ],
+        "shape": "triangle",
+        "color": 5
+      },
+      {
+        "id": "shelf-b2",
+        "pos": [
+          310,
+          -140
+        ],
+        "shape": "circle",
+        "color": 4
+      },
+      {
+        "id": "reading",
+        "pos": [
+          0,
+          -260
+        ],
+        "shape": "diamond",
+        "color": 2
+      }
+    ],
+    "paths": [
+      {
+        "id": "desk-a",
+        "from": "main-desk",
+        "to": "stacks-a",
+        "color": 3
+      },
+      {
+        "id": "desk-b",
+        "from": "main-desk",
+        "to": "stacks-b",
+        "color": 3
+      },
+      {
+        "id": "a-a1",
+        "from": "stacks-a",
+        "to": "shelf-a1",
+        "color": 4
+      },
+      {
+        "id": "a-a2",
+        "from": "stacks-a",
+        "to": "shelf-a2",
+        "color": 5
+      },
+      {
+        "id": "b-b1",
+        "from": "stacks-b",
+        "to": "shelf-b1",
+        "color": 5
+      },
+      {
+        "id": "b-b2",
+        "from": "stacks-b",
+        "to": "shelf-b2",
+        "color": 4
+      },
+      {
+        "id": "a1-read",
+        "from": "shelf-a1",
+        "to": "reading",
+        "color": 2
+      },
+      {
+        "id": "b2-read",
+        "from": "shelf-b2",
+        "to": "reading",
+        "color": 2
+      },
+      {
+        "id": "read-desk",
+        "from": "reading",
+        "to": "main-desk",
+        "color": 2
+      },
+      {
+        "id": "a2-b1",
+        "from": "shelf-a2",
+        "to": "shelf-b1",
+        "color": 5
+      }
+    ],
+    "movers": [
+      {
+        "id": "trolley-1",
+        "on_path": "desk-a",
+        "speed": 0.8
+      },
+      {
+        "id": "trolley-2",
+        "on_path": "desk-b",
+        "speed": 0.8
+      },
+      {
+        "id": "trolley-3",
+        "on_path": "a1-read",
+        "speed": 1.1
+      },
+      {
+        "id": "trolley-4",
+        "on_path": "read-desk",
+        "speed": 1.0
+      },
+      {
+        "id": "trolley-5",
+        "on_path": "a-a2",
+        "speed": 0.9
+      }
+    ]
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": []
+}

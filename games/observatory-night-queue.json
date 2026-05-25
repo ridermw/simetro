@@ -1,0 +1,714 @@
+{
+  "schema_version": 1,
+  "name": "observatory-night-queue",
+  "theme": {
+    "palette": [
+      "#15120f",
+      "#f5ead6",
+      "#2ec4b6",
+      "#e71d36",
+      "#ff9f1c",
+      "#a8dadc",
+      "#b56576"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "observatory-night-queue",
+    "title": "Observatory Night Queue",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "A robotic telescope where target requests flow through mount scheduling, CCD exposure, and reduction pipeline to a science archive across a single observing night.",
+    "tags": [
+      "observatory",
+      "easy",
+      "sl1",
+      "scenario_language_v1",
+      "draft"
+    ],
+    "palette_note": "Operational palette: dark background, foreground readability, six accents for place and flow roles.",
+    "layout_note": "SL1 graph: source \u2192 two processors \u2192 buffer \u2192 dashboard, with operator hub. pieces.nodes/paths intentionally empty.",
+    "node_language_note": "SL1 typed things replace visual node language; place roles and shapes encode domain semantics.",
+    "mover_path_note": "SL1 links and transforms replace legacy movers; flow and demand drive movement.",
+    "review_note": "Draft. Schema validates against strict SL1 loader. Difficulty tuned for target tier."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "target-queue",
+        "role": "source",
+        "pos": [
+          -360,
+          -80
+        ],
+        "shape": "triangle",
+        "color": 2,
+        "capacity": {
+          "queue_depth": 60
+        },
+        "storage": {
+          "target_request": {
+            "capacity": 200,
+            "initial": 20
+          }
+        },
+        "accepts": [],
+        "produces": [
+          "target_request"
+        ],
+        "failure_domains": [
+          "observatory",
+          "scheduling"
+        ],
+        "operating_states": {
+          "flooded": {
+            "when": "queue_depth.used_percent >= 85",
+            "grace_ticks": 3
+          }
+        }
+      },
+      {
+        "id": "mount-control",
+        "role": "processor",
+        "pos": [
+          -130,
+          20
+        ],
+        "shape": "hexagon",
+        "color": 3,
+        "capacity": {
+          "mount_slots": 20
+        },
+        "storage": {
+          "target_request": {
+            "capacity": 120,
+            "initial": 10
+          },
+          "pointing_solution": {
+            "capacity": 80,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "target_request"
+        ],
+        "produces": [
+          "pointing_solution"
+        ],
+        "failure_domains": [
+          "observatory",
+          "mount"
+        ],
+        "operating_states": {
+          "busy": {
+            "when": "mount_slots.used_percent >= 80",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "ccd-camera",
+        "role": "processor",
+        "pos": [
+          70,
+          80
+        ],
+        "shape": "hexagon",
+        "color": 4,
+        "capacity": {
+          "frame_buffer": 80
+        },
+        "storage": {
+          "pointing_solution": {
+            "capacity": 80,
+            "initial": 8
+          },
+          "raw_frame": {
+            "capacity": 150,
+            "initial": 10
+          }
+        },
+        "accepts": [
+          "pointing_solution"
+        ],
+        "produces": [
+          "raw_frame"
+        ],
+        "failure_domains": [
+          "observatory",
+          "camera"
+        ],
+        "operating_states": {
+          "saturated": {
+            "when": "frame_buffer.used_percent >= 88",
+            "grace_ticks": 4
+          }
+        }
+      },
+      {
+        "id": "pipeline",
+        "role": "buffer",
+        "pos": [
+          290,
+          0
+        ],
+        "shape": "diamond",
+        "color": 5,
+        "capacity": {
+          "pipeline_jobs": 40
+        },
+        "storage": {
+          "raw_frame": {
+            "capacity": 150,
+            "initial": 10
+          },
+          "cal_frame": {
+            "capacity": 100,
+            "initial": 8
+          }
+        },
+        "accepts": [
+          "raw_frame"
+        ],
+        "produces": [
+          "cal_frame"
+        ],
+        "failure_domains": [
+          "observatory",
+          "reduction"
+        ],
+        "operating_states": {
+          "backlogged": {
+            "when": "pipeline_jobs.used_percent >= 80",
+            "grace_ticks": 6
+          }
+        }
+      },
+      {
+        "id": "science-archive",
+        "role": "dashboard",
+        "pos": [
+          510,
+          -50
+        ],
+        "shape": "square",
+        "color": 6,
+        "capacity": {
+          "archive_slots": 80
+        },
+        "storage": {
+          "cal_frame": {
+            "capacity": 100,
+            "initial": 6
+          },
+          "obs_report": {
+            "capacity": 60,
+            "initial": 4
+          }
+        },
+        "accepts": [
+          "cal_frame"
+        ],
+        "produces": [
+          "obs_report"
+        ],
+        "failure_domains": [
+          "observatory",
+          "archive"
+        ],
+        "operating_states": {
+          "near_full": {
+            "when": "archive_slots.used_percent >= 90",
+            "grace_ticks": 5
+          }
+        }
+      },
+      {
+        "id": "night-astronomer",
+        "role": "operator",
+        "pos": [
+          70,
+          -220
+        ],
+        "shape": "circle",
+        "color": 1,
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "observatory"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "queue-mount",
+        "type": "schedule_feed",
+        "from": "target-queue",
+        "to": "mount-control",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "target_request"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "mount-ccd",
+        "type": "telescope_feed",
+        "from": "mount-control",
+        "to": "ccd-camera",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 20
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "pointing_solution"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "ccd-pipe",
+        "type": "data_pipe",
+        "from": "ccd-camera",
+        "to": "pipeline",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 40
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "raw_frame"
+        ],
+        "queue_capacity": 200,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 4
+        }
+      },
+      {
+        "id": "pipe-arch",
+        "type": "archive_feed",
+        "from": "pipeline",
+        "to": "science-archive",
+        "direction": "forward",
+        "capacity": {
+          "volume_per_tick": 30
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "cal_frame"
+        ],
+        "queue_capacity": 120,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 5
+        }
+      },
+      {
+        "id": "astro-mount",
+        "type": "control_bus",
+        "from": "night-astronomer",
+        "to": "mount-control",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      },
+      {
+        "id": "astro-queue",
+        "type": "control_bus",
+        "from": "night-astronomer",
+        "to": "target-queue",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 1
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "target_request",
+        "kind": "work_order",
+        "tags": [
+          "target",
+          "sky",
+          "observation"
+        ],
+        "freshness_budget_ticks": 60
+      },
+      {
+        "id": "pointing_solution",
+        "kind": "data_record",
+        "tags": [
+          "pointing",
+          "coordinate",
+          "mount"
+        ],
+        "freshness_budget_ticks": 90
+      },
+      {
+        "id": "raw_frame",
+        "kind": "data_frame",
+        "tags": [
+          "raw",
+          "ccd",
+          "exposure"
+        ],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "cal_frame",
+        "kind": "data_frame",
+        "tags": [
+          "calibrated",
+          "science",
+          "reduced"
+        ],
+        "freshness_budget_ticks": 240
+      },
+      {
+        "id": "obs_report",
+        "kind": "compliance_record",
+        "tags": [
+          "report",
+          "archive",
+          "publication"
+        ],
+        "freshness_budget_ticks": 800
+      }
+    ],
+    "transforms": [
+      {
+        "id": "schedule-obs",
+        "type": "observation_scheduling",
+        "runs_on": "mount-control",
+        "inputs": [
+          {
+            "thing": "target_request",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "pointing_solution",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "mount_slots": 3
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "expose-frame",
+        "type": "ccd_exposure",
+        "runs_on": "ccd-camera",
+        "inputs": [
+          {
+            "thing": "pointing_solution",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "raw_frame",
+            "amount": 3
+          }
+        ],
+        "cadence_ticks": 8,
+        "duration_ticks": 4,
+        "deadline_ticks": 16,
+        "capacity_cost": {
+          "frame_buffer": 8
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "reduce-frame",
+        "type": "data_reduction",
+        "runs_on": "pipeline",
+        "inputs": [
+          {
+            "thing": "raw_frame",
+            "amount": 3
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "cal_frame",
+            "amount": 2
+          }
+        ],
+        "cadence_ticks": 15,
+        "duration_ticks": 6,
+        "deadline_ticks": 30,
+        "capacity_cost": {
+          "pipeline_jobs": 5
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "archive-obs",
+        "type": "archive_ingest",
+        "runs_on": "science-archive",
+        "inputs": [
+          {
+            "thing": "cal_frame",
+            "amount": 4
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "obs_report",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 60,
+        "duration_ticks": 10,
+        "deadline_ticks": 90,
+        "capacity_cost": {
+          "archive_slots": 6
+        },
+        "failure_policy": "drop",
+        "max_attempts": 1
+      }
+    ],
+    "demand": [
+      {
+        "id": "science-demand",
+        "type": "science_observation",
+        "target": {
+          "type": "place",
+          "id": "science-archive"
+        },
+        "requires": [
+          "obs_report"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 200,
+          "start_tick": 150
+        },
+        "deadline_ticks": 280,
+        "priority": "high",
+        "value": 100,
+        "penalty": {
+          "score": -500,
+          "warning": "science_opportunity_lost"
+        }
+      },
+      {
+        "id": "calibration-run",
+        "type": "calibration_audit",
+        "target": {
+          "type": "place",
+          "id": "science-archive"
+        },
+        "requires": [
+          "cal_frame"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 600,
+          "start_tick": 400
+        },
+        "deadline_ticks": 700,
+        "priority": "normal",
+        "value": 40,
+        "penalty": {
+          "score": -120,
+          "warning": "calibration_missed"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "target-burst",
+        "type": "source_multiplier",
+        "at_tick": 600,
+        "duration_ticks": 400,
+        "target": "target-queue",
+        "thing": "target_request",
+        "multiplier": 4.0
+      },
+      {
+        "id": "ccd-fault",
+        "type": "quota_reduction",
+        "at_tick": 1400,
+        "duration_ticks": 400,
+        "target": "ccd-camera",
+        "capacity": "frame_buffer",
+        "reduction_percent": 40
+      },
+      {
+        "id": "science-rush",
+        "type": "demand_growth",
+        "at_tick": 900,
+        "duration_ticks": 300,
+        "target": "science-demand",
+        "spawn_multiplier": 2
+      }
+    ],
+    "objectives": [
+      {
+        "id": "queue-clear",
+        "type": "maintain_utilization",
+        "weight": 3,
+        "place": "target-queue",
+        "capacity": "queue_depth",
+        "min_percent": 0,
+        "max_percent": 80
+      },
+      {
+        "id": "reports-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "science-archive",
+        "thing": "obs_report",
+        "max_stale_ticks": 800
+      },
+      {
+        "id": "science-on-time",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "science-demand",
+        "max_missed": 2
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "ccd-saturate",
+        "type": "place_state",
+        "place": "ccd-camera",
+        "state": "saturated",
+        "grace_ticks": 60
+      },
+      {
+        "id": "report-stale",
+        "type": "stale_target",
+        "place": "science-archive",
+        "thing": "obs_report",
+        "threshold_ticks": 900,
+        "grace_ticks": 30
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "observatory-night-queue-survived",
+        "type": "survive_until",
+        "at_tick": 4800
+      }
+    ],
+    "agents": [],
+    "milestones": [],
+    "observability": {
+      "metrics": [
+        {
+          "id": "queue-util",
+          "source": "place_capacity_used_percent",
+          "place": "target-queue",
+          "capacity": "queue_depth"
+        },
+        {
+          "id": "ccd-load",
+          "source": "place_capacity_used_percent",
+          "place": "ccd-camera",
+          "capacity": "frame_buffer"
+        },
+        {
+          "id": "pipe-load",
+          "source": "place_capacity_used_percent",
+          "place": "pipeline",
+          "capacity": "pipeline_jobs"
+        },
+        {
+          "id": "report-inv",
+          "source": "place_inventory_count",
+          "place": "science-archive",
+          "thing": "obs_report"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "obs-dash",
+          "type": "live",
+          "depends_on": [
+            "obs_report",
+            "cal_frame"
+          ],
+          "freshness_slo_ticks": 500
+        }
+      ],
+      "alerts": [
+        {
+          "id": "queue-flood",
+          "metric": "queue-util",
+          "predicate": {
+            "type": "gt",
+            "threshold": 83
+          },
+          "severity": "critical"
+        },
+        {
+          "id": "ccd-high",
+          "metric": "ccd-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 85
+          },
+          "severity": "warning"
+        }
+      ]
+    }
+  }
+}
