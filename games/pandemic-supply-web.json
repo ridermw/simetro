@@ -679,7 +679,7 @@
       "dashboards": [
         {
           "id": "pandemic_supply-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "allocation_record",
             "cold_pack"

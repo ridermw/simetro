@@ -678,7 +678,7 @@
       "dashboards": [
         {
           "id": "security_fusion-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "incident_report",
             "triage_decision"

@@ -683,7 +683,7 @@
       "dashboards": [
         {
           "id": "stormwater-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "discharge_certificate",
             "treated_water"

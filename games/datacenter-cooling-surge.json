@@ -678,7 +678,7 @@
       "dashboards": [
         {
           "id": "datacenter_cooling-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "cooling_report",
             "rack_temp_event"

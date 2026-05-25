@@ -677,7 +677,7 @@
       "dashboards": [
         {
           "id": "observatory-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "observation_report",
             "calibrated_frame"

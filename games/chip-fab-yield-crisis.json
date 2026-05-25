@@ -679,7 +679,7 @@
       "dashboards": [
         {
           "id": "chip_fab-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "lot_disposition",
             "yield_signal"

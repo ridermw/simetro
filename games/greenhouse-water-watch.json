@@ -658,7 +658,7 @@
       "dashboards": [
         {
           "id": "greenhouse-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "plant_health_report",
             "irrigation_event"

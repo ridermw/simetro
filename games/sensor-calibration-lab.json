@@ -660,7 +660,7 @@
       "dashboards": [
         {
           "id": "lab-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "calibration_log",
             "validated_reading"

@@ -677,7 +677,7 @@
       "dashboards": [
         {
           "id": "recycling-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "manifest",
             "commodity_unit"

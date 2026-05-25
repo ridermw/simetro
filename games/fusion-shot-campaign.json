@@ -679,7 +679,7 @@
       "dashboards": [
         {
           "id": "fusion_shot-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "yield_measurement",
             "shot_event"

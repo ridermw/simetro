@@ -655,7 +655,7 @@
       "dashboards": [
         {
           "id": "library-ops-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "availability_report",
             "catalog_entry"

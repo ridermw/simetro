@@ -659,7 +659,7 @@
       "dashboards": [
         {
           "id": "bakery-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "baked_product",
             "sales_record"

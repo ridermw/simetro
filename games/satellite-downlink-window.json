@@ -678,7 +678,7 @@
       "dashboards": [
         {
           "id": "satellite_downlink-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "ground_archive",
             "processed_packet"

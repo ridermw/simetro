@@ -655,7 +655,7 @@
       "dashboards": [
         {
           "id": "clinic-ops-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "discharge_summary",
             "treatment_order"

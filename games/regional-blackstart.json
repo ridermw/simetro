@@ -679,7 +679,7 @@
       "dashboards": [
         {
           "id": "blackstart-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "grid_stable_report",
             "frequency_reading"

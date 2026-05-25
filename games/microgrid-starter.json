@@ -660,7 +660,7 @@
       "dashboards": [
         {
           "id": "microgrid-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "load_report",
             "grid_event"

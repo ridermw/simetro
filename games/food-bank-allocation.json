@@ -678,7 +678,7 @@
       "dashboards": [
         {
           "id": "food_bank-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "distribution_record",
             "delivery_route"

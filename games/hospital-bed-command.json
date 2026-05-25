@@ -678,7 +678,7 @@
       "dashboards": [
         {
           "id": "hospital_bed-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "capacity_snapshot",
             "discharge_clearance"

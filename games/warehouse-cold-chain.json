@@ -677,7 +677,7 @@
       "dashboards": [
         {
           "id": "cold_chain-dash",
-          "type": "operations",
+          "type": "live",
           "depends_on": [
             "cold_chain_cert",
             "pick_order"
