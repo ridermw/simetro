@@ -22,7 +22,7 @@ use crate::components::{
     ProducerId, Resource, ResourceId,
 };
 use crate::error::LoadError;
-use crate::scenario_language_v1::{self, RawSl1Scene, Sl1Scene};
+use crate::scenario_language_v1::{self, Sl1Scene};
 use crate::world::World;
 
 const MIN_SCHEMA_VERSION: u32 = 1;
@@ -123,10 +123,21 @@ struct RawScene {
     #[serde(default)]
     consumers: Vec<RawConsumer>,
     /// Optional `scenario_language_v1` block. Sibling of `pieces` so
-    /// legacy v1/v2 scenes are unaffected. The block is strict-schema:
-    /// unknown fields inside it are a load error.
+    /// legacy v1/v2 scenes are unaffected. Captured as a raw JSON
+    /// `Value` here so that strict-schema deserialization runs through
+    /// `scenario_language_v1::load_value` in validate(), producing
+    /// typed `LoadError::Sl1` errors (e.g. `UnknownField`) instead of
+    /// being swallowed into the outer scene parse error.
     #[serde(default, rename = "scenario_language_v1")]
-    sl1: Option<RawSl1Scene>,
+    sl1: Option<serde_json::Value>,
+    /// Any top-level key not matched by a named field lands here.
+    /// We use this to reject SL1 grammar primitive names that were
+    /// authored at the scene's top level rather than inside the
+    /// `scenario_language_v1` block — a common error mode that would
+    /// otherwise silently no-op. Legacy unknown keys (anything not in
+    /// the reserved list) remain accepted to preserve v1/v2 behavior.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -263,6 +274,32 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
             found: raw.schema_version,
             supported: SUPPORTED_SCHEMA_VERSION,
         });
+    }
+
+    // Reject `scenario_language_v1` grammar primitives that were
+    // mistakenly placed at the scene's top level rather than inside
+    // the `scenario_language_v1` block. Without this guard the SL1
+    // section would silently no-op.
+    //
+    // `agents` is intentionally NOT in this list — it is a legacy
+    // top-level key in existing scenes and clashes with SL1's nested
+    // `agents`. PR 10 resolves the ambiguity.
+    const SL1_RESERVED_TOP_LEVEL_KEYS: &[&str] = &[
+        "places",
+        "links",
+        "things",
+        "transforms",
+        "demand",
+        "pressure",
+        "objectives",
+        "failure_conditions",
+        "observability",
+        "milestones",
+    ];
+    for &reserved in SL1_RESERVED_TOP_LEVEL_KEYS {
+        if raw.extra.contains_key(reserved) {
+            return Err(LoadError::Sl1ReservedKeyAtTopLevel { name: reserved });
+        }
     }
 
     validate_name(&raw.name)?;
@@ -526,7 +563,7 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         })
         .collect();
 
-    let sl1 = raw.sl1.map(scenario_language_v1::validate).transpose()?;
+    let sl1 = raw.sl1.map(scenario_language_v1::load_value).transpose()?;
 
     let mut world = World::new(seed);
     world.nodes = nodes;

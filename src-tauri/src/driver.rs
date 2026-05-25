@@ -387,6 +387,7 @@ fn build_scene_load(json: &str, seed: u64) -> Result<SceneLoad, LoadError> {
         agents,
         id_map,
         world,
+        sl1: _,
     } = loaded;
 
     let meta = SceneMeta {

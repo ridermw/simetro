@@ -85,6 +85,17 @@ pub enum LoadError {
     )]
     AgentKindRequiresFeature { index: usize, kind: String },
 
+    /// A grammar-primitive name from `scenario_language_v1`
+    /// (e.g. `places`, `links`, `objectives`) appeared at the scene's
+    /// top level rather than inside the `scenario_language_v1` block.
+    /// Almost always an authoring mistake; surfacing it as a typed
+    /// error prevents the entire SL1 block from silently no-op-ing.
+    #[error(
+        "top-level `{name}` is reserved for the `scenario_language_v1` block; \
+         move it inside `scenario_language_v1`"
+    )]
+    Sl1ReservedKeyAtTopLevel { name: &'static str },
+
     /// Wraps an `scenario_language_v1`-specific load failure so the
     /// surrounding scene loader returns a uniform [`LoadError`].
     #[error(transparent)]
