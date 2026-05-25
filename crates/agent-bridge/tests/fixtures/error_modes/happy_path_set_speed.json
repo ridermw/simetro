@@ -1,0 +1,15 @@
+{
+  "label": "happy_path_set_speed",
+  "doc": "Positive control: backend returns a well-formed set_speed tool call. Bridge parses it and replies with the chosen Action (not NoOp).",
+  "backend": {
+    "kind": "ok",
+    "raw": "set speed 1.5",
+    "tool_calls": [
+      { "name": "set_speed", "arguments_json": "{\"mover\":1,\"speed\":1.5}" }
+    ]
+  },
+  "expected": {
+    "chosen_kind": "set_speed",
+    "chosen_args_contains": ["mover", "1.5"]
+  }
+}

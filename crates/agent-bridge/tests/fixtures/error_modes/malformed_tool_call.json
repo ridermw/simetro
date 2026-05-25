@@ -1,0 +1,15 @@
+{
+  "label": "malformed_tool_call",
+  "doc": "Backend returned an Ok response but the tool call has unknown name. Per spec §11.1 + Codex PR #21 R2 finding, parse_tool_call errors must surface as Warning::InvalidAction (not silent NoOp).",
+  "backend": {
+    "kind": "ok",
+    "raw": "I'll do something undefined",
+    "tool_calls": [
+      { "name": "this_tool_does_not_exist", "arguments_json": "{}" }
+    ]
+  },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["warning", "InvalidAction"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "label": "not_authenticated",
+  "doc": "LlmError::NotAuthenticated → Fault::AgentCrashed in error_mapping; bridge passes the warning rationale via the synthetic NoOp reply per spec §11.1.",
+  "backend": { "kind": "err", "variant": "not_authenticated" },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["fault", "AgentCrashed"]
+  }
+}

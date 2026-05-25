@@ -1,0 +1,14 @@
+{
+  "label": "refused",
+  "doc": "LlmError::Refused → Warning::InvalidAction in error_mapping. Bridge surfaces the model's refusal message in rationale.",
+  "backend": {
+    "kind": "err",
+    "variant": "refused",
+    "agent_id": "test-agent",
+    "message": "I can't help with that"
+  },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["warning", "InvalidAction"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "label": "no_tool_call",
+  "doc": "Backend returned Ok but produced no tool calls (model legitimately chose to do nothing). Bridge replies with NoOp — NOT an error; rationale carries the raw chat-style response.",
+  "backend": {
+    "kind": "ok",
+    "raw": "Nothing to do this turn.",
+    "tool_calls": []
+  },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["Nothing to do"]
+  }
+}
