@@ -121,6 +121,15 @@ pub struct StaticPayload {
     /// Sorted by `id` for deterministic ordering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_things: Vec<Sl1ThingView>,
+    /// `scenario_language_v1` transforms — author-declared deterministic
+    /// work rules that consume typed inputs, reserve typed capacity, run
+    /// for a duration, and produce typed outputs (PR 4). Static metadata
+    /// only; per-tick state machine + capacity utilization go in
+    /// [`SnapshotPayload::sl1_transform_states`]. Empty for non-SL1
+    /// scenes and for SL1 scenes with no `transforms`. Sorted by `id`
+    /// for deterministic ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_transforms: Vec<Sl1TransformView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -277,6 +286,74 @@ pub struct Sl1PlaceInventoryView {
     pub freshness: FreshnessStateView,
 }
 
+/// Wire-level view of one validated SL1 transform. Mirrors
+/// `engine::scenario_language_v1::Sl1Transform` 1:1. PR 4.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1TransformView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub runs_on: String,
+    pub inputs: Vec<Sl1TransformIoView>,
+    pub outputs: Vec<Sl1TransformIoView>,
+    pub cadence_ticks: u64,
+    pub duration_ticks: u64,
+    pub deadline_ticks: u64,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub capacity_cost: std::collections::BTreeMap<String, u64>,
+    pub failure_policy: Sl1FailurePolicyView,
+    pub max_attempts: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1TransformIoView {
+    pub thing_id: String,
+    pub amount: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1FailurePolicyView {
+    RetryThenWarn,
+    Drop,
+}
+
+/// Wire-level snapshot of one transform's runtime state for a tick.
+/// Mirrors `engine::scenario_language_v1::Sl1TransformState`. Emitted
+/// once per declared transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum Sl1TransformStateView {
+    Idle,
+    Running {
+        scheduled_at: u64,
+        started_at: u64,
+        attempt: u32,
+    },
+    Starved {
+        scheduled_at: u64,
+        since: u64,
+        attempts: u32,
+    },
+    Blocked {
+        scheduled_at: u64,
+        since: u64,
+        attempts: u32,
+    },
+    Late {
+        scheduled_at: u64,
+        attempt: u32,
+        since: u64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1TransformRuntimeView {
+    pub transform_id: String,
+    #[serde(flatten)]
+    pub state: Sl1TransformStateView,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -315,6 +392,11 @@ pub struct SnapshotPayload {
     /// ordering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_place_inventories: Vec<Sl1PlaceInventoryView>,
+    /// SL1 per-transform runtime state for this tick. Emitted once
+    /// per declared transform (sorted by `transform_id`). Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `transforms`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_transform_states: Vec<Sl1TransformRuntimeView>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -480,6 +562,28 @@ pub enum WarningPayload {
         ms: f32,
     },
     AgentLogSlow,
+    /// SL1 transform observability warning (PR 4). Emitted once per
+    /// state-entry / significant transition. `event` is the canonical
+    /// transition (`starved`, `blocked`, `late`, `failed`,
+    /// `slot_missed`); details (attempt, scheduled_at, since) are
+    /// available via the snapshot's `sl1_transform_states`.
+    Sl1Transform {
+        transform_id: String,
+        event: Sl1TransformWarningKind,
+        tick: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attempt: Option<u32>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1TransformWarningKind {
+    Starved,
+    Blocked,
+    Late,
+    Failed,
+    SlotMissed,
 }
 
 // =====================================================================
@@ -771,6 +875,7 @@ mod tests {
                 on_path: 2,
             }],
             sl1_place_inventories: Vec::new(),
+            sl1_transform_states: Vec::new(),
         };
         let back: SnapshotPayload = roundtrip(&snap);
         assert_eq!(back.tick, 100);
@@ -807,6 +912,7 @@ mod tests {
             sl1_places: Vec::new(),
             sl1_links: Vec::new(),
             sl1_things: Vec::new(),
+            sl1_transforms: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -899,6 +1005,7 @@ mod tests {
             ],
             sl1_links: Vec::new(),
             sl1_things: Vec::new(),
+            sl1_transforms: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -929,6 +1036,7 @@ mod tests {
             sl1_places: vec![],
             sl1_links: vec![],
             sl1_things: vec![],
+            sl1_transforms: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -985,6 +1093,7 @@ mod tests {
             sl1_places: vec![],
             sl1_links: links.clone(),
             sl1_things: vec![],
+            sl1_transforms: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);

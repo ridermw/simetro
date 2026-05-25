@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "name": "sl1-transforms",
+  "theme": {
+    "palette": ["#0a1c2e", "#1aa6e0", "#f0c419"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [0.0, 0.0],
+        "capacity": { "machine_hours": 4 },
+        "storage": {
+          "raw_material": { "capacity": 200, "initial": 100 },
+          "widget": { "capacity": 50, "initial": 0 },
+          "gadget": { "capacity": 50, "initial": 0 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["widget", "gadget"]
+      },
+      {
+        "id": "warehouse",
+        "role": "storage",
+        "pos": [10.0, 0.0],
+        "capacity": { "slots": 100 },
+        "storage": {
+          "widget": { "capacity": 30, "initial": 0 }
+        },
+        "accepts": ["widget"],
+        "produces": []
+      }
+    ],
+    "things": [
+      {
+        "id": "raw_material",
+        "kind": "input",
+        "tags": []
+      },
+      {
+        "id": "widget",
+        "kind": "manufactured",
+        "tags": ["consumable"],
+        "freshness_budget_ticks": 100
+      },
+      {
+        "id": "gadget",
+        "kind": "manufactured",
+        "tags": [],
+        "freshness_budget_ticks": 50
+      }
+    ],
+    "transforms": [
+      {
+        "id": "make_widget",
+        "type": "manufacture",
+        "runs_on": "factory",
+        "inputs": [{ "thing": "raw_material", "amount": 2 }],
+        "outputs": [{ "thing": "widget", "amount": 1 }],
+        "cadence_ticks": 5,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": { "machine_hours": 3 },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "make_gadget",
+        "type": "manufacture",
+        "runs_on": "factory",
+        "inputs": [{ "thing": "raw_material", "amount": 3 }],
+        "outputs": [{ "thing": "gadget", "amount": 1 }],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
+        "capacity_cost": { "machine_hours": 2 },
+        "failure_policy": "drop"
+      }
+    ]
+  }
+}

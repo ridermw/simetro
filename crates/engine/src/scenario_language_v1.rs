@@ -77,6 +77,14 @@ pub const MAX_LINK_TRAVEL_TICKS: u64 = 1_000_000_000;
 /// tracking entirely.
 pub const MAX_THING_FRESHNESS_BUDGET: u64 = 1_000_000_000;
 
+/// Upper bound for transform tick-fields (cadence, duration, deadline)
+/// and amount/capacity-cost values. Same human-meaningful range as the
+/// other SL1 bounds.
+pub const MAX_TRANSFORM_TICKS: u64 = 1_000_000_000;
+pub const MAX_TRANSFORM_AMOUNT: u64 = 1_000_000_000;
+pub const MAX_TRANSFORM_CAPACITY_COST: u64 = 1_000_000_000;
+pub const MAX_TRANSFORM_MAX_ATTEMPTS: u32 = 1_000;
+
 /// Upper bound for `Sl1ThingQualityContract.max_late_ticks`.
 pub const MAX_THING_LATE_TICKS: u64 = 1_000_000_000;
 
@@ -106,7 +114,7 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub things: Vec<RawSl1Thing>,
     #[serde(default)]
-    pub transforms: Vec<serde_json::Value>,
+    pub transforms: Vec<RawSl1Transform>,
     #[serde(default)]
     pub demand: Vec<serde_json::Value>,
     #[serde(default)]
@@ -493,9 +501,93 @@ pub struct Sl1ThingRenderHint {
     pub color: Option<u32>,
 }
 
-/// Placeholder loaded `transform`. Populated in PR 4.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Transform;
+/// Raw, opt-in `transform` entry inside the SL1 block. PR 4 adds the
+/// first deterministic transform system: cadence-driven scheduled
+/// instances that consume typed inputs, reserve capacity, run for a
+/// configured duration, and produce typed outputs.
+///
+/// The transform structure is strict (`deny_unknown_fields`); unknown
+/// nested keys fail load with [`Sl1LoadError::Parse`].
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Transform {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub runs_on: String,
+    #[serde(default)]
+    pub inputs: Vec<RawSl1TransformIo>,
+    #[serde(default)]
+    pub outputs: Vec<RawSl1TransformIo>,
+    pub cadence_ticks: u64,
+    pub duration_ticks: u64,
+    pub deadline_ticks: u64,
+    #[serde(default)]
+    pub capacity_cost: BTreeMap<String, u64>,
+    pub failure_policy: String,
+    #[serde(default = "default_transform_max_attempts")]
+    pub max_attempts: u32,
+}
+
+/// Raw `inputs[]` / `outputs[]` entry for a transform. `thing` must
+/// reference a declared thing id (NOT a tag — amounts are typed).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1TransformIo {
+    pub thing: String,
+    pub amount: u64,
+}
+
+fn default_transform_max_attempts() -> u32 {
+    1
+}
+
+/// Validated transform input/output. Stable order by `thing_id` after
+/// per-transform canonicalization so the deterministic hash is
+/// declaration-order independent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1TransformIo {
+    pub thing_id: String,
+    pub amount: u64,
+}
+
+/// Validated failure policy. PR 4 ships `RetryThenWarn` and `Drop`;
+/// `DegradeQuality` is rejected at load until PR 8 quality contracts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1FailurePolicy {
+    /// Each cadence-scheduled instance retries up to `max_attempts`
+    /// times after each `Late` outcome. After exhaustion emit one
+    /// [`Sl1Warning::TransformFailed`] and reset to `Idle` for the
+    /// next cadence slot.
+    RetryThenWarn,
+    /// Each cadence-scheduled instance gets one attempt. A `Late`
+    /// outcome immediately emits [`Sl1Warning::TransformFailed`] and
+    /// resets to `Idle`.
+    Drop,
+}
+
+/// Validated `transform` primitive (PR 4). Deterministic work rule
+/// that consumes typed inputs from `runs_on`, reserves typed capacity
+/// on that place, runs for `duration_ticks`, and produces typed
+/// outputs back onto the same place. Cadence is measured against
+/// simulation time (`world.tick % cadence_ticks == 0`); the deadline
+/// is measured from the scheduled cadence tick so blocked/starved
+/// delays count against it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Transform {
+    pub id: String,
+    pub kind: String,
+    pub runs_on: String,
+    pub inputs: Vec<Sl1TransformIo>,
+    pub outputs: Vec<Sl1TransformIo>,
+    pub cadence_ticks: u64,
+    pub duration_ticks: u64,
+    pub deadline_ticks: u64,
+    pub capacity_cost: BTreeMap<String, u64>,
+    pub failure_policy: Sl1FailurePolicy,
+    pub max_attempts: u32,
+}
 
 /// Placeholder loaded `demand`. Populated in PR 5.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -883,6 +975,172 @@ pub enum Sl1LoadError {
         field: &'static str,
         value: String,
     },
+
+    /// `transforms[].id` does not satisfy `is_valid_sl1_id`.
+    #[error("scenario_language_v1.transforms[{id:?}].id: invalid identifier")]
+    TransformInvalidId { id: String },
+
+    /// `transforms[].id` collides with another transform.
+    #[error("scenario_language_v1.transforms: duplicate id {id:?}")]
+    TransformDuplicateId { id: String },
+
+    /// `transforms[].type` is empty after trimming.
+    #[error("scenario_language_v1.transforms[{id:?}].type: must be non-empty")]
+    TransformEmptyType { id: String },
+
+    /// `transforms[].runs_on` does not match any declared place id.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].runs_on: \
+         {place:?} is not a declared place"
+    )]
+    TransformUnknownPlace { id: String, place: String },
+
+    /// `transforms[].outputs` is empty. Every transform must declare
+    /// at least one output (a "side-effect only" rule should be
+    /// modelled as a typed observability event in PR 9).
+    #[error("scenario_language_v1.transforms[{id:?}].outputs: must declare at least one output")]
+    TransformEmptyOutputs { id: String },
+
+    /// `transforms[].inputs[i].thing` (or `outputs[i].thing`) does
+    /// not match any declared thing id. Tags are not accepted here.
+    /// `field` is `"inputs"` or `"outputs"`.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].{field}: \
+         {value:?} is not a declared thing id"
+    )]
+    TransformUnknownThing {
+        id: String,
+        field: &'static str,
+        value: String,
+    },
+
+    /// Two `transforms[].inputs[]` (or `outputs[]`) entries name the
+    /// same thing. Sum amounts in JSON instead of repeating.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].{field}: \
+         duplicate thing entry {value:?}"
+    )]
+    TransformDuplicateIo {
+        id: String,
+        field: &'static str,
+        value: String,
+    },
+
+    /// `transforms[].inputs[i].amount` or `outputs[i].amount` is zero.
+    /// Zero-amount IO is meaningless and almost certainly a typo.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].{field}[{thing:?}].amount: \
+         must be > 0"
+    )]
+    TransformIoAmountZero {
+        id: String,
+        field: &'static str,
+        thing: String,
+    },
+
+    /// `amount` exceeds [`MAX_TRANSFORM_AMOUNT`].
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].{field}[{thing:?}].amount: \
+         {value} exceeds maximum {max}"
+    )]
+    TransformIoAmountOutOfRange {
+        id: String,
+        field: &'static str,
+        thing: String,
+        value: u64,
+        max: u64,
+    },
+
+    /// `transforms[].cadence_ticks` is zero.
+    #[error("scenario_language_v1.transforms[{id:?}].cadence_ticks: must be > 0")]
+    TransformCadenceZero { id: String },
+
+    /// `transforms[].duration_ticks` is zero.
+    #[error("scenario_language_v1.transforms[{id:?}].duration_ticks: must be > 0")]
+    TransformDurationZero { id: String },
+
+    /// `transforms[].deadline_ticks` is zero.
+    #[error("scenario_language_v1.transforms[{id:?}].deadline_ticks: must be > 0")]
+    TransformDeadlineZero { id: String },
+
+    /// `deadline_ticks < duration_ticks` — the transform can never
+    /// complete inside its deadline.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].deadline_ticks: \
+         {deadline} is less than duration_ticks {duration}"
+    )]
+    TransformDeadlineLessThanDuration {
+        id: String,
+        deadline: u64,
+        duration: u64,
+    },
+
+    /// Any of `cadence_ticks`, `duration_ticks`, `deadline_ticks`
+    /// exceed [`MAX_TRANSFORM_TICKS`].
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].{field}: \
+         {value} exceeds maximum {max}"
+    )]
+    TransformTicksOutOfRange {
+        id: String,
+        field: &'static str,
+        value: u64,
+        max: u64,
+    },
+
+    /// `capacity_cost` has an empty key.
+    #[error("scenario_language_v1.transforms[{id:?}].capacity_cost: empty key not allowed")]
+    TransformCapacityCostEmptyKey { id: String },
+
+    /// `capacity_cost.<key>` is zero.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].capacity_cost[{key:?}]: \
+         must be > 0"
+    )]
+    TransformCapacityCostZero { id: String, key: String },
+
+    /// `capacity_cost.<key>` exceeds [`MAX_TRANSFORM_CAPACITY_COST`].
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].capacity_cost[{key:?}]: \
+         {value} exceeds maximum {max}"
+    )]
+    TransformCapacityCostOutOfRange {
+        id: String,
+        key: String,
+        value: u64,
+        max: u64,
+    },
+
+    /// `capacity_cost.<key>` is not declared on `places[runs_on].capacity`.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].capacity_cost: \
+         {key:?} is not a declared capacity key on place {place:?}"
+    )]
+    TransformUnknownCapacityKey {
+        id: String,
+        key: String,
+        place: String,
+    },
+
+    /// `failure_policy` is not one of the supported variants. PR 4
+    /// accepts `"retry_then_warn"` and `"drop"`; `"degrade_quality"`
+    /// is reserved for PR 8 and rejected at load.
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].failure_policy: \
+         {policy:?} is not a supported failure policy"
+    )]
+    TransformInvalidFailurePolicy { id: String, policy: String },
+
+    /// `max_attempts` is zero. Use `1` for "single attempt".
+    #[error("scenario_language_v1.transforms[{id:?}].max_attempts: must be >= 1")]
+    TransformMaxAttemptsZero { id: String },
+
+    /// `max_attempts` exceeds [`MAX_TRANSFORM_MAX_ATTEMPTS`].
+    #[error(
+        "scenario_language_v1.transforms[{id:?}].max_attempts: \
+         {value} exceeds maximum {max}"
+    )]
+    TransformMaxAttemptsOutOfRange { id: String, value: u32, max: u32 },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -900,6 +1158,42 @@ pub enum Sl1Warning {
     #[doc(hidden)]
     #[error("scenario_language_v1 warning (reserved): {0}")]
     __Reserved(String),
+
+    /// A transform's cadence slot fired but it could not start because
+    /// one or more required inputs were missing. Emitted on entry to
+    /// `Starved`; not re-emitted every tick.
+    #[error("transform {transform_id:?} starved at tick {tick} (missing inputs)")]
+    TransformStarved { transform_id: String, tick: u64 },
+
+    /// A transform's cadence slot fired but it could not start because
+    /// the place's typed capacity could not satisfy `capacity_cost`,
+    /// or the output thing's storage capacity was already at the cap.
+    /// Emitted on entry to `Blocked`.
+    #[error("transform {transform_id:?} blocked at tick {tick}")]
+    TransformBlocked { transform_id: String, tick: u64 },
+
+    /// A scheduled instance has exceeded `scheduled_at + deadline_ticks`
+    /// without completing. Emitted on entry to `Late`.
+    #[error("transform {transform_id:?} late at tick {tick}")]
+    TransformLate { transform_id: String, tick: u64 },
+
+    /// A scheduled instance exhausted `max_attempts` (or was running
+    /// under the `Drop` policy and missed its deadline). Emitted once
+    /// per failed instance; the transform resets to `Idle` for its
+    /// next cadence slot.
+    #[error("transform {transform_id:?} failed at tick {tick} (attempt {attempt})")]
+    TransformFailed {
+        transform_id: String,
+        tick: u64,
+        attempt: u32,
+    },
+
+    /// A new cadence slot arrived for a transform that was still
+    /// `Running` (or otherwise non-`Idle`) from a previous slot. The
+    /// new slot is skipped to preserve single-instance semantics.
+    /// Emitted once per skipped slot.
+    #[error("transform {transform_id:?} missed cadence slot at tick {tick}")]
+    TransformSlotMissed { transform_id: String, tick: u64 },
 }
 
 /// Fatal SL1 engine faults. Populated in later PRs. PR 0 emits none.
@@ -957,6 +1251,67 @@ pub struct Sl1RuntimeState {
     /// `inventories`. Recomputed every tick by `crate::sl1_runtime::run`
     /// against `world.tick` and each thing's `freshness_budget_ticks`.
     pub freshness: std::collections::BTreeMap<(String, String), FreshnessState>,
+    /// Per-transform live state (idle, running, starved, blocked, late).
+    /// Outer key is transform id. PR 4 populates this from
+    /// `scene.transforms` at load time; the SL1 runtime mutates it
+    /// each tick in stable id order.
+    pub transforms: std::collections::BTreeMap<String, Sl1TransformState>,
+    /// Per-place typed capacity currently reserved by `Running`
+    /// transforms. Outer key is place id, inner key is capacity-bucket
+    /// name (matching `places[*].capacity` keys). Buckets are released
+    /// when a transform leaves the `Running` state.
+    pub place_capacity_used:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+}
+
+/// Per-transform live state machine driven by `sl1_runtime::run`.
+///
+/// `Failed` is intentionally NOT a state here — a transform that
+/// exhausts its retry budget emits [`Sl1Warning::TransformFailed`] and
+/// resets to [`Sl1TransformState::Idle`] so the next cadence slot is
+/// not silently disabled by a single transient failure. The
+/// `last_failed_tick` field on `Idle` preserves observability across
+/// resets.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1TransformState {
+    /// No instance is currently scheduled or running. `last_*_tick`
+    /// fields are observability-only.
+    #[default]
+    Idle,
+    /// Inputs were consumed and capacity reserved; the instance will
+    /// produce outputs at `tick == started_at + duration_ticks`.
+    Running {
+        scheduled_at: u64,
+        started_at: u64,
+        attempt: u32,
+    },
+    /// A cadence slot fired but one or more required inputs were
+    /// missing. `since` is the tick where the state was entered;
+    /// `attempts` is the number of times this scheduled instance has
+    /// tried to start.
+    Starved {
+        scheduled_at: u64,
+        since: u64,
+        attempts: u32,
+    },
+    /// A cadence slot fired but the place's typed capacity (or output
+    /// storage capacity) prevented starting. Same semantics as
+    /// `Starved`.
+    Blocked {
+        scheduled_at: u64,
+        since: u64,
+        attempts: u32,
+    },
+    /// `world.tick > scheduled_at + deadline_ticks` without completing.
+    /// Under `RetryThenWarn` the instance will retry up to
+    /// `max_attempts` times; under `Drop` a single `Late` immediately
+    /// emits `TransformFailed` and resets to `Idle`.
+    Late {
+        scheduled_at: u64,
+        attempt: u32,
+        since: u64,
+    },
 }
 
 impl Sl1RuntimeState {
@@ -991,9 +1346,31 @@ impl Sl1RuntimeState {
             }
             inventories.insert(place.id.clone(), place_slots);
         }
+        let mut transforms: std::collections::BTreeMap<String, Sl1TransformState> =
+            std::collections::BTreeMap::new();
+        for t in &scene.transforms {
+            transforms.insert(t.id.clone(), Sl1TransformState::Idle);
+        }
+        let mut place_capacity_used: std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, u64>,
+        > = std::collections::BTreeMap::new();
+        for place in &scene.places {
+            if place.capacity.is_empty() {
+                continue;
+            }
+            let mut buckets: std::collections::BTreeMap<String, u64> =
+                std::collections::BTreeMap::new();
+            for key in place.capacity.keys() {
+                buckets.insert(key.clone(), 0);
+            }
+            place_capacity_used.insert(place.id.clone(), buckets);
+        }
         Self {
             inventories,
             freshness,
+            transforms,
+            place_capacity_used,
         }
     }
 }
@@ -1100,7 +1477,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.transforms, "transforms");
     reject_non_empty!(raw.demand, "demand");
     reject_non_empty!(raw.pressure, "pressure");
     reject_non_empty!(raw.objectives, "objectives");
@@ -1204,6 +1580,24 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     // declaration order.
     links.sort_by(|a, b| a.id.cmp(&b.id));
 
+    // Validate transforms (PR 4). Transforms cross-reference declared
+    // places (via `runs_on` and `capacity_cost` keys) and declared
+    // thing ids (via `inputs[].thing` / `outputs[].thing`). Tags are
+    // NOT accepted in transform IO because amounts are typed.
+    let places_by_id: std::collections::BTreeMap<&str, &Sl1Place> =
+        places.iter().map(|p| (p.id.as_str(), p)).collect();
+    let mut transforms: Vec<Sl1Transform> = Vec::with_capacity(raw.transforms.len());
+    let mut seen_transform_ids: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for raw_transform in raw.transforms {
+        let transform = validate_transform(raw_transform, &places_by_id, &thing_ids)?;
+        if !seen_transform_ids.insert(transform.id.clone()) {
+            return Err(Sl1LoadError::TransformDuplicateId { id: transform.id });
+        }
+        transforms.push(transform);
+    }
+    transforms.sort_by(|a, b| a.id.cmp(&b.id));
+
     // The optional observability block must be an empty object until
     // PR 9 implements its schema.
     let observability = if let Some(value) = raw.observability {
@@ -1232,7 +1626,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         places,
         links,
         things,
-        transforms: Vec::new(),
+        transforms,
         demand: Vec::new(),
         pressure: Vec::new(),
         objectives: Vec::new(),
@@ -1812,6 +2206,192 @@ fn json_kind(v: &serde_json::Value) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
+// Transform validation helpers (PR 4).
+// ---------------------------------------------------------------------------
+
+fn validate_transform(
+    raw: RawSl1Transform,
+    places_by_id: &std::collections::BTreeMap<&str, &Sl1Place>,
+    thing_ids: &std::collections::BTreeSet<String>,
+) -> Result<Sl1Transform, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::TransformInvalidId { id: raw.id });
+    }
+    if raw.kind.trim().is_empty() {
+        return Err(Sl1LoadError::TransformEmptyType { id: raw.id });
+    }
+    let place = places_by_id
+        .get(raw.runs_on.as_str())
+        .copied()
+        .ok_or_else(|| Sl1LoadError::TransformUnknownPlace {
+            id: raw.id.clone(),
+            place: raw.runs_on.clone(),
+        })?;
+
+    let inputs = validate_transform_io(&raw.id, "inputs", raw.inputs, thing_ids)?;
+    if raw.outputs.is_empty() {
+        return Err(Sl1LoadError::TransformEmptyOutputs { id: raw.id });
+    }
+    let outputs = validate_transform_io(&raw.id, "outputs", raw.outputs, thing_ids)?;
+
+    if raw.cadence_ticks == 0 {
+        return Err(Sl1LoadError::TransformCadenceZero { id: raw.id });
+    }
+    if raw.cadence_ticks > MAX_TRANSFORM_TICKS {
+        return Err(Sl1LoadError::TransformTicksOutOfRange {
+            id: raw.id,
+            field: "cadence_ticks",
+            value: raw.cadence_ticks,
+            max: MAX_TRANSFORM_TICKS,
+        });
+    }
+    if raw.duration_ticks == 0 {
+        return Err(Sl1LoadError::TransformDurationZero { id: raw.id });
+    }
+    if raw.duration_ticks > MAX_TRANSFORM_TICKS {
+        return Err(Sl1LoadError::TransformTicksOutOfRange {
+            id: raw.id,
+            field: "duration_ticks",
+            value: raw.duration_ticks,
+            max: MAX_TRANSFORM_TICKS,
+        });
+    }
+    if raw.deadline_ticks == 0 {
+        return Err(Sl1LoadError::TransformDeadlineZero { id: raw.id });
+    }
+    if raw.deadline_ticks > MAX_TRANSFORM_TICKS {
+        return Err(Sl1LoadError::TransformTicksOutOfRange {
+            id: raw.id,
+            field: "deadline_ticks",
+            value: raw.deadline_ticks,
+            max: MAX_TRANSFORM_TICKS,
+        });
+    }
+    if raw.deadline_ticks < raw.duration_ticks {
+        return Err(Sl1LoadError::TransformDeadlineLessThanDuration {
+            id: raw.id,
+            deadline: raw.deadline_ticks,
+            duration: raw.duration_ticks,
+        });
+    }
+
+    // Validate capacity_cost — keys must reference declared place
+    // capacity buckets, values must be in 1..=MAX_TRANSFORM_CAPACITY_COST.
+    for (key, value) in &raw.capacity_cost {
+        if key.trim().is_empty() {
+            return Err(Sl1LoadError::TransformCapacityCostEmptyKey { id: raw.id });
+        }
+        if *value == 0 {
+            return Err(Sl1LoadError::TransformCapacityCostZero {
+                id: raw.id,
+                key: key.clone(),
+            });
+        }
+        if *value > MAX_TRANSFORM_CAPACITY_COST {
+            return Err(Sl1LoadError::TransformCapacityCostOutOfRange {
+                id: raw.id,
+                key: key.clone(),
+                value: *value,
+                max: MAX_TRANSFORM_CAPACITY_COST,
+            });
+        }
+        if !place.capacity.contains_key(key) {
+            return Err(Sl1LoadError::TransformUnknownCapacityKey {
+                id: raw.id,
+                key: key.clone(),
+                place: raw.runs_on.clone(),
+            });
+        }
+    }
+
+    let failure_policy = match raw.failure_policy.as_str() {
+        "retry_then_warn" => Sl1FailurePolicy::RetryThenWarn,
+        "drop" => Sl1FailurePolicy::Drop,
+        _ => {
+            return Err(Sl1LoadError::TransformInvalidFailurePolicy {
+                id: raw.id,
+                policy: raw.failure_policy,
+            });
+        }
+    };
+
+    if raw.max_attempts == 0 {
+        return Err(Sl1LoadError::TransformMaxAttemptsZero { id: raw.id });
+    }
+    if raw.max_attempts > MAX_TRANSFORM_MAX_ATTEMPTS {
+        return Err(Sl1LoadError::TransformMaxAttemptsOutOfRange {
+            id: raw.id,
+            value: raw.max_attempts,
+            max: MAX_TRANSFORM_MAX_ATTEMPTS,
+        });
+    }
+
+    Ok(Sl1Transform {
+        id: raw.id,
+        kind: raw.kind,
+        runs_on: raw.runs_on,
+        inputs,
+        outputs,
+        cadence_ticks: raw.cadence_ticks,
+        duration_ticks: raw.duration_ticks,
+        deadline_ticks: raw.deadline_ticks,
+        capacity_cost: raw.capacity_cost,
+        failure_policy,
+        max_attempts: raw.max_attempts,
+    })
+}
+
+fn validate_transform_io(
+    transform_id: &str,
+    field: &'static str,
+    raw: Vec<RawSl1TransformIo>,
+    thing_ids: &std::collections::BTreeSet<String>,
+) -> Result<Vec<Sl1TransformIo>, Sl1LoadError> {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut out: Vec<Sl1TransformIo> = Vec::with_capacity(raw.len());
+    for entry in raw {
+        if !thing_ids.contains(&entry.thing) {
+            return Err(Sl1LoadError::TransformUnknownThing {
+                id: transform_id.to_owned(),
+                field,
+                value: entry.thing,
+            });
+        }
+        if !seen.insert(entry.thing.clone()) {
+            return Err(Sl1LoadError::TransformDuplicateIo {
+                id: transform_id.to_owned(),
+                field,
+                value: entry.thing,
+            });
+        }
+        if entry.amount == 0 {
+            return Err(Sl1LoadError::TransformIoAmountZero {
+                id: transform_id.to_owned(),
+                field,
+                thing: entry.thing,
+            });
+        }
+        if entry.amount > MAX_TRANSFORM_AMOUNT {
+            return Err(Sl1LoadError::TransformIoAmountOutOfRange {
+                id: transform_id.to_owned(),
+                field,
+                thing: entry.thing,
+                value: entry.amount,
+                max: MAX_TRANSFORM_AMOUNT,
+            });
+        }
+        out.push(Sl1TransformIo {
+            thing_id: entry.thing,
+            amount: entry.amount,
+        });
+    }
+    // Canonicalize by thing id so hash and protocol output are
+    // declaration-order independent.
+    out.sort_by(|a, b| a.thing_id.cmp(&b.thing_id));
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Tests.
 // ---------------------------------------------------------------------------
 
@@ -1914,13 +2494,13 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 4-11 have no behavior for their primitive — even a
+        // PRs 5-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
         // proto-SL1 scene would silently no-op. PR 1 removed `places`,
-        // PR 2 removed `links`, and PR 3 removed `things` from this
-        // guard because all three are now typed and validated.
+        // PR 2 removed `links`, PR 3 removed `things`, and PR 4 removed
+        // `transforms` from this guard because all four are now typed
+        // and validated.
         for (json, expected_section) in [
-            (r#"{"transforms": [{}]}"#, "transforms"),
             (r#"{"demand": [{}]}"#, "demand"),
             (r#"{"pressure": [{}]}"#, "pressure"),
             (r#"{"objectives": [{}]}"#, "objectives"),
@@ -2004,7 +2584,7 @@ mod tests {
         // typo at the top level is surfaced even if the author also
         // populated a primitive that would have hit
         // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "transforms": [{}]}"#).unwrap_err();
+        let err = load_str(r#"{"mystery": 1, "demand": [{}]}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),
