@@ -220,7 +220,7 @@ fn evaluate_utilization(
         .and_then(|m| m.get(capacity_bucket).copied())
         .unwrap_or(0);
     // Integer percent (truncating). Used 0..=cap.
-    let pct = ((used.min(cap)) * 100 / cap) as u8;
+    let pct = used_percent(used, cap);
     if pct >= min_percent && pct <= max_percent {
         Sl1ObjectiveStatus::Met
     } else {
@@ -306,6 +306,11 @@ fn stale_target_breached(
     }
 }
 
+fn used_percent(used: u64, cap: u64) -> u8 {
+    debug_assert!(cap > 0, "used_percent requires non-zero capacity");
+    ((u128::from(used.min(cap)) * 100) / u128::from(cap)) as u8
+}
+
 fn place_state_breached(
     scene: &Sl1Scene,
     runtime: &Sl1RuntimeState,
@@ -329,7 +334,7 @@ fn place_state_breached(
                 .get(place_id)
                 .and_then(|m| m.get(metric).copied())
                 .unwrap_or(0);
-            let pct = (used.min(cap) * 100 / cap) as u8;
+            let pct = used_percent(used, cap);
             pct >= *threshold
         }
         // Schema rejects this combination at load time; defensive
@@ -461,5 +466,15 @@ fn compute_phase(scene: &Sl1Scene, runtime: &Sl1RuntimeState) -> Sl1GamePhase {
             }
             Sl1GamePhase::Stabilizing
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::used_percent;
+
+    #[test]
+    fn used_percent_handles_u64_max_capacity_without_overflow() {
+        assert_eq!(used_percent(u64::MAX, u64::MAX), 100);
     }
 }
