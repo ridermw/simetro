@@ -1291,7 +1291,7 @@ pub enum Sl1AgentKind {
     /// "no decision" until a later PR wires concrete heuristics.
     Builtin,
     /// Live LLM backend. PR 10 always returns `None` and emits a
-    /// one-shot [`SimEvent::Sl1AgentLlmDisabled`] so authors can
+    /// one-shot `SimEvent::Sl1AgentLlmDisabled` so authors can
     /// distinguish "feature-gated off" from "agent chose not to act".
     Llm,
 }
@@ -1414,7 +1414,7 @@ pub struct Sl1AgentRuntimeState {
 }
 
 /// Reason an agent action was rejected. Carried on
-/// [`SimEvent::Sl1AgentActionRejected`].
+/// `SimEvent::Sl1AgentActionRejected`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Sl1AgentRejectionReason {
     /// The proposed action's kind is not in this agent's
@@ -3513,7 +3513,7 @@ pub struct Sl1RuntimeState {
     pub agents: std::collections::BTreeMap<String, Sl1AgentRuntimeState>,
     /// Per-demand agent-imposed pause (PR 10). Maps a demand id to the
     /// tick (exclusive) at which its spawn loop may resume. While
-    /// `now < pause_until_tick`, [`crate::sl1_runtime::run_demand`]
+    /// `now < pause_until_tick`, `sl1_runtime::run_demand`
     /// skips spawning new instances for that demand.
     ///
     /// Stable order via `BTreeMap`. Entries are dropped when they

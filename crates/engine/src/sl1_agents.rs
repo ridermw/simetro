@@ -26,7 +26,7 @@
 //! * [`BuiltinBackend`] — placeholder for the PR-12 GPU Launch Week
 //!   heuristics.
 //! * [`LlmBackend`] — feature-gated live backend. Always returns
-//!   `None` AND emits a one-shot [`SimEvent::Sl1AgentLlmDisabled`] so
+//!   `None` AND emits a one-shot `SimEvent::Sl1AgentLlmDisabled` so
 //!   authors can distinguish "agent chose not to act" from "live LLM
 //!   not wired".
 
