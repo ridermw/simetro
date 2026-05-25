@@ -26,6 +26,7 @@ pub mod redactor;
 pub mod rng;
 pub mod scenario_language_v1;
 pub mod sl1_objectives;
+pub mod sl1_observability;
 pub mod sl1_pressure;
 pub mod sl1_runtime;
 pub mod snapshot;

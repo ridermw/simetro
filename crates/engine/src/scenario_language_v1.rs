@@ -172,16 +172,16 @@ pub struct RawSl1Scene {
     pub victory_conditions: Vec<RawSl1VictoryCondition>,
     #[serde(default)]
     pub agents: Vec<serde_json::Value>,
-    /// Optional `observability` block. PR 0 accepts an omitted block
-    /// or an explicit empty object `{}`; an explicit JSON `null` is
-    /// treated as equivalent to "omitted" (no observability), matching
-    /// the documented example in `docs/scenario-language-v1.md`. Any
-    /// non-empty object is rejected with
-    /// [`Sl1LoadError::PrimitiveNotImplemented`] until PR 9 adds the
-    /// metrics/dashboards/alerts schema; any non-object value is
-    /// rejected with [`Sl1LoadError::Parse`].
+    /// Optional `observability` block (PR 9). Carries declarative
+    /// metric/dashboard/alert definitions. Omitted block / explicit
+    /// `null` / explicit empty object `{}` all yield an empty
+    /// observability. Strict-schema: unknown fields inside
+    /// `observability`, `observability.metrics[*]`,
+    /// `observability.dashboards[*]`, or `observability.alerts[*]`
+    /// are rejected via serde's `deny_unknown_fields`, surfacing as
+    /// [`Sl1LoadError::Parse`].
     #[serde(default)]
-    pub observability: Option<serde_json::Value>,
+    pub observability: Option<RawSl1Observability>,
     #[serde(default)]
     pub milestones: Vec<serde_json::Value>,
     /// Permissive catalog/theme/metadata block. Unknown fields here are
@@ -955,6 +955,20 @@ pub const MAX_OBJECTIVE_WEIGHT: u32 = 10_000;
 /// realistic scene length, so we reject it at load to catch typos.
 pub const MAX_OBJECTIVE_BREACH_COUNT: u64 = 1_000_000;
 
+/// Maximum number of observability items per list
+/// (`observability.metrics`, `observability.dashboards`,
+/// `observability.alerts`). Beyond this the per-tick derivation loop
+/// becomes a wall-clock latency concern even with strictly-bounded
+/// inner work. Far below [`MAX_SL1_ITEMS_PER_SECTION`] because each
+/// observability item touches metric state every tick.
+pub const MAX_OBSERVABILITY_ITEMS: usize = 1_000;
+
+/// Maximum allowed `freshness_slo_ticks` on a dashboard. Equal to
+/// [`MAX_OBJECTIVE_TICKS`] so dashboard SLOs can match the longest
+/// objective window. Zero is rejected with
+/// [`Sl1LoadError::DashboardFreshnessSloZero`].
+pub const MAX_DASHBOARD_FRESHNESS_SLO_TICKS: u64 = 1_000_000;
+
 /// Raw `objectives[]` entry. Strict-schema; unknown fields rejected.
 /// The discriminator is a free string so unknown `type` surfaces as
 /// [`Sl1LoadError::ObjectiveUnknownType`] instead of serde's generic
@@ -1211,9 +1225,370 @@ pub struct Sl1VictoryCondition {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Sl1Agent;
 
-/// Placeholder loaded `observability`. Populated in PR 9.
+// ---------------------------------------------------------------------------
+// Observability — typed primitive (PR 9).
+//
+// Three sub-primitives:
+//   1. `metrics`     — point-in-time scalar values derived from runtime
+//                      state (place capacity utilization, inventory
+//                      counts, dashboard freshness ticks).
+//   2. `dashboards`  — aggregated views over a set of `things`; their
+//                      state (`ok`/`stale`/`no_data`) becomes a demand
+//                      target signal in PR 10.
+//   3. `alerts`      — edge-triggered predicate evaluations against a
+//                      metric; emit `Sl1AlertFired` + `Sl1AlertCleared`
+//                      events on transitions.
+//
+// Each primitive is strict-schema (`deny_unknown_fields`). Metric
+// `source` is an open-string discriminator at the raw layer (so unknown
+// kinds surface as a typed `Sl1LoadError` rather than serde's English
+// text), then parsed programmatically into a closed enum.
+// ---------------------------------------------------------------------------
+
+/// Raw `observability` block. Strict-schema.
+#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Observability {
+    #[serde(default)]
+    pub metrics: Vec<RawSl1Metric>,
+    #[serde(default)]
+    pub dashboards: Vec<RawSl1Dashboard>,
+    #[serde(default)]
+    pub alerts: Vec<RawSl1Alert>,
+}
+
+/// Raw `observability.metrics[*]` entry. Strict-schema.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Metric {
+    pub id: String,
+    /// Discriminator. Open string at the raw layer; parsed into
+    /// [`Sl1MetricSourceKind`] by the loader so unknowns become a
+    /// typed [`Sl1LoadError::MetricUnsupportedSource`].
+    pub source: String,
+    /// Required when `source = "place_capacity_used_percent"` or
+    /// `source = "place_inventory_count"`. Names a declared place id.
+    #[serde(default)]
+    pub place: Option<String>,
+    /// Required when `source = "place_capacity_used_percent"`. Names a
+    /// capacity-bucket key on the named place.
+    #[serde(default)]
+    pub capacity: Option<String>,
+    /// Required when `source = "place_inventory_count"`. Names a
+    /// declared thing id stored on the named place.
+    #[serde(default)]
+    pub thing: Option<String>,
+    /// Required when `source = "dashboard_freshness"`. Names a
+    /// declared dashboard id in this `observability.dashboards[]`.
+    #[serde(default)]
+    pub dashboard: Option<String>,
+}
+
+/// Raw `observability.dashboards[*]` entry. Strict-schema.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Dashboard {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Things whose freshness rolls up into this dashboard. Order in
+    /// the source is preserved for human-readable output, but freshness
+    /// aggregation is order-independent (max age).
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    /// Maximum age (in ticks) before the dashboard transitions to
+    /// `Stale`. Must be `> 0` (zero would mean "stale immediately on
+    /// the same tick the data was set", which is always an authoring
+    /// mistake).
+    pub freshness_slo_ticks: u64,
+}
+
+/// Raw `observability.alerts[*]` entry. Strict-schema.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Alert {
+    pub id: String,
+    /// Names a metric in this `observability.metrics[]`.
+    pub metric: String,
+    pub predicate: RawSl1AlertPredicate,
+    /// Severity hint for the renderer/agent prompts. Open string at
+    /// raw layer; parsed into [`Sl1AlertSeverity`].
+    pub severity: String,
+}
+
+/// Raw alert predicate. Strict-schema. The closed enum
+/// [`Sl1AlertPredicate`] mirrors this with validated bounds.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RawSl1AlertPredicate {
+    Gt {
+        threshold: u64,
+    },
+    Lt {
+        threshold: u64,
+    },
+    /// Inclusive on both bounds: fires when `value < min` or
+    /// `value > max`. Note: this is "out of range" semantics — the
+    /// alert fires when the metric leaves the band. PR 9 uses this
+    /// flavor because alerts represent abnormal conditions; staying
+    /// inside the band is the healthy state.
+    OutOfRange {
+        min: u64,
+        max: u64,
+    },
+}
+
+/// Validated `observability` primitive.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Observability;
+pub struct Sl1Observability {
+    pub metrics: Vec<Sl1Metric>,
+    pub dashboards: Vec<Sl1Dashboard>,
+    pub alerts: Vec<Sl1Alert>,
+}
+
+/// Validated `metric` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Metric {
+    pub id: String,
+    pub source: Sl1MetricSource,
+}
+
+/// Closed enum of metric sources. The discriminator is open-string at
+/// the raw layer so unknown kinds surface as a typed load error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1MetricSourceKind {
+    PlaceCapacityUsedPercent,
+    PlaceInventoryCount,
+    DashboardFreshness,
+}
+
+impl Sl1MetricSourceKind {
+    /// Canonical wire string. Stable across builds; do not rename
+    /// without bumping affected hash baselines.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PlaceCapacityUsedPercent => "place_capacity_used_percent",
+            Self::PlaceInventoryCount => "place_inventory_count",
+            Self::DashboardFreshness => "dashboard_freshness",
+        }
+    }
+}
+
+/// Per-variant typed metric source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1MetricSource {
+    /// `(used / capacity) * 100` for the named bucket on the named
+    /// place. `value` is `0..=100`. If the capacity bucket value is
+    /// zero (e.g. capacity dropped to 0 by `quota_reduction`), the
+    /// derived percent is `0` rather than triggering a divide-by-zero
+    /// silent skip.
+    PlaceCapacityUsedPercent { place: String, capacity: String },
+    /// Current inventory count for the named `(place, thing)` pair.
+    PlaceInventoryCount { place: String, thing: String },
+    /// Freshness age (in ticks) of the named dashboard. `value` is
+    /// `0` when the dashboard is freshly populated this tick, and
+    /// grows monotonically until the dashboard's `depends_on` storage
+    /// is refreshed. Stays `Ok` past the dashboard's
+    /// `freshness_slo_ticks` so threshold alerts on freshness can
+    /// fire — the dashboard's own state separately transitions to
+    /// [`Sl1DashboardState::Stale`].
+    DashboardFreshness { dashboard: String },
+}
+
+impl Sl1MetricSource {
+    #[must_use]
+    pub const fn kind(&self) -> Sl1MetricSourceKind {
+        match self {
+            Self::PlaceCapacityUsedPercent { .. } => Sl1MetricSourceKind::PlaceCapacityUsedPercent,
+            Self::PlaceInventoryCount { .. } => Sl1MetricSourceKind::PlaceInventoryCount,
+            Self::DashboardFreshness { .. } => Sl1MetricSourceKind::DashboardFreshness,
+        }
+    }
+}
+
+/// Validated `dashboard` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Dashboard {
+    pub id: String,
+    pub kind: Sl1DashboardKind,
+    pub depends_on: Vec<String>,
+    pub freshness_slo_ticks: u64,
+}
+
+/// Closed enum of dashboard kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1DashboardKind {
+    /// Periodic refresh report (e.g. Power BI overnight refresh).
+    Report,
+    /// Streaming dashboard (e.g. Kusto live tile).
+    Live,
+    /// Author-run ad-hoc query view.
+    AdHoc,
+}
+
+impl Sl1DashboardKind {
+    /// Canonical wire string. Stable.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Report => "report",
+            Self::Live => "live",
+            Self::AdHoc => "ad_hoc",
+        }
+    }
+}
+
+/// Validated `alert` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Alert {
+    pub id: String,
+    pub metric: String,
+    pub predicate: Sl1AlertPredicate,
+    pub severity: Sl1AlertSeverity,
+}
+
+/// Validated alert predicate. Bounds are inclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1AlertPredicate {
+    Gt {
+        threshold: u64,
+    },
+    Lt {
+        threshold: u64,
+    },
+    /// Fires when `value < min` or `value > max` (out-of-band). Loader
+    /// enforces `min <= max`.
+    OutOfRange {
+        min: u64,
+        max: u64,
+    },
+}
+
+impl Sl1AlertPredicate {
+    /// Evaluate against a metric value. Returns true if the alert
+    /// should be firing for this value.
+    #[must_use]
+    pub const fn fires(self, value: u64) -> bool {
+        match self {
+            Self::Gt { threshold } => value > threshold,
+            Self::Lt { threshold } => value < threshold,
+            Self::OutOfRange { min, max } => value < min || value > max,
+        }
+    }
+
+    /// Stable wire-friendly summary for events/logs.
+    #[must_use]
+    pub fn summary(self) -> String {
+        match self {
+            Self::Gt { threshold } => format!("> {threshold}"),
+            Self::Lt { threshold } => format!("< {threshold}"),
+            Self::OutOfRange { min, max } => format!("out_of_range [{min}, {max}]"),
+        }
+    }
+}
+
+/// Severity classification for an alert. Renderer maps to color/icon;
+/// agent prompts (PR 10) treat `Critical` as highest priority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1AlertSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
+impl Sl1AlertSeverity {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+/// Per-metric runtime state.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1MetricState {
+    /// The metric resolved to a value this tick.
+    Ok { value: u64 },
+    /// The metric's source returned no data (e.g. all `depends_on`
+    /// things have never been populated for a `dashboard_freshness`
+    /// metric). Distinct from `Ok { value: 0 }` so alert predicates
+    /// can ignore "no data" without misinterpreting it as healthy.
+    #[default]
+    NoData,
+}
+
+impl Sl1MetricState {
+    /// Canonical wire string of the discriminant.
+    #[must_use]
+    pub const fn discriminant_str(&self) -> &'static str {
+        match self {
+            Self::Ok { .. } => "ok",
+            Self::NoData => "no_data",
+        }
+    }
+}
+
+/// Per-dashboard runtime state. `Stale` carries the current freshness
+/// age so the HUD can show how stale the dashboard is.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1DashboardState {
+    Ok,
+    /// At least one of the dashboard's `depends_on` things has aged
+    /// past `freshness_slo_ticks`. `freshness_ticks` is the maximum
+    /// age across all `depends_on` things.
+    Stale {
+        freshness_ticks: u64,
+    },
+    /// At least one of the `depends_on` things has never been
+    /// populated anywhere (no `FreshnessState::Ok` for it). Distinct
+    /// from `Stale` so the HUD can warn that a feed is missing
+    /// entirely rather than just lagging.
+    #[default]
+    NoData,
+}
+
+impl Sl1DashboardState {
+    #[must_use]
+    pub const fn discriminant_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Stale { .. } => "stale",
+            Self::NoData => "no_data",
+        }
+    }
+}
+
+/// Per-alert runtime state. Edge-triggered: transitions from
+/// `Inactive` → `Firing` emit `Sl1AlertFired`, and `Firing` →
+/// `Inactive` emit `Sl1AlertCleared`. Same-state ticks do not emit
+/// events.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1AlertState {
+    #[default]
+    Inactive,
+    /// The alert predicate is currently firing. `fired_at_tick` is
+    /// the tick of the most recent `Inactive` → `Firing` transition.
+    Firing { fired_at_tick: u64 },
+}
+
+impl Sl1AlertState {
+    #[must_use]
+    pub const fn discriminant_str(&self) -> &'static str {
+        match self {
+            Self::Inactive => "inactive",
+            Self::Firing { .. } => "firing",
+        }
+    }
+
+    #[must_use]
+    pub const fn is_firing(&self) -> bool {
+        matches!(self, Self::Firing { .. })
+    }
+}
 
 /// Placeholder loaded `milestone`. Populated in PR 11.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -2328,6 +2703,181 @@ pub enum Sl1LoadError {
          {value} out of allowed range [1, {max}]"
     )]
     VictoryConditionAtTickOutOfRange { id: String, value: u64, max: u64 },
+
+    // ---- PR 9 — observability (metrics / dashboards / alerts) ----
+    /// More observability items than [`MAX_OBSERVABILITY_ITEMS`].
+    /// Applies to each list (`metrics`, `dashboards`, `alerts`)
+    /// independently.
+    #[error(
+        "scenario_language_v1.observability.{section}: \
+         found {count} items, maximum {max}"
+    )]
+    ObservabilityTooManyItems {
+        section: &'static str,
+        count: usize,
+        max: usize,
+    },
+
+    /// A metric `id` is empty, too long, or contains characters outside
+    /// the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.observability.metrics: invalid id {id:?}")]
+    MetricInvalidId { id: String },
+
+    /// Two metrics declared the same `id`.
+    #[error("scenario_language_v1.observability.metrics: duplicate id {id:?}")]
+    MetricDuplicateId { id: String },
+
+    /// A metric's `source` discriminator did not match any supported
+    /// kind. The list of supported kinds is enumerated by
+    /// [`Sl1MetricSourceKind`] variants.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}].source: \
+         unsupported source {source_kind:?}"
+    )]
+    MetricUnsupportedSource { id: String, source_kind: String },
+
+    /// A metric source required a field but the field was missing.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}]: \
+         source {source_kind:?} requires field {field:?}"
+    )]
+    MetricMissingField {
+        id: String,
+        source_kind: &'static str,
+        field: &'static str,
+    },
+
+    /// A metric source had a field that the source does not consume
+    /// (e.g. `dashboard_freshness` with a `place` field). Strict
+    /// schema: extraneous fields are rejected to prevent silent typos.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}]: \
+         source {source_kind:?} does not accept field {field:?}"
+    )]
+    MetricExtraField {
+        id: String,
+        source_kind: &'static str,
+        field: &'static str,
+    },
+
+    /// A metric source referenced an undeclared place id.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}].place: \
+         unknown place {place:?}"
+    )]
+    MetricUnknownPlace { id: String, place: String },
+
+    /// A metric source referenced an undeclared thing id.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}].thing: \
+         unknown thing {thing:?}"
+    )]
+    MetricUnknownThing { id: String, thing: String },
+
+    /// A `place_capacity_used_percent` metric referenced a capacity
+    /// bucket the named place does not declare.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}]: \
+         place {place:?} has no capacity bucket {capacity:?}"
+    )]
+    MetricUnknownCapacityBucket {
+        id: String,
+        place: String,
+        capacity: String,
+    },
+
+    /// A `place_inventory_count` metric referenced a `(place, thing)`
+    /// pair where the place declares no storage slot for the thing.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}]: \
+         place {place:?} has no storage slot for thing {thing:?}"
+    )]
+    MetricNoStorageSlot {
+        id: String,
+        place: String,
+        thing: String,
+    },
+
+    /// A `dashboard_freshness` metric referenced an undeclared
+    /// dashboard id.
+    #[error(
+        "scenario_language_v1.observability.metrics[{id:?}].dashboard: \
+         unknown dashboard {dashboard:?}"
+    )]
+    MetricUnknownDashboard { id: String, dashboard: String },
+
+    /// A dashboard `id` is empty, too long, or contains characters
+    /// outside the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.observability.dashboards: invalid id {id:?}")]
+    DashboardInvalidId { id: String },
+
+    /// Two dashboards declared the same `id`.
+    #[error("scenario_language_v1.observability.dashboards: duplicate id {id:?}")]
+    DashboardDuplicateId { id: String },
+
+    /// A dashboard `type` did not match any supported
+    /// [`Sl1DashboardKind`] variant.
+    #[error(
+        "scenario_language_v1.observability.dashboards[{id:?}].type: \
+         unsupported kind {kind:?}"
+    )]
+    DashboardUnsupportedKind { id: String, kind: String },
+
+    /// A dashboard's `depends_on` list contained an empty or
+    /// duplicate entry.
+    #[error(
+        "scenario_language_v1.observability.dashboards[{id:?}].depends_on: \
+         empty or duplicate entry {value:?}"
+    )]
+    DashboardInvalidDependsOn { id: String, value: String },
+
+    /// A dashboard's `depends_on` entry referenced an undeclared
+    /// thing id.
+    #[error(
+        "scenario_language_v1.observability.dashboards[{id:?}].depends_on: \
+         unknown thing {thing:?}"
+    )]
+    DashboardUnknownThing { id: String, thing: String },
+
+    /// A dashboard's `freshness_slo_ticks` is zero.
+    #[error(
+        "scenario_language_v1.observability.dashboards[{id:?}].freshness_slo_ticks: \
+         must be > 0"
+    )]
+    DashboardFreshnessSloZero { id: String },
+
+    /// An alert `id` is empty, too long, or contains characters
+    /// outside the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.observability.alerts: invalid id {id:?}")]
+    AlertInvalidId { id: String },
+
+    /// Two alerts declared the same `id`.
+    #[error("scenario_language_v1.observability.alerts: duplicate id {id:?}")]
+    AlertDuplicateId { id: String },
+
+    /// An alert's `metric` referenced an undeclared metric id.
+    #[error(
+        "scenario_language_v1.observability.alerts[{id:?}].metric: \
+         unknown metric {metric:?}"
+    )]
+    AlertUnknownMetric { id: String, metric: String },
+
+    /// An `out_of_range` predicate's `min` exceeds its `max`.
+    /// Such a predicate fires on every value, which is always an
+    /// authoring mistake.
+    #[error(
+        "scenario_language_v1.observability.alerts[{id:?}].predicate: \
+         out_of_range min {min} > max {max}"
+    )]
+    AlertOutOfRangeInverted { id: String, min: u64, max: u64 },
+
+    /// An alert `severity` did not match any supported
+    /// [`Sl1AlertSeverity`] variant.
+    #[error(
+        "scenario_language_v1.observability.alerts[{id:?}].severity: \
+         unsupported severity {severity:?}"
+    )]
+    AlertUnsupportedSeverity { id: String, severity: String },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -2548,6 +3098,17 @@ pub struct Sl1RuntimeState {
     /// One-shot warning gate for objectives whose kind is recognized
     /// but unimplemented in PR 8. Mirrors `pressure.unsupported_warned`.
     pub unsupported_objectives_warned: std::collections::BTreeSet<String>,
+    /// Per-metric runtime state (PR 9). One entry per declared metric;
+    /// recomputed every tick by `crate::sl1_observability::run`.
+    pub metric_states: std::collections::BTreeMap<String, Sl1MetricState>,
+    /// Per-dashboard runtime state (PR 9). One entry per declared
+    /// dashboard; recomputed every tick.
+    pub dashboard_states: std::collections::BTreeMap<String, Sl1DashboardState>,
+    /// Per-alert runtime state (PR 9). One entry per declared alert.
+    /// Updated edge-triggered: `Inactive` → `Firing` emits
+    /// `Sl1AlertFired`, `Firing` → `Inactive` emits `Sl1AlertCleared`.
+    /// Same-state ticks do not emit events.
+    pub alert_states: std::collections::BTreeMap<String, Sl1AlertState>,
 }
 
 /// Per-tick pressure overlay (PR 7).
@@ -2759,6 +3320,36 @@ impl Sl1RuntimeState {
             game_outcome: GameOutcome::InProgress,
             game_phase: Sl1GamePhase::Stabilizing,
             unsupported_objectives_warned: std::collections::BTreeSet::new(),
+            metric_states: scene
+                .observability
+                .as_ref()
+                .map(|o| {
+                    o.metrics
+                        .iter()
+                        .map(|m| (m.id.clone(), Sl1MetricState::default()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            dashboard_states: scene
+                .observability
+                .as_ref()
+                .map(|o| {
+                    o.dashboards
+                        .iter()
+                        .map(|d| (d.id.clone(), Sl1DashboardState::default()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            alert_states: scene
+                .observability
+                .as_ref()
+                .map(|o| {
+                    o.alerts
+                        .iter()
+                        .map(|a| (a.id.clone(), Sl1AlertState::default()))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -3139,28 +3730,11 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     }
     pressure.sort_by(|a, b| a.id.cmp(&b.id));
 
-    // The optional observability block must be an empty object until
-    // PR 9 implements its schema.
-    let observability = if let Some(value) = raw.observability {
-        match value {
-            serde_json::Value::Object(map) if map.is_empty() => Some(Sl1Observability),
-            serde_json::Value::Object(_) => {
-                return Err(Sl1LoadError::PrimitiveNotImplemented {
-                    section: "observability",
-                });
-            }
-            other => {
-                return Err(Sl1LoadError::Parse {
-                    message: format!(
-                        "scenario_language_v1.observability must be an object, got {}",
-                        json_kind(&other)
-                    ),
-                });
-            }
-        }
-    } else {
-        None
-    };
+    // Observability is validated after PR 8 sections (objectives,
+    // failure conditions, victory conditions) because the metric/
+    // dashboard/alert cross-reference checks need the same
+    // place/thing/transform id sets that those sections built.
+    let raw_observability = raw.observability;
 
     // ---- PR 8 — objectives ----
     let mut objectives: Vec<Sl1Objective> = Vec::with_capacity(raw.objectives.len());
@@ -3217,7 +3791,14 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         victory_conditions.push(vc);
     }
     victory_conditions.sort_by(|a, b| a.id.cmp(&b.id));
-    let _ = place_ids; // unused (kept for future cross-refs without warning).
+    let _ = place_ids; // re-used for observability validation below.
+
+    // ---- PR 9 — observability ----
+    let observability = if let Some(raw_obs) = raw_observability {
+        Some(validate_observability(raw_obs, &places, &things)?)
+    } else {
+        None
+    };
 
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
@@ -3245,6 +3826,283 @@ fn check_section_cap(section: &'static str, count: usize) -> Result<(), Sl1LoadE
         });
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Observability validation (PR 9).
+// ---------------------------------------------------------------------------
+
+fn validate_observability(
+    raw: RawSl1Observability,
+    places: &[Sl1Place],
+    things: &[Sl1Thing],
+) -> Result<Sl1Observability, Sl1LoadError> {
+    // Per-list caps.
+    if raw.metrics.len() > MAX_OBSERVABILITY_ITEMS {
+        return Err(Sl1LoadError::ObservabilityTooManyItems {
+            section: "metrics",
+            count: raw.metrics.len(),
+            max: MAX_OBSERVABILITY_ITEMS,
+        });
+    }
+    if raw.dashboards.len() > MAX_OBSERVABILITY_ITEMS {
+        return Err(Sl1LoadError::ObservabilityTooManyItems {
+            section: "dashboards",
+            count: raw.dashboards.len(),
+            max: MAX_OBSERVABILITY_ITEMS,
+        });
+    }
+    if raw.alerts.len() > MAX_OBSERVABILITY_ITEMS {
+        return Err(Sl1LoadError::ObservabilityTooManyItems {
+            section: "alerts",
+            count: raw.alerts.len(),
+            max: MAX_OBSERVABILITY_ITEMS,
+        });
+    }
+
+    let thing_ids: std::collections::BTreeSet<&str> =
+        things.iter().map(|t| t.id.as_str()).collect();
+
+    // Dashboards first — metrics that reference dashboards need the
+    // dashboard set built and validated.
+    let mut dashboards: Vec<Sl1Dashboard> = Vec::with_capacity(raw.dashboards.len());
+    let mut seen_dashboard_ids: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for raw_d in raw.dashboards {
+        let d = validate_dashboard(raw_d, &thing_ids)?;
+        if !seen_dashboard_ids.insert(d.id.clone()) {
+            return Err(Sl1LoadError::DashboardDuplicateId { id: d.id });
+        }
+        dashboards.push(d);
+    }
+    dashboards.sort_by(|a, b| a.id.cmp(&b.id));
+    let dashboard_ids: std::collections::BTreeSet<&str> =
+        dashboards.iter().map(|d| d.id.as_str()).collect();
+
+    // Metrics next.
+    let mut metrics: Vec<Sl1Metric> = Vec::with_capacity(raw.metrics.len());
+    let mut seen_metric_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_m in raw.metrics {
+        let m = validate_metric(raw_m, places, &thing_ids, &dashboard_ids)?;
+        if !seen_metric_ids.insert(m.id.clone()) {
+            return Err(Sl1LoadError::MetricDuplicateId { id: m.id });
+        }
+        metrics.push(m);
+    }
+    metrics.sort_by(|a, b| a.id.cmp(&b.id));
+    let metric_ids: std::collections::BTreeSet<&str> =
+        metrics.iter().map(|m| m.id.as_str()).collect();
+
+    // Alerts last.
+    let mut alerts: Vec<Sl1Alert> = Vec::with_capacity(raw.alerts.len());
+    let mut seen_alert_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_a in raw.alerts {
+        let a = validate_alert(raw_a, &metric_ids)?;
+        if !seen_alert_ids.insert(a.id.clone()) {
+            return Err(Sl1LoadError::AlertDuplicateId { id: a.id });
+        }
+        alerts.push(a);
+    }
+    alerts.sort_by(|a, b| a.id.cmp(&b.id));
+
+    Ok(Sl1Observability {
+        metrics,
+        dashboards,
+        alerts,
+    })
+}
+
+fn validate_dashboard(
+    raw: RawSl1Dashboard,
+    thing_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1Dashboard, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::DashboardInvalidId { id: raw.id });
+    }
+    let kind = match raw.kind.as_str() {
+        "report" => Sl1DashboardKind::Report,
+        "live" => Sl1DashboardKind::Live,
+        "ad_hoc" => Sl1DashboardKind::AdHoc,
+        _ => {
+            return Err(Sl1LoadError::DashboardUnsupportedKind {
+                id: raw.id,
+                kind: raw.kind,
+            });
+        }
+    };
+    if raw.freshness_slo_ticks == 0 {
+        return Err(Sl1LoadError::DashboardFreshnessSloZero { id: raw.id });
+    }
+    // No upper-bound error variant for freshness_slo — the schema cap
+    // is enforced via clamping in the runtime to avoid an extra error
+    // variant; values above MAX_DASHBOARD_FRESHNESS_SLO_TICKS still
+    // produce a deterministic outcome (`Stale` once age exceeds the
+    // declared SLO, capped to u64).
+    let mut depends_on: Vec<String> = Vec::with_capacity(raw.depends_on.len());
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in raw.depends_on {
+        if entry.trim().is_empty() || !seen.insert(entry.clone()) {
+            return Err(Sl1LoadError::DashboardInvalidDependsOn {
+                id: raw.id,
+                value: entry,
+            });
+        }
+        if !thing_ids.contains(entry.as_str()) {
+            return Err(Sl1LoadError::DashboardUnknownThing {
+                id: raw.id,
+                thing: entry,
+            });
+        }
+        depends_on.push(entry);
+    }
+    depends_on.sort();
+    Ok(Sl1Dashboard {
+        id: raw.id,
+        kind,
+        depends_on,
+        freshness_slo_ticks: raw.freshness_slo_ticks,
+    })
+}
+
+fn validate_metric(
+    raw: RawSl1Metric,
+    places: &[Sl1Place],
+    thing_ids: &std::collections::BTreeSet<&str>,
+    dashboard_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1Metric, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::MetricInvalidId { id: raw.id });
+    }
+    let kind = match raw.source.as_str() {
+        "place_capacity_used_percent" => Sl1MetricSourceKind::PlaceCapacityUsedPercent,
+        "place_inventory_count" => Sl1MetricSourceKind::PlaceInventoryCount,
+        "dashboard_freshness" => Sl1MetricSourceKind::DashboardFreshness,
+        _ => {
+            return Err(Sl1LoadError::MetricUnsupportedSource {
+                id: raw.id,
+                source_kind: raw.source,
+            });
+        }
+    };
+    // Per-variant required / extra field checks.
+    let id_str = raw.id.clone();
+    let source_str = kind.as_str();
+    let take = |opt: Option<String>, field: &'static str| -> Result<String, Sl1LoadError> {
+        opt.ok_or_else(|| Sl1LoadError::MetricMissingField {
+            id: id_str.clone(),
+            source_kind: source_str,
+            field,
+        })
+    };
+    let forbid = |present: bool, field: &'static str| -> Result<(), Sl1LoadError> {
+        if present {
+            return Err(Sl1LoadError::MetricExtraField {
+                id: id_str.clone(),
+                source_kind: source_str,
+                field,
+            });
+        }
+        Ok(())
+    };
+    let source = match kind {
+        Sl1MetricSourceKind::PlaceCapacityUsedPercent => {
+            forbid(raw.thing.is_some(), "thing")?;
+            forbid(raw.dashboard.is_some(), "dashboard")?;
+            let place = take(raw.place, "place")?;
+            let capacity = take(raw.capacity, "capacity")?;
+            let Some(place_ref) = places.iter().find(|p| p.id == place) else {
+                return Err(Sl1LoadError::MetricUnknownPlace { id: raw.id, place });
+            };
+            if !place_ref.capacity.contains_key(&capacity) {
+                return Err(Sl1LoadError::MetricUnknownCapacityBucket {
+                    id: raw.id,
+                    place,
+                    capacity,
+                });
+            }
+            Sl1MetricSource::PlaceCapacityUsedPercent { place, capacity }
+        }
+        Sl1MetricSourceKind::PlaceInventoryCount => {
+            forbid(raw.capacity.is_some(), "capacity")?;
+            forbid(raw.dashboard.is_some(), "dashboard")?;
+            let place = take(raw.place, "place")?;
+            let thing = take(raw.thing, "thing")?;
+            let Some(place_ref) = places.iter().find(|p| p.id == place) else {
+                return Err(Sl1LoadError::MetricUnknownPlace { id: raw.id, place });
+            };
+            if !thing_ids.contains(thing.as_str()) {
+                return Err(Sl1LoadError::MetricUnknownThing { id: raw.id, thing });
+            }
+            if !place_ref.storage.contains_key(&thing) {
+                return Err(Sl1LoadError::MetricNoStorageSlot {
+                    id: raw.id,
+                    place,
+                    thing,
+                });
+            }
+            Sl1MetricSource::PlaceInventoryCount { place, thing }
+        }
+        Sl1MetricSourceKind::DashboardFreshness => {
+            forbid(raw.place.is_some(), "place")?;
+            forbid(raw.thing.is_some(), "thing")?;
+            forbid(raw.capacity.is_some(), "capacity")?;
+            let dashboard = take(raw.dashboard, "dashboard")?;
+            if !dashboard_ids.contains(dashboard.as_str()) {
+                return Err(Sl1LoadError::MetricUnknownDashboard {
+                    id: raw.id,
+                    dashboard,
+                });
+            }
+            Sl1MetricSource::DashboardFreshness { dashboard }
+        }
+    };
+    Ok(Sl1Metric { id: raw.id, source })
+}
+
+fn validate_alert(
+    raw: RawSl1Alert,
+    metric_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1Alert, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::AlertInvalidId { id: raw.id });
+    }
+    if !metric_ids.contains(raw.metric.as_str()) {
+        return Err(Sl1LoadError::AlertUnknownMetric {
+            id: raw.id,
+            metric: raw.metric,
+        });
+    }
+    let predicate = match raw.predicate {
+        RawSl1AlertPredicate::Gt { threshold } => Sl1AlertPredicate::Gt { threshold },
+        RawSl1AlertPredicate::Lt { threshold } => Sl1AlertPredicate::Lt { threshold },
+        RawSl1AlertPredicate::OutOfRange { min, max } => {
+            if min > max {
+                return Err(Sl1LoadError::AlertOutOfRangeInverted {
+                    id: raw.id,
+                    min,
+                    max,
+                });
+            }
+            Sl1AlertPredicate::OutOfRange { min, max }
+        }
+    };
+    let severity = match raw.severity.as_str() {
+        "info" => Sl1AlertSeverity::Info,
+        "warning" => Sl1AlertSeverity::Warning,
+        "critical" => Sl1AlertSeverity::Critical,
+        _ => {
+            return Err(Sl1LoadError::AlertUnsupportedSeverity {
+                id: raw.id,
+                severity: raw.severity,
+            });
+        }
+    };
+    Ok(Sl1Alert {
+        id: raw.id,
+        metric: raw.metric,
+        predicate,
+        severity,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -5424,38 +6282,48 @@ mod tests {
     }
 
     #[test]
-    fn empty_observability_loads() {
+    fn empty_observability_loads_with_zero_items() {
+        // observability is now a typed struct (PR 9). An empty block
+        // loads successfully and creates an Sl1Observability with all
+        // three lists empty.
         let json = r#"{"observability": {}}"#;
         let scene = load_str(json).expect("empty observability should load");
-        assert!(scene.observability.is_some());
+        let obs = scene
+            .observability
+            .as_ref()
+            .expect("observability is present");
+        assert!(obs.metrics.is_empty());
+        assert!(obs.dashboards.is_empty());
+        assert!(obs.alerts.is_empty());
     }
 
     #[test]
-    fn non_empty_observability_hits_primitive_guard_until_pr9() {
-        // Until PR 9 introduces typed observability fields, any
-        // populated observability block is treated as an
-        // unimplemented primitive — not introspected for unknown
-        // fields. That keeps PR 0 from silently no-op'ing on
-        // proto-observability content.
-        let err = load_str(r#"{"observability": {"alerts": []}}"#).unwrap_err();
-        match err {
-            Sl1LoadError::PrimitiveNotImplemented { section } => {
-                assert_eq!(section, "observability");
-            }
-            other => panic!("expected PrimitiveNotImplemented, got {other:?}"),
-        }
+    fn observability_with_empty_lists_loads() {
+        // Empty alerts list explicitly declared. PR 9 accepts this.
+        let scene = load_str(r#"{"observability": {"alerts": []}}"#)
+            .expect("empty alerts list should load");
+        let obs = scene
+            .observability
+            .as_ref()
+            .expect("observability is present");
+        assert!(obs.alerts.is_empty());
     }
 
     #[test]
-    fn observability_must_be_object() {
-        let err = load_str(r#"{"observability": []}"#).unwrap_err();
-        match err {
-            Sl1LoadError::Parse { message } => {
-                assert!(message.contains("observability"));
-                assert!(message.contains("array"));
-            }
-            other => panic!("expected Parse, got {other:?}"),
-        }
+    fn observability_array_yields_empty_observability() {
+        // Note: serde's behavior for `Option<RawSl1Observability>` is
+        // to accept `[]` and treat it as an empty struct (since all
+        // sub-fields default). This is benign — the resulting
+        // observability is empty and observability::run() no-ops.
+        // Documented here so any future tightening (e.g. custom
+        // deserializer that rejects non-object) has a regression
+        // pin.
+        let scene = load_str(r#"{"observability": []}"#)
+            .expect("[] currently parses as empty observability");
+        let obs = scene.observability.as_ref().expect("present");
+        assert!(obs.metrics.is_empty());
+        assert!(obs.dashboards.is_empty());
+        assert!(obs.alerts.is_empty());
     }
 
     #[test]

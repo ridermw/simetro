@@ -402,6 +402,43 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-observability fingerprint (PR 9). Gated on observability
+    // being present AND each list being non-empty so older baselines
+    // (sl1-empty through sl1-objectives) stay bit-for-bit stable.
+    if let Some(obs) = sl1.observability.as_ref() {
+        if !obs.metrics.is_empty() {
+            h.update(b"sl1.observability.metrics.v1");
+            h.update((obs.metrics.len() as u64).to_le_bytes());
+            for m in &obs.metrics {
+                feed_str(h, &m.id);
+                feed_metric_source(h, &m.source);
+            }
+        }
+        if !obs.dashboards.is_empty() {
+            h.update(b"sl1.observability.dashboards.v1");
+            h.update((obs.dashboards.len() as u64).to_le_bytes());
+            for d in &obs.dashboards {
+                feed_str(h, &d.id);
+                h.update(d.kind.as_str().as_bytes());
+                h.update((d.depends_on.len() as u64).to_le_bytes());
+                for t in &d.depends_on {
+                    feed_str(h, t);
+                }
+                h.update(d.freshness_slo_ticks.to_le_bytes());
+            }
+        }
+        if !obs.alerts.is_empty() {
+            h.update(b"sl1.observability.alerts.v1");
+            h.update((obs.alerts.len() as u64).to_le_bytes());
+            for a in &obs.alerts {
+                feed_str(h, &a.id);
+                feed_str(h, &a.metric);
+                feed_alert_predicate(h, a.predicate);
+                h.update(a.severity.as_str().as_bytes());
+            }
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -538,6 +575,35 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
                 h.update([0x00]);
             }
             h.update(runtime.game_phase.as_str().as_bytes());
+        }
+        // Per-tick observability runtime fingerprint (PR 9). Each
+        // sub-section is gated on its static counterpart being
+        // non-empty so older baselines stay stable.
+        if let Some(obs) = sl1.observability.as_ref() {
+            if !obs.metrics.is_empty() {
+                h.update(b"sl1.runtime.observability.metrics.v1");
+                h.update((runtime.metric_states.len() as u64).to_le_bytes());
+                for (mid, state) in &runtime.metric_states {
+                    feed_str(h, mid);
+                    feed_metric_state(h, *state);
+                }
+            }
+            if !obs.dashboards.is_empty() {
+                h.update(b"sl1.runtime.observability.dashboards.v1");
+                h.update((runtime.dashboard_states.len() as u64).to_le_bytes());
+                for (did, state) in &runtime.dashboard_states {
+                    feed_str(h, did);
+                    feed_dashboard_state(h, *state);
+                }
+            }
+            if !obs.alerts.is_empty() {
+                h.update(b"sl1.runtime.observability.alerts.v1");
+                h.update((runtime.alert_states.len() as u64).to_le_bytes());
+                for (aid, state) in &runtime.alert_states {
+                    feed_str(h, aid);
+                    feed_alert_state(h, *state);
+                }
+            }
         }
     }
 }
@@ -838,6 +904,61 @@ fn feed_event(h: &mut Sha256, e: &SimEvent) {
                 }
                 None => h.update([0x00]),
             }
+        }
+        SimEvent::Sl1DashboardStateChanged {
+            dashboard_id,
+            from,
+            to,
+            tick,
+            freshness_ticks,
+        } => {
+            h.update([0x1c]);
+            h.update((dashboard_id.len() as u64).to_le_bytes());
+            h.update(dashboard_id.as_bytes());
+            h.update((from.len() as u64).to_le_bytes());
+            h.update(from.as_bytes());
+            h.update((to.len() as u64).to_le_bytes());
+            h.update(to.as_bytes());
+            h.update(tick.to_le_bytes());
+            match freshness_ticks {
+                Some(v) => {
+                    h.update([0x01]);
+                    h.update(v.to_le_bytes());
+                }
+                None => h.update([0x00]),
+            }
+        }
+        SimEvent::Sl1AlertFired {
+            alert_id,
+            metric_id,
+            value,
+            severity,
+            predicate,
+            tick,
+        } => {
+            h.update([0x1d]);
+            h.update((alert_id.len() as u64).to_le_bytes());
+            h.update(alert_id.as_bytes());
+            h.update((metric_id.len() as u64).to_le_bytes());
+            h.update(metric_id.as_bytes());
+            h.update(value.to_le_bytes());
+            h.update((severity.len() as u64).to_le_bytes());
+            h.update(severity.as_bytes());
+            h.update((predicate.len() as u64).to_le_bytes());
+            h.update(predicate.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1AlertCleared {
+            alert_id,
+            metric_id,
+            tick,
+        } => {
+            h.update([0x1e]);
+            h.update((alert_id.len() as u64).to_le_bytes());
+            h.update(alert_id.as_bytes());
+            h.update((metric_id.len() as u64).to_le_bytes());
+            h.update(metric_id.as_bytes());
+            h.update(tick.to_le_bytes());
         }
     }
 }
@@ -1439,6 +1560,77 @@ fn hex_encode(bytes: &[u8]) -> String {
         s.push(TBL[(b & 0x0f) as usize] as char);
     }
     s
+}
+
+fn feed_metric_source(h: &mut Sha256, source: &crate::scenario_language_v1::Sl1MetricSource) {
+    use crate::scenario_language_v1::Sl1MetricSource::*;
+    h.update(source.kind().as_str().as_bytes());
+    match source {
+        PlaceCapacityUsedPercent { place, capacity } => {
+            feed_str(h, place);
+            feed_str(h, capacity);
+        }
+        PlaceInventoryCount { place, thing } => {
+            feed_str(h, place);
+            feed_str(h, thing);
+        }
+        DashboardFreshness { dashboard } => {
+            feed_str(h, dashboard);
+        }
+    }
+}
+
+fn feed_alert_predicate(h: &mut Sha256, p: crate::scenario_language_v1::Sl1AlertPredicate) {
+    use crate::scenario_language_v1::Sl1AlertPredicate::*;
+    match p {
+        Gt { threshold } => {
+            h.update([1u8]);
+            h.update(threshold.to_le_bytes());
+        }
+        Lt { threshold } => {
+            h.update([2u8]);
+            h.update(threshold.to_le_bytes());
+        }
+        OutOfRange { min, max } => {
+            h.update([3u8]);
+            h.update(min.to_le_bytes());
+            h.update(max.to_le_bytes());
+        }
+    }
+}
+
+fn feed_metric_state(h: &mut Sha256, s: crate::scenario_language_v1::Sl1MetricState) {
+    use crate::scenario_language_v1::Sl1MetricState::*;
+    match s {
+        Ok { value } => {
+            h.update([1u8]);
+            h.update(value.to_le_bytes());
+        }
+        NoData => h.update([0u8]),
+    }
+}
+
+fn feed_dashboard_state(h: &mut Sha256, s: crate::scenario_language_v1::Sl1DashboardState) {
+    use crate::scenario_language_v1::Sl1DashboardState::*;
+    match s {
+        Ok => h.update([1u8]),
+        Stale { freshness_ticks } => {
+            h.update([2u8]);
+            h.update(freshness_ticks.to_le_bytes());
+        }
+        NoData => h.update([0u8]),
+    }
+}
+
+fn feed_alert_state(h: &mut Sha256, s: crate::scenario_language_v1::Sl1AlertState) {
+    use crate::scenario_language_v1::Sl1AlertState::*;
+    match s {
+        Inactive => h.update([0u8]),
+        Firing { fired_at_tick } => {
+            h.update([1u8]);
+            h.update(fired_at_tick.to_le_bytes());
+        }
+    }
 }
 
 #[cfg(test)]
