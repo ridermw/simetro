@@ -701,7 +701,13 @@ fn cmd_export_session(
     drop(f);
 
     if bundle {
-        let tar_path = out.with_extension("tar");
+        // Per Codex PR #24 R1 P2: `out.with_extension(...)` REPLACES
+        // any existing extension, so `--out session.v1` would write
+        // `session.tar` (clobbering an unrelated file). Append `.tar`
+        // verbatim so `--out session.v1` produces `session.v1.tar`.
+        let mut tar_name = out.as_os_str().to_owned();
+        tar_name.push(".tar");
+        let tar_path = std::path::PathBuf::from(tar_name);
         if let Err(e) = package_bundle_tar(out, &tar_path) {
             eprintln!("error: packaging tar: {e}");
             return 3;
@@ -722,12 +728,11 @@ fn cmd_export_session(
 /// prefix so `tar -xf <tar_path>` reproduces the original layout
 /// (i.e. extracts into `<basename>/`).
 ///
-/// Entries are added in stable lexicographic order so the resulting
-/// tar is byte-for-byte reproducible across runs (same hash → same
-/// archive bytes). The `tar` crate uses USTAR format by default; we
-/// don't set mtime/uid/gid explicitly because the crate already
-/// zeroes them in deterministic mode (the default for files added
-/// via `append_path`).
+/// Entries are added in stable lexicographic order, and headers are
+/// written via [`tar::HeaderMode::Deterministic`] so mtime/uid/gid
+/// are zeroed — the resulting tar is byte-for-byte reproducible
+/// across runs and machines for the same input directory (same hash
+/// → same archive bytes). Per Codex PR #24 R1 P1.
 fn package_bundle_tar(
     bundle_dir: &std::path::Path,
     tar_path: &std::path::Path,
@@ -744,10 +749,11 @@ fn package_bundle_tar(
 
     let file = std::fs::File::create(tar_path)?;
     let mut builder = tar::Builder::new(file);
-    // Reproducibility knobs: mtime/uid/gid/uname/gname are zeroed
-    // by default via append_path_with_name's reading of metadata,
-    // but cargo deterministic packaging works best if we override.
-    // For now rely on tar's defaults — adequate for replay reads.
+    // Per Codex PR #24 R1 P1: Builder::new defaults to
+    // HeaderMode::Complete which records the live filesystem
+    // mtime/uid/gid. That breaks byte-for-byte reproducibility
+    // across runs/machines. Deterministic mode zeroes those fields.
+    builder.mode(tar::HeaderMode::Deterministic);
     let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(bundle_dir)?
         .filter_map(Result::ok)
         .map(|e| e.path())
@@ -941,5 +947,40 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_dir_all(&tmp);
         let _ = std::fs::remove_file(&tar_path);
+    }
+
+    /// Per Codex PR #24 R1 P1: building the same directory contents
+    /// twice MUST produce identical tar bytes. With the default
+    /// `HeaderMode::Complete` this fails (mtime/uid differ). With
+    /// `HeaderMode::Deterministic` the headers are zeroed.
+    #[test]
+    fn package_bundle_tar_is_byte_for_byte_reproducible() {
+        let tmp = std::env::temp_dir().join(format!("simetro-tar-determ-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
+
+        let tar1 = tmp.with_extension("tar.1");
+        let tar2 = tmp.with_extension("tar.2");
+        let _ = std::fs::remove_file(&tar1);
+        let _ = std::fs::remove_file(&tar2);
+        super::package_bundle_tar(&tmp, &tar1).unwrap();
+        // Sleep so any mtime-recording variant produces a different
+        // timestamp between the two builds.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        super::package_bundle_tar(&tmp, &tar2).unwrap();
+
+        let bytes1 = std::fs::read(&tar1).unwrap();
+        let bytes2 = std::fs::read(&tar2).unwrap();
+        assert_eq!(
+            bytes1, bytes2,
+            "tarballs must be byte-for-byte identical across runs \
+             (HeaderMode::Deterministic should zero mtime/uid/gid)"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&tar1);
+        let _ = std::fs::remove_file(&tar2);
     }
 }
