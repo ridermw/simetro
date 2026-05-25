@@ -317,7 +317,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
 ///
 /// Used by tests and tooling that want to load an SL1 fragment outside
 /// of a full simetro scene. The surrounding scene loader wires the SL1
-/// block into the larger [`crate::loader::RawScene`] flow.
+/// block into the larger `RawScene` flow inside `crate::loader`.
 ///
 /// # Errors
 /// Returns [`Sl1LoadError::UnknownField`] for any unknown
