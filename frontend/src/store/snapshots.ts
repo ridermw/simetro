@@ -12,8 +12,7 @@
 // Two-snapshot interpolation: renderer asks for `interpolated()` at
 // every animation frame; if we have a previous + current pair we
 // lerp positions over the tick window. With a single snapshot we
-// render statically (covers snapshot interpolation's case and runtime safety contract edge case
-// #2: "first snapshot before first event").
+// render statically (covers edge case #2: first snapshot before first event).
 //
 // Tab-refocus edge case (tab-refocus invariant): when the page is hidden the
 // rAF loop pauses; on resume we jump-cut to the latest snapshot

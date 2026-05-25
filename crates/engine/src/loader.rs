@@ -663,7 +663,7 @@ fn validate_amount(field: &'static str, amount: u64) -> Result<(), LoadError> {
     Ok(())
 }
 
-/// Per tool-spec round-trip acceptance criteria0. Accept only known agent kinds; reject
+/// Per tool-spec round-trip acceptance criteria. Accept only known agent kinds; reject
 /// feature-gated kinds when the binary wasn't built with the
 /// corresponding feature.
 fn validate_agent_kind(index: usize, kind: &str) -> Result<(), LoadError> {

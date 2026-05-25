@@ -13,7 +13,7 @@
 //! frame markers (determinism contract — deterministic, ordered system execution).
 //!
 //! `TickRunner` owns all per-tick scratch buffers so steady-state ticks
-//! make zero heap allocations (throughput target; gated by the dhat test
+//! make zero heap allocations (zero-allocation invariant; gated by the dhat test
 //! in `tests/zero_alloc.rs`).
 
 use simetro_protocol::{ActionTag, SimEvent, SimMessage};

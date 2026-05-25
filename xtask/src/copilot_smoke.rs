@@ -16,7 +16,7 @@
 //! We intentionally do NOT try to read stdout — ACP servers produce
 //! nothing until they receive a `tools/initialize` envelope, and a
 //! cross-platform non-blocking pipe read is out of scope for a
-//! "effort: S" smoke. Once the captured ACP fixture lands , this smoke can be extended to issue a real `initialize`
+//! "effort: S" smoke. Once the captured ACP fixture lands, this smoke can be extended to issue a real `initialize`
 //! and verify the reply shape.
 //!
 //! Exit codes:

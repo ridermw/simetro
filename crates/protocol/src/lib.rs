@@ -91,7 +91,7 @@ pub struct StaticPayload {
     pub nodes: Vec<NodeView>,
     /// All paths in the scene with endpoints baked to positions so the
     /// renderer can group by `color` into one `Path2D` per color and
-    /// hit the renderer batching and allocation target batching target (~6 draw calls per scene).
+    /// hit the renderer batching target (~6 draw calls per scene).
     pub paths: Vec<PathView>,
     /// JSON string id → numeric id, segregated by section so two kinds
     /// can share an id space without collision (identifier interning contract).

@@ -293,7 +293,7 @@ async fn every_fixture_round_trips_through_bridge_dispatch() {
             assert!(
                 !reply.rationale.contains(forbidden),
                 "[{label}] {path:?}: rationale {:?} contains forbidden substring {forbidden:?} \
-                 (XPIA hardening XPIA hardening — `raw` must NOT surface)",
+                 (XPIA hardening — `raw` must NOT surface)",
                 reply.rationale
             );
         }

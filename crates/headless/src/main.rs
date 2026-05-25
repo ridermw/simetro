@@ -737,7 +737,7 @@ fn cmd_export_session(
 ///
 /// The result is byte-for-byte reproducible across runs and machines
 /// for the same input directory + contents (same hash → same archive
-/// bytes). Per review finding reviewer's observation that
+/// bytes). Per reviewer observation that
 /// the previous fix only addressed uid/gid, not mtime.
 fn package_bundle_tar(
     bundle_dir: &std::path::Path,

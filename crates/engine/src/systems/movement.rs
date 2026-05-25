@@ -16,7 +16,7 @@ pub type ArrivalScratch = (MoverId, PathId);
 /// Advance every `Traveling` mover. Returns the number of arrivals
 /// this tick (handy for benches/asserts).
 ///
-/// `scratch` is reused across ticks (zero-alloc target — zero-allocation target).
+/// `scratch` is reused across ticks (zero-allocation target).
 pub fn run(
     world: &mut World,
     events: &mut Vec<SimEvent>,

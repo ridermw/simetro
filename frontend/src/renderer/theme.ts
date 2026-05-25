@@ -63,7 +63,7 @@ export function foregroundColor(theme: Theme): string {
   return theme.palette[1] ?? DEFAULT_THEME.palette[1]!;
 }
 
-// Easing curves. workspace8 swaps these into the animation table by
+// Easing curves. The animation module swaps these into the animation table by
 // reference; renderer keeps them here so theme.ts owns "visual feel"
 // holistically (color + motion).
 export const easings = {

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// validation workflow.2: E2E tests run against a built Vite preview with URL
+// validation workflow: E2E tests run against a built Vite preview with URL
 // params controlling determinism (?seed=N&deterministic=true&tick=N).
 // Visual diff baselines are committed per OS, macOS first.
 export default defineConfig({

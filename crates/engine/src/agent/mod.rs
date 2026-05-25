@@ -12,7 +12,7 @@
 //!
 //!   The `AgentHost` wraps `agent.act()` in `std::panic::catch_unwind`
 //!   so a panicking agent never takes down the engine (agent isolation contract).
-//!   Panics surface as `AgentError::Panicked`, which workspace1 will turn
+//!   Panics surface as `AgentError::Panicked`, which the engine will turn
 //!   into a typed `SimMessage::Fault::AgentCrashed` event.
 //! ```
 //!

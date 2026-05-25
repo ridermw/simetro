@@ -11,7 +11,7 @@
 //                      invalid_action, behind, tick_over_budget).
 //   HeartbeatBadge   — green dot when snapshots are arriving on
 //                      schedule, amber when stale > 1s, red after
-//                      3s (stale-channel detection stale-channel detection).
+//                      3s (stale-channel detection).
 //   PerfOverlay      — fps + tick budget read-out, toggled by a
 //                      query param (?perf=1) or a hotkey.
 //
