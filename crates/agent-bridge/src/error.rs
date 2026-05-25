@@ -49,7 +49,7 @@ impl LlmError {
     /// [`Self::variant_name`] for compile-time-checked variant
     /// enumeration. Adding a new variant requires both updating
     /// `variant_name`'s match arm (compile-time check) AND appending
-    /// here (test catches the count mismatch via [`Self::ALL_VARIANTS`]).
+    /// here (test catches the count mismatch via [`Self::all_variants`]).
     ///
     /// The strings in payload fields are intentionally minimal; this
     /// constructor exists only so callers (tests, docs) can iterate
