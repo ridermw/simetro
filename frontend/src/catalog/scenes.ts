@@ -1081,6 +1081,139 @@ export const SCENE_CATALOG = [
     ],
     status: "ready",
   }),
+  defineScene({
+    id: "sandwich-shop",
+    title: "Sandwich Shop",
+    subtitle:
+      "Slice bread, layer fillings, and ring up hungry customers before the lunch rush stretches the line out the door.",
+    world_kind: "sl1_scenario",
+    difficulty: "intro",
+    palette_name: "solarized_warm",
+    rules_summary: [
+      "Pantry supplies raw bread and fillings; the prep counter assembles sandwiches; the front counter rings up orders.",
+      "Customers arrive every 6 ticks starting at tick 30; missed orders walk out the door.",
+      "A lunch rush pressure doubles raw_bread arrivals at tick 600 — survive until tick 1200 to win the shift.",
+    ],
+    visual_notes: [
+      "Warm cream and deep teal cafe palette; toasted orange bread, herb green veggies, mustard condiments.",
+      "Three-place horizontal flow with a single operator overlay for the queue.",
+    ],
+    status: "draft",
+  }),
+  defineScene({
+    id: "theme-park-day",
+    title: "Theme Park Day",
+    subtitle:
+      "Keep the rides running and the lines moving from gate-open to fireworks. A thunderstorm threatens the parade.",
+    world_kind: "sl1_scenario",
+    difficulty: "easy",
+    palette_name: "midway_summer",
+    rules_summary: [
+      "Front gate admits guests and snack vouchers; the midway issues ride tokens; the headline ride produces happy reviews.",
+      "Guests request rides every 8 ticks; missed requests leave the park unhappy.",
+      "Thunderstorm pressure increases guest density at tick 1200 — survive until tick 1800 to reach fireworks.",
+    ],
+    visual_notes: [
+      "Sun-bleached cream and ink navy with cherry-red coaster and marigold popcorn accents.",
+      "Four places form a Y silhouette with a guest-services operator overlay below.",
+    ],
+    status: "draft",
+  }),
+  defineScene({
+    id: "school-lunch-line",
+    title: "School Lunch Line",
+    subtitle:
+      "Cafeteria opens. 600 hungry kids, one hot line, and a 22-minute lunch period. Hot meals must hit trays before the bell.",
+    world_kind: "sl1_scenario",
+    difficulty: "intro",
+    palette_name: "cafeteria_bright",
+    rules_summary: [
+      "Kitchen produces hot dishes and milk; the serving line plates trays; the cafeteria collects ticket stubs.",
+      "Hungry kids arrive every 4 ticks; tolerate up to 8 misses before the principal calls.",
+      "Midday rush at tick 400 multiplies hot_dish flow; ring the closing bell at tick 1320 to win.",
+    ],
+    visual_notes: [
+      "Bright cafeteria white on slate with tomato-red trays and broccoli-green salad accents.",
+      "Three production places plus a hall-monitor overlay watching the bell countdown.",
+    ],
+    status: "draft",
+  }),
+  defineScene({
+    id: "coffee-roastery",
+    title: "Coffee Roastery",
+    subtitle:
+      "Green beans in, single-origin bags out. Time the roaster against the wholesale order book — overshoot a degree and the batch is bitter.",
+    world_kind: "sl1_scenario",
+    difficulty: "easy",
+    palette_name: "espresso_morning",
+    rules_summary: [
+      "Green-bean silo feeds the drum roaster; bags route to the wholesale dock; a QA cupping bar samples every batch.",
+      "Wholesale orders fire every 90 ticks with a 60-point value; two missed orders ends the day.",
+      "Feature roast week pressure (tick 800) bumps green_bean intake — survive until tick 2400.",
+    ],
+    visual_notes: [
+      "Toasted cream and espresso brown with saddle bean tones and copper roaster glow.",
+      "Y-shaped layout: silo to roaster to dock, with QA branching down from the roaster.",
+    ],
+    status: "draft",
+  }),
+  defineScene({
+    id: "library-checkout",
+    title: "Library Checkout",
+    subtitle:
+      "Returned books in the bin, holds racked, patrons at the desk. Keep the queue calm and the new-release shelf full.",
+    world_kind: "sl1_scenario",
+    difficulty: "intro",
+    palette_name: "library_parchment",
+    rules_summary: [
+      "Return bin feeds the sorting cart; processed books reach the new-release shelf; patrons check out.",
+      "Patron browse requests every 7 ticks; sorting cart must keep up with returns.",
+      "After-school rush at tick 900 multiplies return flow — survive until tick 1800 for closing.",
+    ],
+    visual_notes: [
+      "Parchment cream on ink black with library-stamp crimson and leather-spine ochre.",
+      "Linear flow from return bin to shelf with a reference-librarian operator overlay.",
+    ],
+    status: "draft",
+  }),
+  defineScene({
+    id: "farmers-market",
+    title: "Farmers Market Saturday",
+    subtitle:
+      "Stalls open at sunrise. Stock the booth from the back truck, watch the apricots before noon, and time the bakery box for peak foot traffic.",
+    world_kind: "sl1_scenario",
+    difficulty: "easy",
+    palette_name: "market_lemon",
+    rules_summary: [
+      "Back truck restocks the stall; shoppers pay at the front register; a roving market manager keeps eyes on the aisles.",
+      "Saturday shoppers arrive every 5 ticks; tolerate up to 6 walkouts.",
+      "Noon peak pressure at tick 600 increases produce arrivals — survive until tick 1500 to close.",
+    ],
+    visual_notes: [
+      "Lemon-yellow awning over slate cobblestones with tomato-red ripe stock and basil-green produce.",
+      "Three production places with a market-manager operator overlay below.",
+    ],
+    status: "draft",
+  }),
+  defineScene({
+    id: "bicycle-repair-shop",
+    title: "Bicycle Repair Shop",
+    subtitle:
+      "Spring. Every bike in the neighborhood arrives with a flat tire or a sticky chain. Triage the work bench before sundown.",
+    world_kind: "sl1_scenario",
+    difficulty: "easy",
+    palette_name: "workshop_mint",
+    rules_summary: [
+      "Customer drop-off feeds the work bench; repaired bikes go to the pickup wall; the front desk runs the queue.",
+      "Owner pickups every 12 ticks; tolerate up to 3 missed pickups.",
+      "Spring rush at tick 720 increases intake_ticket flow for 480 ticks — survive until tick 1800 to close shop.",
+    ],
+    visual_notes: [
+      "Mint workshop walls on graphite floor with brake-light red and chain-lube amber accents.",
+      "Linear flow from drop-off to pickup wall with a front-desk operator overlay.",
+    ],
+    status: "draft",
+  }),
 ] as const satisfies readonly SceneCatalogEntry[];
 
 export type SceneCatalogId = (typeof SCENE_CATALOG)[number]["id"];

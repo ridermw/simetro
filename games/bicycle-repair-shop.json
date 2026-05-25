@@ -1,0 +1,452 @@
+{
+  "schema_version": 1,
+  "name": "bicycle-repair-shop",
+  "theme": {
+    "palette": [
+      "#ecfdf5",
+      "#1f2937",
+      "#dc2626",
+      "#f59e0b",
+      "#059669",
+      "#2563eb",
+      "#a21caf"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "bicycle-repair-shop",
+    "title": "Bicycle Repair Shop",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "Spring. Every bike in the neighborhood arrives with a flat tire or a sticky chain. Triage the work bench so customers ride home before sundown.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "showcase",
+      "daily_life",
+      "easy"
+    ],
+    "palette_note": "Mint workshop walls on graphite floor; brake-light red for emergency repairs, chain-lube amber, frame-paint emerald, sky-blue parts bins, magenta for the espresso machine in the waiting area.",
+    "layout_note": "Customer drop-off (source) feeds the work bench (compute_cluster), repaired bikes get rolled out to the pickup wall (dashboard), and a front-desk mechanic overlay (operator) gives quotes and runs the queue.",
+    "node_language_note": "source / compute_cluster / dashboard / operator. The compute_cluster is the work bench \u2014 every wrench, truing stand, and parts bin counts as capacity.",
+    "mover_path_note": "Movers do not exist yet for SL1 scenes; the legacy pieces.movers array is intentionally empty. SL1 links from drop-off to work-bench to pickup-wall represent typed bike flow; tune-up runs on work-bench and hand-off on pickup-wall. Cross-place transport will animate as rolling bike sprites when the SL1 renderer ships.",
+    "review_note": "Marked status=draft in the frontend catalog because the SL1 canvas renderer is not yet wired. Selecting this scene loads it successfully and shows catalog metadata in the scene browser. The SL1 HUD chips, dashboard freshness pill, and milestone strip render via the existing SL1 HUD overlay; the bespoke canvas vignette ships when the SL1 renderer is wired in a later PR."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "drop-off",
+        "role": "source",
+        "pos": [
+          -320.0,
+          0.0
+        ],
+        "capacity": {
+          "racks": 12
+        },
+        "storage": {},
+        "accepts": [],
+        "produces": [
+          "intake_ticket",
+          "spare_part"
+        ],
+        "failure_domains": [
+          "shop"
+        ],
+        "operating_states": {}
+      },
+      {
+        "id": "work-bench",
+        "role": "compute_cluster",
+        "pos": [
+          0.0,
+          0.0
+        ],
+        "capacity": {
+          "stands": 3,
+          "wrench_slots": 4
+        },
+        "storage": {
+          "intake_ticket": {
+            "capacity": 800,
+            "initial": 600
+          },
+          "spare_part": {
+            "capacity": 1500,
+            "initial": 1100
+          },
+          "repaired_bike": {
+            "capacity": 5000,
+            "initial": 12
+          }
+        },
+        "accepts": [
+          "intake_ticket",
+          "spare_part"
+        ],
+        "produces": [
+          "repaired_bike"
+        ],
+        "failure_domains": [
+          "shop"
+        ],
+        "operating_states": {}
+      },
+      {
+        "id": "pickup-wall",
+        "role": "dashboard",
+        "pos": [
+          320.0,
+          -120.0
+        ],
+        "capacity": {
+          "hooks": 12
+        },
+        "storage": {
+          "repaired_bike": {
+            "capacity": 3000,
+            "initial": 4
+          },
+          "pickup_slip": {
+            "capacity": 3000,
+            "initial": 0
+          }
+        },
+        "accepts": [
+          "repaired_bike"
+        ],
+        "produces": [
+          "pickup_slip"
+        ],
+        "failure_domains": [
+          "shop"
+        ],
+        "operating_states": {}
+      },
+      {
+        "id": "front-desk",
+        "role": "operator",
+        "pos": [
+          0.0,
+          240.0
+        ],
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "shop"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "dropoff-to-bench",
+        "type": "rollin",
+        "from": "drop-off",
+        "to": "work-bench",
+        "direction": "forward",
+        "capacity": {
+          "bikes_per_tick": 4
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "intake_ticket",
+          "spare_part"
+        ],
+        "queue_capacity": 60,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "bench-to-pickup",
+        "type": "rollout",
+        "from": "work-bench",
+        "to": "pickup-wall",
+        "direction": "forward",
+        "capacity": {
+          "bikes_per_tick": 3
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "repaired_bike"
+        ],
+        "queue_capacity": 30,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "bench-to-desk",
+        "type": "intercom",
+        "from": "work-bench",
+        "to": "front-desk",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 16,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 5
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "intake_ticket",
+        "kind": "ingredient",
+        "tags": [
+          "work_order"
+        ],
+        "freshness_budget_ticks": 1200
+      },
+      {
+        "id": "spare_part",
+        "kind": "ingredient",
+        "tags": [
+          "inventory"
+        ],
+        "freshness_budget_ticks": 9999
+      },
+      {
+        "id": "repaired_bike",
+        "kind": "finished_product",
+        "tags": [
+          "bike"
+        ],
+        "freshness_budget_ticks": 900
+      },
+      {
+        "id": "pickup_slip",
+        "kind": "receipt",
+        "tags": [
+          "ledger"
+        ],
+        "freshness_budget_ticks": 600
+      }
+    ],
+    "transforms": [
+      {
+        "id": "tune-up",
+        "type": "service",
+        "runs_on": "work-bench",
+        "inputs": [
+          {
+            "thing": "intake_ticket",
+            "amount": 1
+          },
+          {
+            "thing": "spare_part",
+            "amount": 2
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "repaired_bike",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 4,
+        "duration_ticks": 3,
+        "deadline_ticks": 10,
+        "capacity_cost": {
+          "stands": 1,
+          "wrench_slots": 2
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "hand-off",
+        "type": "handoff",
+        "runs_on": "pickup-wall",
+        "inputs": [
+          {
+            "thing": "repaired_bike",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "pickup_slip",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 3,
+        "duration_ticks": 1,
+        "deadline_ticks": 6,
+        "capacity_cost": {
+          "hooks": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      }
+    ],
+    "demand": [
+      {
+        "id": "owner-pickup",
+        "type": "pickup",
+        "target": {
+          "type": "place",
+          "id": "pickup-wall"
+        },
+        "requires": [
+          "pickup_slip"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 12,
+          "start_tick": 60
+        },
+        "deadline_ticks": 90,
+        "priority": "normal",
+        "value": 25,
+        "penalty": {
+          "score": -40,
+          "warning": "owner_left_without_bike"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "spring-rush",
+        "type": "source_multiplier",
+        "at_tick": 720,
+        "duration_ticks": 480,
+        "target": "work-bench",
+        "thing": "intake_ticket",
+        "multiplier": 1.6
+      }
+    ],
+    "objectives": [
+      {
+        "id": "pickup-slips-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "pickup-wall",
+        "thing": "pickup_slip",
+        "max_stale_ticks": 360
+      },
+      {
+        "id": "deliver-the-bikes",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "owner-pickup",
+        "max_missed": 3
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "bikes-pile-up",
+        "type": "stale_target",
+        "place": "work-bench",
+        "thing": "repaired_bike",
+        "threshold_ticks": 540,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "close-shop-at-sundown",
+        "type": "survive_until",
+        "at_tick": 1800
+      }
+    ],
+    "observability": {
+      "metrics": [
+        {
+          "id": "bench-load",
+          "source": "place_capacity_used_percent",
+          "place": "work-bench",
+          "capacity": "stands"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "service-board",
+          "type": "live",
+          "depends_on": [
+            "pickup_slip"
+          ],
+          "freshness_slo_ticks": 360
+        }
+      ],
+      "alerts": [
+        {
+          "id": "bench-overloaded",
+          "metric": "bench-load",
+          "predicate": {
+            "type": "gt",
+            "threshold": 90
+          },
+          "severity": "warning"
+        }
+      ]
+    },
+    "agents": [
+      {
+        "id": "shop-owner",
+        "kind": "mock",
+        "role": "observer",
+        "interval_ticks": 60,
+        "observation_scope": [
+          "metric:bench-load",
+          "dashboard:service-board"
+        ],
+        "allowed_actions": [],
+        "budgets": {
+          "max_cost_per_decision": 1,
+          "cooldown_ticks": 0
+        },
+        "objective_weights": {
+          "deliver-the-bikes": 1.0
+        }
+      }
+    ],
+    "milestones": [
+      {
+        "id": "spring-arrives",
+        "label": "Spring rush begins",
+        "trigger": {
+          "type": "pressure_activated",
+          "pressure": "spring-rush"
+        },
+        "camera_focus": [
+          "work-bench"
+        ]
+      },
+      {
+        "id": "rush-tapers",
+        "label": "Spring rush tapers",
+        "trigger": {
+          "type": "pressure_deactivated",
+          "pressure": "spring-rush"
+        },
+        "camera_focus": [
+          "pickup-wall"
+        ]
+      }
+    ]
+  }
+}
