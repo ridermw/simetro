@@ -1,5 +1,5 @@
 // frontend/src/tests/unit/renderer.test.ts
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { Renderer } from "../../renderer/canvas";
 import {
   DEFAULT_THEME,
@@ -255,6 +255,44 @@ describe("Renderer viewport", () => {
     r.refitViewport(); // should not throw or crash
     // Pan-offset preserved (no-op since no bounds).
     expect(r.viewportForTest.offsetX).toBe(100);
+  });
+
+  it("auto-fit clamps scale to a positive minimum on tiny canvases", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 20;
+    canvas.height = 20;
+    const r = new Renderer(canvas);
+    r.warm(DEFAULT_THEME);
+    r.setScene(largeScene());
+    const vp = r.viewportForTest;
+    expect(vp.scale).toBeCloseTo(0.15, 6);
+    expect(Number.isFinite(vp.offsetX)).toBe(true);
+    expect(Number.isFinite(vp.offsetY)).toBe(true);
+  });
+
+  it("releases pointer capture when dragging ends", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 800;
+    canvas.height = 600;
+    const r = new Renderer(canvas);
+    const setPointerCapture = vi.fn();
+    const releasePointerCapture = vi.fn();
+    const hasPointerCapture = vi.fn(() => true);
+    Object.assign(canvas, { setPointerCapture, releasePointerCapture, hasPointerCapture });
+    r.attachViewportControls();
+
+    const down = new MouseEvent("pointerdown", { button: 0, clientX: 10, clientY: 10, bubbles: true });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (down as any).pointerId = 7;
+    canvas.dispatchEvent(down);
+
+    const up = new MouseEvent("pointerup", { button: 0, clientX: 10, clientY: 10, bubbles: true });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (up as any).pointerId = 7;
+    canvas.dispatchEvent(up);
+
+    expect(setPointerCapture).toHaveBeenCalledWith(7);
+    expect(releasePointerCapture).toHaveBeenCalledWith(7);
   });
 });
 

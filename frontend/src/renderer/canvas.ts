@@ -283,8 +283,14 @@ export class Renderer {
       this.panBy(dx, dy);
     });
 
-    const endDrag = (): void => {
+    const endDrag = (e: PointerEvent): void => {
       isDragging = false;
+      if (
+        canvas.releasePointerCapture !== undefined &&
+        (canvas.hasPointerCapture === undefined || canvas.hasPointerCapture(e.pointerId))
+      ) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
     };
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
@@ -328,7 +334,11 @@ export class Renderer {
 
     const availW = cssW - FIT_PADDING * 2;
     const availH = cssH - FIT_PADDING * 2;
-    const scale = Math.min(availW / worldW, availH / worldH);
+    const rawScale = Math.min(availW / worldW, availH / worldH);
+    const scale = Math.max(
+      MIN_SCALE,
+      Math.min(MAX_SCALE, Number.isFinite(rawScale) ? rawScale : 1)
+    );
 
     const offsetX = cssW / 2 - (this.worldMinX + worldW / 2) * scale;
     const offsetY = cssH / 2 - (this.worldMinY + worldH / 2) * scale;
