@@ -98,6 +98,55 @@ pub struct StaticPayload {
     pub node_names: std::collections::BTreeMap<u32, String>,
     pub path_names: std::collections::BTreeMap<u32, String>,
     pub mover_names: std::collections::BTreeMap<u32, String>,
+    /// `scenario_language_v1` places — author-declared locations with
+    /// capacity, storage, accepted/produced thing tags, failure
+    /// domains, and an operating-state map. Static metadata only;
+    /// per-tick utilization (if/when it lands) goes in [`SnapshotPayload`].
+    /// Empty for non-SL1 scenes and for SL1 scenes with no `places`.
+    /// Sorted by `id` for deterministic ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_places: Vec<Sl1PlaceView>,
+}
+
+/// Wire-level view of one validated SL1 place. Mirrors
+/// `engine::scenario_language_v1::Sl1Place` 1:1.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sl1PlaceView {
+    pub id: String,
+    pub role: String,
+    pub pos: [f32; 2],
+    pub capacity: std::collections::BTreeMap<String, u64>,
+    pub storage: std::collections::BTreeMap<String, Sl1StorageSlotView>,
+    pub accepts: Vec<String>,
+    pub produces: Vec<String>,
+    pub failure_domains: Vec<String>,
+    pub operating_states: std::collections::BTreeMap<String, Sl1OperatingStateView>,
+}
+
+/// Wire-level storage slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1StorageSlotView {
+    pub capacity: u64,
+    pub initial: u64,
+}
+
+/// Wire-level operating-state entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1OperatingStateView {
+    pub predicate: Sl1OperatingPredicateView,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grace_ticks: Option<u64>,
+}
+
+/// Wire-level operating-state predicate. Tagged so the TS side can
+/// pattern-match without ambiguity. Future predicate kinds are added
+/// in their respective PRs (Things → InventoryGte, Observability →
+/// MetricGte).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1OperatingPredicateView {
+    UsedPercentGte { metric: String, threshold: u8 },
+    OverloadedTicksGt { ticks: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -620,6 +669,7 @@ mod tests {
             node_names,
             path_names,
             mover_names: std::collections::BTreeMap::new(),
+            sl1_places: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);

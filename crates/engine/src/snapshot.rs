@@ -17,11 +17,13 @@
 //! tick loop allocates nothing per frame (zero-allocation target).
 
 use simetro_protocol::{
-    MoverState as WireMover, NodeShapeTag, NodeView, PathView, SnapshotPayload, StaticPayload,
+    MoverState as WireMover, NodeShapeTag, NodeView, PathView, Sl1OperatingPredicateView,
+    Sl1OperatingStateView, Sl1PlaceView, Sl1StorageSlotView, SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
+use crate::scenario_language_v1::{Sl1OperatingPredicate, Sl1Place};
 use crate::world::World;
 
 /// Build the connect-time [`StaticPayload`] from a loaded scene.
@@ -84,6 +86,59 @@ pub fn encode_static_parts(
         node_names: node_name_map(world, id_map),
         path_names: path_name_map(world, id_map),
         mover_names: numeric_id_map(&id_map.mover_names),
+        sl1_places: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.places.iter().map(place_to_view).collect())
+            .unwrap_or_default(),
+    }
+}
+
+fn place_to_view(place: &Sl1Place) -> Sl1PlaceView {
+    Sl1PlaceView {
+        id: place.id.clone(),
+        role: place.role.clone(),
+        pos: place.pos,
+        capacity: place.capacity.clone(),
+        storage: place
+            .storage
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    Sl1StorageSlotView {
+                        capacity: v.capacity,
+                        initial: v.initial,
+                    },
+                )
+            })
+            .collect(),
+        accepts: place.accepts.clone(),
+        produces: place.produces.clone(),
+        failure_domains: place.failure_domains.clone(),
+        operating_states: place
+            .operating_states
+            .iter()
+            .map(|(name, state)| {
+                (
+                    name.clone(),
+                    Sl1OperatingStateView {
+                        predicate: match &state.predicate {
+                            Sl1OperatingPredicate::UsedPercentGte { metric, threshold } => {
+                                Sl1OperatingPredicateView::UsedPercentGte {
+                                    metric: metric.clone(),
+                                    threshold: *threshold,
+                                }
+                            }
+                            Sl1OperatingPredicate::OverloadedTicksGt { ticks } => {
+                                Sl1OperatingPredicateView::OverloadedTicksGt { ticks: *ticks }
+                            }
+                        },
+                        grace_ticks: state.grace_ticks,
+                    },
+                )
+            })
+            .collect(),
     }
 }
 

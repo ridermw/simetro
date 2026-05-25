@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "name": "sl1-places",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "kusto-cluster",
+        "role": "compute",
+        "pos": [120.0, 80.0],
+        "capacity": {
+          "query_slots": 64,
+          "cooling_tons": 0
+        },
+        "storage": {
+          "hot_cache": { "capacity": 1024, "initial": 256 }
+        },
+        "accepts": ["query", "ingestion"],
+        "produces": ["result"],
+        "failure_domains": ["eastus", "az1", "data-platform"],
+        "operating_states": {
+          "strained": { "when": "query_slots.used_percent >= 80" },
+          "overloaded": { "when": "query_slots.used_percent >= 95", "grace_ticks": 120 },
+          "failed": { "when": "overloaded_ticks > 600" }
+        }
+      },
+      {
+        "id": "gpu-fleet",
+        "role": "compute",
+        "pos": [320.0, 80.0],
+        "capacity": {
+          "gpus": 256
+        },
+        "storage": {},
+        "accepts": ["training_job"],
+        "produces": ["model_artifact"],
+        "failure_domains": ["eastus", "az2"],
+        "operating_states": {
+          "saturated": { "when": "gpus.used_percent >= 90", "grace_ticks": 30 }
+        }
+      },
+      {
+        "id": "dashboard",
+        "role": "observability",
+        "pos": [220.0, 220.0],
+        "capacity": {},
+        "storage": {},
+        "accepts": ["metric"],
+        "produces": [],
+        "failure_domains": [],
+        "operating_states": {}
+      }
+    ],
+    "links": [],
+    "things": [],
+    "transforms": [],
+    "demand": [],
+    "pressure": [],
+    "objectives": [],
+    "failure_conditions": [],
+    "agents": [],
+    "milestones": []
+  }
+}

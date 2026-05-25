@@ -96,13 +96,17 @@ fn feed_world(h: &mut Sha256, world: &World) {
 
 /// Stable contribution of `world.sl1` to the deterministic hash.
 ///
-/// Emits a fixed `sl1.v1` tag with the SL1 schema version and the
-/// section counts in canonical order. Empty in PR 0 (counts are all 0)
-/// but **always emitted when an SL1 block is present** so that the
-/// baseline distinguishes a legacy scene from an SL1-equipped scene.
-/// Later PRs extend this with per-primitive content as behavior lands;
-/// any extension is a deliberate baseline drift that must be rolled
-/// into the baseline hash in the same PR.
+/// Emits a fixed `sl1.v1` tag with the SL1 schema version, the
+/// section counts in canonical order, and the per-primitive content
+/// for every primitive that has had its PR land. Empty for any
+/// not-yet-implemented primitive (zero count, no per-entry bytes)
+/// so older baselines remain stable until the next primitive lands.
+///
+/// Always emitted when an SL1 block is present so the baseline
+/// distinguishes a legacy scene from an SL1-equipped scene. PR 1 adds
+/// the per-place fingerprint (everything after the counts header).
+/// Any future extension is a deliberate baseline drift that must be
+/// rolled into the baseline hash in the same PR.
 fn feed_sl1(h: &mut Sha256, world: &World) {
     let Some(sl1) = world.sl1.as_ref() else {
         return;
@@ -120,6 +124,80 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
     h.update((sl1.agents.len() as u64).to_le_bytes());
     h.update((sl1.milestones.len() as u64).to_le_bytes());
     h.update([u8::from(sl1.observability.is_some())]);
+
+    // Per-place fingerprint (PR 1). Places are already sorted by id at
+    // validation time, so iterating in vec order is deterministic and
+    // equivalent to sorted iteration. Walking each place's content
+    // captures every author-declared field that distinguishes one
+    // configuration from another.
+    //
+    // When `sl1.places` is empty (e.g. `sl1-empty.json` fixture), the
+    // loop body runs zero times and no extra bytes are appended, so
+    // the existing baseline hash stays stable across this PR.
+    for place in &sl1.places {
+        h.update(b"sl1.place.v1");
+        feed_str(h, &place.id);
+        feed_str(h, &place.role);
+        h.update(place.pos[0].to_le_bytes());
+        h.update(place.pos[1].to_le_bytes());
+
+        h.update((place.capacity.len() as u64).to_le_bytes());
+        for (k, v) in &place.capacity {
+            feed_str(h, k);
+            h.update(v.to_le_bytes());
+        }
+
+        h.update((place.storage.len() as u64).to_le_bytes());
+        for (slot, def) in &place.storage {
+            feed_str(h, slot);
+            h.update(def.capacity.to_le_bytes());
+            h.update(def.initial.to_le_bytes());
+        }
+
+        feed_str_list(h, &place.accepts);
+        feed_str_list(h, &place.produces);
+        feed_str_list(h, &place.failure_domains);
+
+        h.update((place.operating_states.len() as u64).to_le_bytes());
+        for (name, state) in &place.operating_states {
+            feed_str(h, name);
+            feed_predicate(h, &state.predicate);
+            match state.grace_ticks {
+                Some(t) => {
+                    h.update([1u8]);
+                    h.update(t.to_le_bytes());
+                }
+                None => h.update([0u8]),
+            }
+        }
+    }
+}
+
+fn feed_str(h: &mut Sha256, s: &str) {
+    h.update((s.len() as u64).to_le_bytes());
+    h.update(s.as_bytes());
+}
+
+fn feed_str_list(h: &mut Sha256, list: &[String]) {
+    h.update((list.len() as u64).to_le_bytes());
+    for s in list {
+        feed_str(h, s);
+    }
+}
+
+fn feed_predicate(h: &mut Sha256, p: &crate::scenario_language_v1::Sl1OperatingPredicate) {
+    use crate::scenario_language_v1::Sl1OperatingPredicate;
+    match p {
+        Sl1OperatingPredicate::UsedPercentGte { metric, threshold } => {
+            h.update([0x01]);
+            feed_str(h, metric);
+            h.update([*threshold]);
+        }
+        Sl1OperatingPredicate::OverloadedTicksGt { ticks } => {
+            h.update([0x02]);
+            h.update(ticks.to_le_bytes());
+        }
+    }
 }
 
 fn feed_mover_state(h: &mut Sha256, s: MoverState) {

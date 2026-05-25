@@ -1,7 +1,8 @@
 # scenario_language_v1 (SL1)
 
-> **Status:** PR 0 skeleton. Only the grammar shape and load-time
-> validation exist; no engine behavior lands until later PRs.
+> **Status:** PR 1 — Places landed. The SL1 root, taxonomy, and Place
+> primitive ship; later primitives (links, things, transforms, …)
+> arrive in subsequent PRs.
 >
 > **Authoritative spec:**
 > [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](superpowers/specs/2026-05-24-scenario_language_v1-plan.md)
@@ -96,6 +97,94 @@ PR 0 introduces four typed surfaces that later PRs populate:
 
 All four are `#[non_exhaustive]` so adding variants in later PRs is
 not a breaking change to downstream pattern matches.
+
+## Places (PR 1)
+
+A **Place** is a typed location where work happens or things accumulate.
+It is the foundational SL1 primitive — links, transforms, demand,
+agents, and observability all reference places by id.
+
+### Schema
+
+```jsonc
+{
+  "id": "kusto-cluster",         // required, [a-zA-Z0-9_-]{1..=64}, unique
+  "role": "compute",             // required, free-form non-empty string
+  "pos": [120.0, 80.0],          // required, two finite f32 in [-1e6, 1e6]
+  "capacity": {                  // optional map<string, u64>
+    "query_slots": 64,           // bucket name → declared capacity
+    "cooling_tons": 0            // 0 is allowed (declared-but-unavailable)
+  },
+  "storage": {                   // optional map<thing_id, {capacity, initial}>
+    "hot_cache": {
+      "capacity": 1024,          // u64 > 0 (capacity=0 is rejected)
+      "initial": 256             // u64, must be ≤ capacity
+    }
+  },
+  "accepts":  ["query"],         // optional set<string>; canonicalized
+  "produces": ["result"],        // optional set<string>; canonicalized
+  "failure_domains": ["az1"],    // optional set<string>; canonicalized
+  "operating_states": {          // optional map<state_name, {when, grace_ticks?}>
+    "strained":   { "when": "query_slots.used_percent >= 80" },
+    "overloaded": { "when": "query_slots.used_percent >= 95", "grace_ticks": 120 },
+    "failed":     { "when": "overloaded_ticks > 600" }
+  }
+}
+```
+
+Unknown fields on a place are rejected at the serde layer
+(`#[serde(deny_unknown_fields)]`) and surface as
+`Sl1LoadError::Parse { message }`.
+
+### Predicate templates
+
+PR 1 supports exactly two operating-state predicate templates. There
+is **no expression language** — predicate strings are matched against
+fixed templates.
+
+| Template                                | Variant                |
+|-----------------------------------------|------------------------|
+| `<metric>.used_percent >= <0..=100>`    | `UsedPercentGte`       |
+| `overloaded_ticks > <ticks>`            | `OverloadedTicksGt`    |
+
+Additional predicates (`inventory_gte`, generic `metric_gte`) land
+with later PRs once those metrics exist (PRs 3 and 9).
+
+### Validation rules
+
+| Rule | Error variant |
+|---|---|
+| `id` non-empty, ≤64 chars, `[a-zA-Z0-9_-]` only | `PlaceInvalidId` |
+| `id` unique across all places | `PlaceDuplicateId` |
+| `role` non-empty (whitespace trimmed) | `PlaceEmptyRole` |
+| `pos[0]`, `pos[1]` finite and in `[-1e6, 1e6]` | `PlaceInvalidPos` |
+| Each `storage` slot has `capacity > 0` | `PlaceStorageCapacityZero` |
+| Each `storage` slot has `initial <= capacity` | `PlaceStorageInitialExceedsCapacity` |
+| `accepts`/`produces`/`failure_domains`/`capacity`/`storage` entries non-empty | `PlaceEmptyEntry` |
+| `accepts`/`produces`/`failure_domains` entries unique | `PlaceDuplicateEntry` |
+| Operating-state predicate matches a template | `PlaceUnsupportedPredicate` |
+| `used_percent >=` threshold in `0..=100` | `PlacePercentThresholdOutOfRange` |
+| Operating-state name non-empty | `PlaceEmptyOperatingStateName` |
+
+`accepts`, `produces`, and `failure_domains` are stored sorted
+ascending and de-duplicated. This eliminates cosmetic JSON ordering
+as a determinism-baseline drift source.
+
+### Deterministic exposure
+
+Places are iterated in stable id order in every system, hashed in
+that order in `state_hash::feed_sl1`, and serialized in that order
+into `StaticPayload.sl1_places`. The empty-SL1 hash baseline
+(`tests/baselines/sl1-empty.hash`) is preserved because the per-place
+loop runs zero times when no places are declared.
+
+### Protocol mirror
+
+`StaticPayload` carries an `sl1_places: Vec<Sl1PlaceView>` field that
+mirrors the engine struct one-to-one. The field uses
+`#[serde(default, skip_serializing_if = "Vec::is_empty")]`, so legacy
+non-SL1 scenes serialize without an `sl1_places` field at all and
+non-Rust consumers can ignore the field until they need it.
 
 ## Roadmap (per `plan.md`)
 

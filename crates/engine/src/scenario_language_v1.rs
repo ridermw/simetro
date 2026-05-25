@@ -251,7 +251,7 @@ pub struct Sl1OperatingState {
 }
 
 /// Closed set of supported operating-state predicates for PR 1. Each
-/// variant maps to one author-facing template (see [`parse_predicate`]
+/// variant maps to one author-facing template (see `parse_predicate`
 /// for the exact textual surface). The closed set is deliberate — the
 /// spec forbids an arbitrary predicate language
 /// (`docs/scenario-language-v1.md` and the canonical roadmap).
