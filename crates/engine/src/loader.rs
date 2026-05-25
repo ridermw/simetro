@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::components::{
     Consumer, ConsumerId, Mover, MoverId, Node, NodeId, NodeShape, Path, PathId, Producer,
@@ -128,7 +128,17 @@ struct RawScene {
     /// `scenario_language_v1::load_value` in validate(), producing
     /// typed `LoadError::Sl1` errors (e.g. `UnknownField`) instead of
     /// being swallowed into the outer scene parse error.
-    #[serde(default, rename = "scenario_language_v1")]
+    ///
+    /// `deserialize_with = "deserialize_some"` is used so we can
+    /// distinguish a key that is absent (None) from a key that is
+    /// explicitly `null` (Some(Value::Null)) — the latter must be
+    /// rejected so a scene cannot bypass SL1 validation by writing
+    /// `"scenario_language_v1": null`.
+    #[serde(
+        default,
+        rename = "scenario_language_v1",
+        deserialize_with = "deserialize_some"
+    )]
     sl1: Option<serde_json::Value>,
     /// Any top-level key not matched by a named field lands here.
     /// We use this to reject SL1 grammar primitive names that were
@@ -151,6 +161,21 @@ struct RawTheme {
 
 fn default_font() -> String {
     "system-ui".to_string()
+}
+
+/// `#[serde(deserialize_with = "deserialize_some")]` helper.
+///
+/// Lets a field distinguish "key absent" (resolved by `#[serde(default)]`
+/// to `None`) from "key explicitly null" (becomes `Some(T)` where `T`
+/// is `serde_json::Value::Null`). The standard `Option<T>` deserializer
+/// collapses both into `None`. We need the distinction so explicit
+/// `"scenario_language_v1": null` can be rejected.
+fn deserialize_some<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]

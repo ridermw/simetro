@@ -63,10 +63,15 @@ author-facing metadata (titles, palette notes, etc.).
 Today the only behavior-bearing rule is `schema_version`: PR 0 accepts
 only empty primitive arrays, accepts an omitted/empty `observability`
 block, and rejects placeholder entries like `"places": [{}]` as
-reserved for later PRs. Each later PR adds per-primitive validation,
-and any field a future PR has not yet wired in causes the loader to
-fail with `LoadError::Sl1(Sl1LoadError::UnknownField { … })` (or a
-`LoadError::Parse` carrying the unknown-field message from serde).
+reserved for later PRs. Each later PR adds per-primitive validation.
+Unknown top-level fields are detected programmatically via a
+`#[serde(flatten)]` "extra" map on `RawSl1Scene` and surface as
+`LoadError::Sl1(Sl1LoadError::UnknownField { field })` — never as a
+raw serde parse error. Type-shape mismatches (e.g. `"places": 42`)
+surface as `LoadError::Sl1(Sl1LoadError::Parse { message })`. An
+explicit `"scenario_language_v1": null` is rejected with
+`LoadError::Sl1(Sl1LoadError::ExpectedObject { found: "null" })` so a
+scene cannot bypass SL1 validation by writing null.
 
 ## Taxonomy
 

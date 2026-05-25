@@ -555,6 +555,20 @@ Everything else is authored content and theme.
 
 This is an author-facing draft, not an implementation contract yet. The goal is to make the shape concrete enough to reason about validation, engine state, protocol snapshots, and agent tools.
 
+> **Implementation note (post PR 0):** The implementation nests every
+> SL1 grammar primitive under a single `scenario_language_v1: { … }`
+> block as a sibling of `pieces`, rather than placing primitives at
+> the top level. The top-level shape below is illustrative of the
+> grammar and field semantics; the actual scene JSON wraps the
+> behavior-bearing keys (`places`, `links`, `things`, `transforms`,
+> `demand`, `pressure`, `objectives`, `failure_conditions`, `agents`,
+> `observability`, `milestones`) inside `scenario_language_v1`. This
+> keeps legacy v1/v2 scenes unaffected and lets the loader reject
+> misplaced top-level SL1 primitive names with
+> `LoadError::Sl1ReservedKeyAtTopLevel`. The legacy top-level
+> `agents` field remains for backward compatibility; PR 10 resolves
+> the collision.
+
 ### Top-level scene shape
 
 ```jsonc

@@ -9,20 +9,28 @@
 //!
 //! The SL1 block is **strict-schema** in two complementary ways:
 //!
-//! 1. Every behavior-bearing struct carries
-//!    `#[serde(deny_unknown_fields)]`, so a typo or a field a future
-//!    PR has not yet wired in produces [`Sl1LoadError::UnknownField`]
-//!    rather than silently no-op-ing.
-//! 2. In PR 0, every grammar primitive is still a placeholder. To make
-//!    sure proto-SL1 scenes can never load and silently no-op, the
-//!    validator rejects non-empty `places`/`links`/`things`/`transforms`
-//!    /`demand`/`pressure`/`objectives`/`failure_conditions`/`agents`/
-//!    `milestones` with [`Sl1LoadError::PrimitiveNotImplemented`].
-//!    Each later PR removes its primitive from that guard as it lands.
+//! 1. Unknown top-level fields in the SL1 block produce a typed
+//!    [`Sl1LoadError::UnknownField`]. The check is programmatic — not a
+//!    serde-message heuristic — via a `#[serde(flatten)]` "extra" map
+//!    that captures any key not explicitly named on [`RawSl1Scene`].
+//! 2. In PR 0, every grammar primitive is still a placeholder. The
+//!    primitives are typed as `Vec<serde_json::Value>` so any non-empty
+//!    `places`/`links`/`things`/`transforms`/`demand`/`pressure`/
+//!    `objectives`/`failure_conditions`/`agents`/`milestones` entry —
+//!    well-formed or not — fails load with
+//!    [`Sl1LoadError::PrimitiveNotImplemented`]. Each later PR replaces
+//!    a primitive's `Vec<Value>` with a strict typed struct and
+//!    removes the matching `reject_non_empty!` line.
+//!
+//! Explicit JSON `null` for the SL1 block is rejected with
+//! [`Sl1LoadError::ExpectedObject`] so a scene cannot accidentally
+//! bypass SL1 validation by writing `"scenario_language_v1": null`.
 //!
 //! See `docs/scenario-language-v1.md` and the canonical roadmap spec
 //! at `docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`
 //! for the full grammar.
+
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use thiserror::Error;
@@ -37,108 +45,59 @@ const MAX_SL1_ITEMS_PER_SECTION: usize = 100_000;
 // Raw (post-serde, pre-validation) SL1 scene block.
 // ---------------------------------------------------------------------------
 
-/// Raw SL1 scene block. Strict-schema: unknown fields are a load error.
+/// Raw SL1 scene block. PR 0 deliberately captures every grammar
+/// primitive as `Vec<serde_json::Value>` so the validator can reject
+/// non-empty entries with [`Sl1LoadError::PrimitiveNotImplemented`]
+/// without relying on each placeholder struct's shape. Each later PR
+/// replaces the corresponding `Vec<Value>` with a strict typed
+/// `Vec<RawSl1Foo>` and removes the matching guard.
 ///
-/// Each section defaults to an empty `Vec` so PR 0 can introduce the
-/// block without requiring authors to fill in every primitive. Later
-/// PRs populate the per-primitive struct definitions.
+/// Unknown top-level fields land in [`Self::extra`]; [`validate`]
+/// emits a typed [`Sl1LoadError::UnknownField`] for each.
 #[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct RawSl1Scene {
     /// Defaults to [`SL1_SCHEMA_VERSION`] when omitted.
     #[serde(default = "default_sl1_schema_version")]
     pub schema_version: u32,
     #[serde(default)]
-    pub places: Vec<RawSl1Place>,
+    pub places: Vec<serde_json::Value>,
     #[serde(default)]
-    pub links: Vec<RawSl1Link>,
+    pub links: Vec<serde_json::Value>,
     #[serde(default)]
-    pub things: Vec<RawSl1Thing>,
+    pub things: Vec<serde_json::Value>,
     #[serde(default)]
-    pub transforms: Vec<RawSl1Transform>,
+    pub transforms: Vec<serde_json::Value>,
     #[serde(default)]
-    pub demand: Vec<RawSl1Demand>,
+    pub demand: Vec<serde_json::Value>,
     #[serde(default)]
-    pub pressure: Vec<RawSl1Pressure>,
+    pub pressure: Vec<serde_json::Value>,
     #[serde(default)]
-    pub objectives: Vec<RawSl1Objective>,
+    pub objectives: Vec<serde_json::Value>,
     #[serde(default)]
-    pub failure_conditions: Vec<RawSl1FailureCondition>,
+    pub failure_conditions: Vec<serde_json::Value>,
     #[serde(default)]
-    pub agents: Vec<RawSl1Agent>,
+    pub agents: Vec<serde_json::Value>,
     #[serde(default)]
-    pub observability: Option<RawSl1Observability>,
+    pub observability: Option<serde_json::Value>,
     #[serde(default)]
-    pub milestones: Vec<RawSl1Milestone>,
+    pub milestones: Vec<serde_json::Value>,
     /// Permissive catalog/theme/metadata block. Unknown fields here are
     /// allowed because catalog entries are author-facing free-form data
     /// (titles, descriptions, palette notes). Behavior-bearing fields
     /// live outside `catalog`.
     #[serde(default)]
     pub catalog: Option<serde_json::Value>,
+    /// Any field not matched above. [`validate`] rejects non-empty
+    /// `extra` with [`Sl1LoadError::UnknownField`], giving us a
+    /// programmatic strict-schema check that does not depend on
+    /// serde's English error text.
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 fn default_sl1_schema_version() -> u32 {
     SL1_SCHEMA_VERSION
 }
-
-/// Placeholder for a `place`. PR 1 populates this struct with id, role,
-/// position, capacity, storage, accepts, produces, failure_domains, and
-/// operating_states.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Place {}
-
-/// Placeholder for a `link`. PR 2 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Link {}
-
-/// Placeholder for a `thing`. PR 3 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Thing {}
-
-/// Placeholder for a `transform`. PR 4 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Transform {}
-
-/// Placeholder for a `demand`. PR 5 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Demand {}
-
-/// Placeholder for a `pressure`. PR 7 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Pressure {}
-
-/// Placeholder for an `objective`. PR 8 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Objective {}
-
-/// Placeholder for a `failure_condition`. PR 8 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1FailureCondition {}
-
-/// Placeholder for an `agent`. PR 10 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Agent {}
-
-/// Placeholder for the `observability` block. PR 9 populates this
-/// struct with `metrics`, `dashboards`, and `alerts`.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Observability {}
-
-/// Placeholder for a `milestone`. PR 11 populates this struct.
-#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RawSl1Milestone {}
 
 // ---------------------------------------------------------------------------
 // Loaded (validated, engine-facing) SL1 scene.
@@ -224,16 +183,21 @@ pub enum Sl1LoadError {
     #[error("scenario_language_v1.schema_version: found {found}, supported {supported}")]
     UnsupportedSchema { found: u32, supported: u32 },
 
-    /// Surfaces a serde `unknown field` error from any strict-schema
-    /// SL1 struct. `field` carries the original serde message verbatim
-    /// so the renderer can point at the offending location.
+    /// Surfaces an unknown field inside the SL1 block. PR 0 detects
+    /// these programmatically via the `extra` map on [`RawSl1Scene`]
+    /// (no reliance on serde's English error text).
     #[error("scenario_language_v1: unknown field: {field}")]
     UnknownField { field: String },
 
-    /// A non-`unknown field` serde failure (type mismatch, malformed
-    /// JSON, etc.) inside the SL1 block. Distinct from
-    /// [`Self::UnknownField`] so tooling can render the two
-    /// differently.
+    /// The SL1 block exists but is not a JSON object (e.g. explicit
+    /// `"scenario_language_v1": null` or `"scenario_language_v1": 42`).
+    /// Distinct from omitting the block, which is allowed.
+    #[error("scenario_language_v1: expected a JSON object, got {found}")]
+    ExpectedObject { found: &'static str },
+
+    /// A serde-level shape error (type mismatch, malformed JSON, etc.)
+    /// inside the SL1 block. Distinct from [`Self::UnknownField`] so
+    /// tooling can render the two differently.
     #[error("scenario_language_v1: parse error: {message}")]
     Parse { message: String },
 
@@ -321,22 +285,18 @@ impl GameOutcome {
 ///
 /// PR 0 enforces:
 /// - `schema_version` must equal [`SL1_SCHEMA_VERSION`].
+/// - Unknown top-level fields land in [`RawSl1Scene::extra`] and are
+///   rejected with [`Sl1LoadError::UnknownField`].
 /// - All grammar primitives must be empty —
 ///   [`Sl1LoadError::PrimitiveNotImplemented`] for any
 ///   `places`/`links`/`things`/`transforms`/`demand`/`pressure`/
 ///   `objectives`/`failure_conditions`/`agents`/`milestones` with
 ///   entries, since this build cannot give them behavior.
-/// - The optional `observability` block may be present but empty.
-///
-/// Strict-schema rejection of unknown fields happens at the serde
-/// layer via [`load_str`] / [`load_value`] (or by the surrounding scene
-/// loader when this block is embedded in a larger scene).
+/// - The optional `observability` block may be present but must be
+///   an empty object.
 ///
 /// # Errors
-/// Returns [`Sl1LoadError::UnsupportedSchema`] when the SL1 block's
-/// `schema_version` is outside the supported range, or
-/// [`Sl1LoadError::PrimitiveNotImplemented`] when a primitive is
-/// non-empty.
+/// See variants of [`Sl1LoadError`].
 pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     if raw.schema_version != SL1_SCHEMA_VERSION {
         return Err(Sl1LoadError::UnsupportedSchema {
@@ -345,6 +305,20 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         });
     }
 
+    // Programmatic strict-schema check: any field not named on
+    // RawSl1Scene flowed into `extra` via #[serde(flatten)]. Reject
+    // the first one we find. Sorted iteration via BTreeMap keeps
+    // diagnostics deterministic.
+    if let Some((name, _)) = raw.extra.iter().next() {
+        return Err(Sl1LoadError::UnknownField {
+            field: name.clone(),
+        });
+    }
+
+    // Defensive per-section item caps. Even though PR 0 rejects any
+    // non-empty primitive, the cap is the right shape for later PRs
+    // and serves as a memory-safety guardrail when a primitive
+    // becomes valid.
     check_section_cap("places", raw.places.len())?;
     check_section_cap("links", raw.links.len())?;
     check_section_cap("things", raw.things.len())?;
@@ -358,7 +332,9 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
 
     // PR 0 has no behavior for any primitive. Reject non-empty sections
     // so a proto-SL1 scene can't silently no-op while developers wait
-    // for PRs 1–11.
+    // for PRs 1–11. The vecs are Vec<serde_json::Value> in PR 0 so
+    // even a well-formed future shape (e.g. `{"id": "p1"}`) reaches
+    // this guard instead of bouncing off a per-primitive struct.
     macro_rules! reject_non_empty {
         ($vec:expr, $name:literal) => {
             if !$vec.is_empty() {
@@ -377,6 +353,29 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     reject_non_empty!(raw.agents, "agents");
     reject_non_empty!(raw.milestones, "milestones");
 
+    // The optional observability block must be an empty object until
+    // PR 9 implements its schema.
+    let observability = if let Some(value) = raw.observability {
+        match value {
+            serde_json::Value::Object(map) if map.is_empty() => Some(Sl1Observability),
+            serde_json::Value::Object(_) => {
+                return Err(Sl1LoadError::PrimitiveNotImplemented {
+                    section: "observability",
+                });
+            }
+            other => {
+                return Err(Sl1LoadError::Parse {
+                    message: format!(
+                        "scenario_language_v1.observability must be an object, got {}",
+                        json_kind(&other)
+                    ),
+                });
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
         places: Vec::new(),
@@ -388,7 +387,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         objectives: Vec::new(),
         failure_conditions: Vec::new(),
         agents: Vec::new(),
-        observability: raw.observability.map(|_| Sl1Observability),
+        observability,
         milestones: Vec::new(),
     })
 }
@@ -406,44 +405,54 @@ fn check_section_cap(section: &'static str, count: usize) -> Result<(), Sl1LoadE
 
 /// Parse + validate a standalone SL1 block from a `serde_json::Value`.
 ///
-/// Used by the surrounding scene loader so that unknown-field rejection
-/// from the SL1 block becomes a typed [`Sl1LoadError::UnknownField`]
-/// instead of being swallowed into the outer scene's parse error.
+/// Used by the surrounding scene loader so the SL1 block's strict
+/// validation runs through this typed path, producing a typed
+/// [`Sl1LoadError`] instead of being swallowed into the outer scene's
+/// parse error.
 ///
 /// # Errors
-/// Returns [`Sl1LoadError::UnknownField`] for any unknown
-/// behavior-bearing field, [`Sl1LoadError::Parse`] for a type-mismatch
-/// or malformed-shape error, or [`Sl1LoadError::UnsupportedSchema`] for
-/// an out-of-range `schema_version`.
+/// - [`Sl1LoadError::ExpectedObject`] if the value is null, a number,
+///   string, bool, or array — anything other than a JSON object.
+/// - [`Sl1LoadError::UnknownField`], [`Sl1LoadError::Parse`],
+///   [`Sl1LoadError::PrimitiveNotImplemented`], or
+///   [`Sl1LoadError::UnsupportedSchema`] as documented on [`validate`].
 pub fn load_value(value: serde_json::Value) -> Result<Sl1Scene, Sl1LoadError> {
-    let raw: RawSl1Scene = serde_json::from_value(value).map_err(serde_error_to_sl1)?;
+    if !value.is_object() {
+        return Err(Sl1LoadError::ExpectedObject {
+            found: json_kind(&value),
+        });
+    }
+    let raw: RawSl1Scene = serde_json::from_value(value).map_err(|e| Sl1LoadError::Parse {
+        message: e.to_string(),
+    })?;
     validate(raw)
 }
 
 /// Parse + validate a standalone SL1 block from JSON.
 ///
-/// Used by tests and tooling that want to load an SL1 fragment outside
-/// of a full simetro scene. The surrounding scene loader wires the SL1
-/// block into the larger `RawScene` flow inside `crate::loader` via
-/// [`load_value`].
+/// Convenience around [`load_value`] for tests and tooling that want
+/// to load an SL1 fragment outside of a full simetro scene.
 ///
 /// # Errors
 /// Same as [`load_value`].
 pub fn load_str(json: &str) -> Result<Sl1Scene, Sl1LoadError> {
-    let raw: RawSl1Scene = serde_json::from_str(json).map_err(serde_error_to_sl1)?;
-    validate(raw)
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|e| Sl1LoadError::Parse {
+        message: e.to_string(),
+    })?;
+    load_value(value)
 }
 
-/// Classify a serde error from an SL1 block into a typed
-/// [`Sl1LoadError`]. Unknown-field rejections become
-/// [`Sl1LoadError::UnknownField`] so the renderer can highlight the
-/// offending key; everything else becomes [`Sl1LoadError::Parse`].
-fn serde_error_to_sl1(e: serde_json::Error) -> Sl1LoadError {
-    let message = e.to_string();
-    if message.starts_with("unknown field") {
-        Sl1LoadError::UnknownField { field: message }
-    } else {
-        Sl1LoadError::Parse { message }
+/// Stable, English-only one-word kind tag for a `serde_json::Value`,
+/// used in [`Sl1LoadError::ExpectedObject`] and observability shape
+/// diagnostics. Kept tiny and locale-free on purpose.
+fn json_kind(v: &serde_json::Value) -> &'static str {
+    match v {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "bool",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
     }
 }
 
@@ -496,23 +505,54 @@ mod tests {
         let err = load_str(r#"{"mystery": 42}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => {
-                assert!(
-                    field.contains("mystery"),
-                    "expected serde message to name the field, got {field}"
-                );
+                assert_eq!(field, "mystery");
             }
             other => panic!("expected UnknownField, got {other:?}"),
         }
     }
 
     #[test]
-    fn unknown_field_inside_place_rejected() {
-        let err = load_str(r#"{"places": [{"id": "p1"}]}"#).unwrap_err();
+    fn explicit_null_block_rejected() {
+        let err = load_value(serde_json::Value::Null).unwrap_err();
         match err {
-            Sl1LoadError::UnknownField { field } => {
-                assert!(field.contains("id"), "got {field}");
+            Sl1LoadError::ExpectedObject { found } => {
+                assert_eq!(found, "null");
             }
-            other => panic!("expected UnknownField, got {other:?}"),
+            other => panic!("expected ExpectedObject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_object_block_rejected() {
+        for (json, expected_kind) in [
+            ("[]", "array"),
+            ("42", "number"),
+            (r#""hello""#, "string"),
+            ("true", "bool"),
+            ("null", "null"),
+        ] {
+            let err = load_str(json).unwrap_err();
+            match err {
+                Sl1LoadError::ExpectedObject { found } => {
+                    assert_eq!(found, expected_kind, "json was {json}");
+                }
+                other => panic!("expected ExpectedObject for {json}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn non_empty_place_with_real_shape_hits_primitive_guard() {
+        // Even a well-formed future-PR shape inside `places` must hit
+        // PrimitiveNotImplemented in PR 0, not bounce off a per-struct
+        // deny_unknown_fields rule. This is the ergonomic the rubber
+        // duck flagged in round 2.
+        let err = load_str(r#"{"places": [{"id": "p1", "role": "node"}]}"#).unwrap_err();
+        match err {
+            Sl1LoadError::PrimitiveNotImplemented { section } => {
+                assert_eq!(section, "places");
+            }
+            other => panic!("expected PrimitiveNotImplemented, got {other:?}"),
         }
     }
 
@@ -548,7 +588,7 @@ mod tests {
         let raw = RawSl1Scene {
             schema_version: SL1_SCHEMA_VERSION,
             places: (0..=MAX_SL1_ITEMS_PER_SECTION)
-                .map(|_| RawSl1Place {})
+                .map(|_| serde_json::Value::Object(serde_json::Map::new()))
                 .collect(),
             ..RawSl1Scene::default()
         };
@@ -571,8 +611,8 @@ mod tests {
         match err {
             Sl1LoadError::Parse { message } => {
                 assert!(
-                    !message.starts_with("unknown field"),
-                    "type mismatch should not be classified as unknown field: {message}"
+                    !message.is_empty(),
+                    "Parse error should carry a non-empty message"
                 );
             }
             other => panic!("expected Parse, got {other:?}"),
@@ -583,7 +623,23 @@ mod tests {
     fn load_value_typed_unknown_field_error() {
         let v: serde_json::Value = serde_json::from_str(r#"{"mystery": 1}"#).unwrap();
         let err = load_value(v).unwrap_err();
-        assert!(matches!(err, Sl1LoadError::UnknownField { .. }));
+        match err {
+            Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
+            other => panic!("expected UnknownField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_field_alongside_primitive_is_unknown_field() {
+        // Unknown-field detection happens BEFORE primitive guards, so a
+        // typo at the top level is surfaced even if the author also
+        // populated a primitive that would have hit
+        // PrimitiveNotImplemented.
+        let err = load_str(r#"{"mystery": 1, "places": [{}]}"#).unwrap_err();
+        match err {
+            Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
+            other => panic!("expected UnknownField first, got {other:?}"),
+        }
     }
     #[test]
     fn known_empty_sections_load() {
@@ -624,9 +680,31 @@ mod tests {
     }
 
     #[test]
-    fn unknown_field_inside_observability_rejected() {
+    fn non_empty_observability_hits_primitive_guard_until_pr9() {
+        // Until PR 9 introduces typed observability fields, any
+        // populated observability block is treated as an
+        // unimplemented primitive — not introspected for unknown
+        // fields. That keeps PR 0 from silently no-op'ing on
+        // proto-observability content.
         let err = load_str(r#"{"observability": {"alerts": []}}"#).unwrap_err();
-        assert!(matches!(err, Sl1LoadError::UnknownField { .. }));
+        match err {
+            Sl1LoadError::PrimitiveNotImplemented { section } => {
+                assert_eq!(section, "observability");
+            }
+            other => panic!("expected PrimitiveNotImplemented, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn observability_must_be_object() {
+        let err = load_str(r#"{"observability": []}"#).unwrap_err();
+        match err {
+            Sl1LoadError::Parse { message } => {
+                assert!(message.contains("observability"));
+                assert!(message.contains("array"));
+            }
+            other => panic!("expected Parse, got {other:?}"),
+        }
     }
 
     #[test]

@@ -101,12 +101,80 @@ fn loader_rejects_unknown_field_inside_sl1_block() {
     let err = load_scene_str(json, 0).expect_err("unknown SL1 field must be rejected");
     match err {
         LoadError::Sl1(Sl1LoadError::UnknownField { ref field }) => {
-            assert!(
-                field.contains("mystery_field"),
-                "expected error to name `mystery_field`, got: {field}"
-            );
+            assert_eq!(field, "mystery_field");
         }
         other => panic!("expected LoadError::Sl1(UnknownField), got {other:?}"),
+    }
+}
+
+#[test]
+fn loader_rejects_explicit_null_sl1_block() {
+    // `scenario_language_v1: null` is not the same as omitting the
+    // block — it must be rejected so a scene cannot bypass SL1
+    // validation by writing an explicit null.
+    let json = r##"{
+        "schema_version": 1,
+        "name": "sl1-null-block",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v1": null
+    }"##;
+    let err = load_scene_str(json, 0).expect_err("explicit null SL1 block must be rejected");
+    match err {
+        LoadError::Sl1(Sl1LoadError::ExpectedObject { found }) => {
+            assert_eq!(found, "null");
+        }
+        other => panic!("expected LoadError::Sl1(ExpectedObject), got {other:?}"),
+    }
+}
+
+#[test]
+fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
+    // `agents` is intentionally excluded from the reserved-top-level
+    // guard because legacy v1/v2 scenes use it at the top level
+    // alongside `pieces`. This test documents both halves of that
+    // intentional collision: top-level `agents` still loads, while a
+    // nested SL1 `agents` block fails with PrimitiveNotImplemented
+    // until PR 10 lands.
+
+    let with_legacy_agents = r##"{
+        "schema_version": 1,
+        "name": "legacy-top-level-agents",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "agents": []
+    }"##;
+    load_scene_str(with_legacy_agents, 0)
+        .expect("legacy top-level `agents` must still load (intentional collision)");
+
+    let with_nested_agents = r##"{
+        "schema_version": 1,
+        "name": "sl1-nested-agents",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v1": {
+            "agents": [{}]
+        }
+    }"##;
+    let err = load_scene_str(with_nested_agents, 0)
+        .expect_err("nested SL1 `agents` must fail until PR 10");
+    match err {
+        LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
+            assert_eq!(section, "agents");
+        }
+        other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
     }
 }
 
