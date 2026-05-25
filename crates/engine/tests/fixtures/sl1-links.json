@@ -91,7 +91,23 @@
         "backpressure": "spill_to_buffer"
       }
     ],
-    "things": [],
+    "things": [
+      {
+        "id": "gpu_heartbeat",
+        "kind": "raw_signal",
+        "tags": ["telemetry", "gpu"]
+      },
+      {
+        "id": "normalized_gpu_heartbeat",
+        "kind": "derived_signal",
+        "tags": ["telemetry", "gpu"]
+      },
+      {
+        "id": "facts",
+        "kind": "fact",
+        "tags": ["storage"]
+      }
+    ],
     "transforms": [],
     "demand": [],
     "pressure": [],

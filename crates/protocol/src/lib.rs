@@ -113,6 +113,14 @@ pub struct StaticPayload {
     /// `id` for deterministic ordering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_links: Vec<Sl1LinkView>,
+    /// `scenario_language_v1` things — author-declared typed payloads
+    /// (jobs, datasets, telemetry, etc.) that flow through places and
+    /// links. Static metadata only; per-tick inventory counts and
+    /// freshness states go in [`SnapshotPayload::sl1_place_inventories`].
+    /// Empty for non-SL1 scenes and for SL1 scenes with no `things`.
+    /// Sorted by `id` for deterministic ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_things: Vec<Sl1ThingView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -209,6 +217,66 @@ pub struct Sl1LinkRenderHintView {
     pub color: Option<u32>,
 }
 
+/// Wire-level view of one validated SL1 thing. Mirrors
+/// `engine::scenario_language_v1::Sl1Thing` 1:1.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sl1ThingView {
+    pub id: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness_budget_ticks: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_contract: Option<Sl1ThingQualityContractView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render: Option<Sl1ThingRenderHintView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sl1ThingQualityContractView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_drop_percent: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_late_ticks: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1ThingRenderHintView {
+    pub glyph: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u32>,
+}
+
+/// Wire-level freshness state for a (place, thing) inventory slot.
+/// Mirrors `engine::scenario_language_v1::FreshnessState`. All five
+/// variants are defined now even though PR 3 only reaches the first
+/// three (`Degraded`/`Invalid` arrive with PR 8 quality contracts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum FreshnessStateView {
+    NoData,
+    Ok { last_set_tick: u64 },
+    Stale { last_set_tick: u64 },
+    Degraded,
+    Invalid,
+}
+
+/// Wire-level snapshot of one inventory slot. PR 3 emits one entry
+/// per declared `storage[thing_id]` slot on every snapshot, even when
+/// `count == 0`, so the frontend can render an empty slot rather than
+/// silently dropping it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1PlaceInventoryView {
+    pub place_id: String,
+    pub thing_id: String,
+    pub count: u64,
+    pub freshness: FreshnessStateView,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -241,6 +309,12 @@ pub enum NodeShapeTag {
 pub struct SnapshotPayload {
     pub tick: u64,
     pub movers: Vec<MoverState>,
+    /// SL1 per-(place, thing) inventory state for this tick. Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `places[].storage[]`
+    /// slots. Sorted by `(place_id, thing_id)` for deterministic
+    /// ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_place_inventories: Vec<Sl1PlaceInventoryView>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -696,6 +770,7 @@ mod tests {
                 speed: 1.5,
                 on_path: 2,
             }],
+            sl1_place_inventories: Vec::new(),
         };
         let back: SnapshotPayload = roundtrip(&snap);
         assert_eq!(back.tick, 100);
@@ -731,6 +806,7 @@ mod tests {
             mover_names: std::collections::BTreeMap::new(),
             sl1_places: Vec::new(),
             sl1_links: Vec::new(),
+            sl1_things: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -822,6 +898,7 @@ mod tests {
                 },
             ],
             sl1_links: Vec::new(),
+            sl1_things: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -851,6 +928,7 @@ mod tests {
             mover_names: std::collections::BTreeMap::new(),
             sl1_places: vec![],
             sl1_links: vec![],
+            sl1_things: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -906,6 +984,7 @@ mod tests {
             mover_names: std::collections::BTreeMap::new(),
             sl1_places: vec![],
             sl1_links: links.clone(),
+            sl1_things: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);

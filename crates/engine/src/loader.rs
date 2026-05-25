@@ -615,6 +615,9 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
     world.producers = producers;
     world.consumers = consumers;
     world.sl1 = sl1.clone();
+    world.sl1_runtime = sl1
+        .as_ref()
+        .map(crate::scenario_language_v1::Sl1RuntimeState::from_scene);
     world.state = crate::world::RunState::Loaded;
 
     Ok(LoadedScene {

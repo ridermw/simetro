@@ -17,15 +17,18 @@
 //! tick loop allocates nothing per frame (zero-allocation target).
 
 use simetro_protocol::{
-    MoverState as WireMover, NodeShapeTag, NodeView, PathView, Sl1LinkBackpressureView,
-    Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView, Sl1OperatingPredicateView,
-    Sl1OperatingStateView, Sl1PlaceView, Sl1StorageSlotView, SnapshotPayload, StaticPayload,
+    FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView,
+    Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView,
+    Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView,
+    Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView,
+    SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
 use crate::scenario_language_v1::{
-    Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1OperatingPredicate, Sl1Place,
+    FreshnessState, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1OperatingPredicate,
+    Sl1Place, Sl1Thing,
 };
 use crate::world::World;
 
@@ -98,6 +101,11 @@ pub fn encode_static_parts(
             .sl1
             .as_ref()
             .map(|sl1| sl1.links.iter().map(link_to_view).collect())
+            .unwrap_or_default(),
+        sl1_things: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.things.iter().map(thing_to_view).collect())
             .unwrap_or_default(),
     }
 }
@@ -179,6 +187,38 @@ fn link_to_view(link: &Sl1Link) -> Sl1LinkView {
     }
 }
 
+fn thing_to_view(thing: &Sl1Thing) -> Sl1ThingView {
+    Sl1ThingView {
+        id: thing.id.clone(),
+        kind: thing.kind.clone(),
+        tags: thing.tags.clone(),
+        schema_version: thing.schema_version,
+        freshness_budget_ticks: thing.freshness_budget_ticks,
+        quality_contract: thing
+            .quality_contract
+            .as_ref()
+            .map(|q| Sl1ThingQualityContractView {
+                max_drop_percent: q.max_drop_percent,
+                max_late_ticks: q.max_late_ticks,
+                required_fields: q.required_fields.clone(),
+            }),
+        render: thing.render.as_ref().map(|r| Sl1ThingRenderHintView {
+            glyph: r.glyph.clone(),
+            color: r.color,
+        }),
+    }
+}
+
+fn freshness_to_view(state: FreshnessState) -> FreshnessStateView {
+    match state {
+        FreshnessState::NoData => FreshnessStateView::NoData,
+        FreshnessState::Ok { last_set_tick } => FreshnessStateView::Ok { last_set_tick },
+        FreshnessState::Stale { last_set_tick } => FreshnessStateView::Stale { last_set_tick },
+        FreshnessState::Degraded => FreshnessStateView::Degraded,
+        FreshnessState::Invalid => FreshnessStateView::Invalid,
+    }
+}
+
 /// Compute group-by-color batches over path views. Renderer caches one
 /// `Path2D` per color and re-uses it across frames.
 ///
@@ -201,6 +241,7 @@ pub fn color_batches(paths: &[PathView]) -> Vec<(u8, Vec<u32>)> {
 pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
     out.tick = world.tick;
     out.movers.clear();
+    out.sl1_place_inventories.clear();
 
     for m in world.movers.values() {
         let (pos, on_path) = match m.state() {
@@ -231,6 +272,23 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
             speed: m.speed,
             on_path,
         });
+    }
+
+    if let Some(runtime) = world.sl1_runtime.as_ref() {
+        for ((place_id, thing_id), state) in runtime.freshness.iter() {
+            let count = runtime
+                .inventories
+                .get(place_id)
+                .and_then(|inv| inv.get(thing_id))
+                .copied()
+                .unwrap_or(0);
+            out.sl1_place_inventories.push(Sl1PlaceInventoryView {
+                place_id: place_id.clone(),
+                thing_id: thing_id.clone(),
+                count,
+                freshness: freshness_to_view(*state),
+            });
+        }
     }
 
     out.movers.len()

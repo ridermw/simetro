@@ -66,7 +66,15 @@
       }
     ],
     "links": [],
-    "things": [],
+    "things": [
+      { "id": "query", "kind": "request", "tags": [] },
+      { "id": "ingestion", "kind": "request", "tags": [] },
+      { "id": "result", "kind": "response", "tags": [] },
+      { "id": "training_job", "kind": "request", "tags": [] },
+      { "id": "model_artifact", "kind": "artifact", "tags": [] },
+      { "id": "metric", "kind": "telemetry", "tags": [] },
+      { "id": "hot_cache", "kind": "cache", "tags": [] }
+    ],
     "transforms": [],
     "demand": [],
     "pressure": [],

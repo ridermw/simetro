@@ -10,7 +10,7 @@ use crate::components::{
     Resource, ResourceId,
 };
 use crate::rng::SimRng;
-use crate::scenario_language_v1::{GameOutcome, Sl1Scene};
+use crate::scenario_language_v1::{GameOutcome, Sl1RuntimeState, Sl1Scene};
 
 /// Top-level run state per run-state model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +55,11 @@ pub struct World {
     /// included one. PR 0 carries only empty placeholders; later PRs
     /// populate places, links, things, transforms, etc.
     pub sl1: Option<Sl1Scene>,
+    /// SL1 per-tick runtime state (PR 3). Mutable counterpart to the
+    /// immutable [`Sl1Scene`]. Always constructed alongside `sl1` so
+    /// the two move in lockstep. `None` for scenes without an SL1
+    /// block.
+    pub sl1_runtime: Option<Sl1RuntimeState>,
 }
 
 impl World {
@@ -75,6 +80,7 @@ impl World {
             producers: BTreeMap::new(),
             consumers: BTreeMap::new(),
             sl1: None,
+            sl1_runtime: None,
         }
     }
 
@@ -96,6 +102,7 @@ impl World {
             && self.producers.is_empty()
             && self.consumers.is_empty()
             && self.sl1.is_none()
+            && self.sl1_runtime.is_none()
     }
 
     /// Current SL1 game outcome.

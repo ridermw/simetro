@@ -27,8 +27,24 @@ const SEED: u64 = 42;
 
 /// Wraps the supplied `places` JSON array and `links` JSON array
 /// inside a minimal SL1 scene envelope. Both arrays must be
-/// well-formed JSON snippets.
+/// well-formed JSON snippets. A small set of declared `things[]` is
+/// always included so link compatibility cross-validation (PR 3)
+/// resolves common test identifiers ("alpha", "mid", "zeta", "x")
+/// and the protocol-mirror fixture references.
 fn scene_with(places_json: &str, links_json: &str) -> String {
+    scene_with_things(
+        places_json,
+        links_json,
+        r#"[
+            {"id": "alpha", "kind": "raw", "tags": []},
+            {"id": "mid",   "kind": "raw", "tags": []},
+            {"id": "zeta",  "kind": "raw", "tags": []},
+            {"id": "x",     "kind": "raw", "tags": []}
+        ]"#,
+    )
+}
+
+fn scene_with_things(places_json: &str, links_json: &str, things_json: &str) -> String {
     format!(
         r##"{{
             "schema_version": 1,
@@ -41,7 +57,8 @@ fn scene_with(places_json: &str, links_json: &str) -> String {
             "pieces": {{ "nodes": [], "paths": [], "movers": [] }},
             "scenario_language_v1": {{
                 "places": {places_json},
-                "links": {links_json}
+                "links": {links_json},
+                "things": {things_json}
             }}
         }}"##
     )

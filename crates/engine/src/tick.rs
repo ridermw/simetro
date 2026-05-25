@@ -192,6 +192,7 @@ impl TickRunner {
 
         interaction::run(world, &mut self.events, &mut self.route_scratch);
         production::run(world, &mut self.production_scratch);
+        crate::sl1_runtime::run(world);
 
         self.events.push(SimEvent::Tick { tick: world.tick });
         self.last_arrivals = arrivals;
