@@ -9,11 +9,12 @@
 //   │                       Renderer                      │
 //   │                                                     │
 //   │  warm(theme)         ── pre-alloc Path2D[palette]   │
-//   │  setScene(static)    ── refill buckets ONCE         │
-//   │      │                                              │
+//   │  setScene(static)    ── refill buckets ONCE;        │
+//   │      │                   auto-fit viewport          │
 //   │      ▼                                              │
 //   │  draw(scene, snap, movers)                          │
-//   │   ├── clear & fill background                       │
+//   │   ├── clear & fill background (screen space)        │
+//   │   ├── apply viewport transform                      │
 //   │   ├── for each active bucket: stroke once           │
 //   │   ├── walk scene.nodes, drawShape                   │
 //   │   └── walk interpolated movers, fill circle         │
@@ -34,6 +35,15 @@ const NODE_RADIUS = 18;
 const MOVER_RADIUS = 8;
 const PATH_WIDTH = 4;
 const NODE_STROKE_WIDTH = 2;
+const FIT_PADDING = NODE_RADIUS + 20;
+const MIN_SCALE = 0.15;
+const MAX_SCALE = 8;
+
+interface Viewport {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
 
 export interface FrameInput {
   theme: Theme;
@@ -60,6 +70,18 @@ export class Renderer {
    *  loop call setScene() unconditionally without rebuild cost. */
   private currentScene: StaticPayload | null = null;
 
+  // --- Viewport state ---
+  // Current pan/zoom transform: screen = world * scale + offset.
+  private viewport: Viewport = { scale: 1, offsetX: 0, offsetY: 0 };
+  // The fit transform computed at the last setScene(); resetViewport() returns here.
+  private fitViewport: Viewport = { scale: 1, offsetX: 0, offsetY: 0 };
+  // World-space bounding box from the last setScene().
+  private worldMinX = 0;
+  private worldMinY = 0;
+  private worldMaxX = 0;
+  private worldMaxY = 0;
+  private hasWorldBounds = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext("2d");
@@ -67,6 +89,11 @@ export class Renderer {
       throw new Error("simetro: Canvas2D context unavailable");
     }
     this.ctx = ctx;
+  }
+
+  /** Exposed for renderer unit tests only. */
+  get viewportForTest(): Readonly<Viewport> {
+    return this.viewport;
   }
 
   /** Pre-allocate buckets sized to the theme palette. Idempotent. */
@@ -86,7 +113,8 @@ export class Renderer {
   }
 
   /** Rebuild path buckets from the new static scene. Idempotent;
-   *  a no-op when called with the same object identity. */
+   *  a no-op when called with the same object identity. Auto-fits
+   *  the viewport to the scene geometry on identity change. */
   setScene(scene: StaticPayload): void {
     if (this.currentScene === scene) return;
     // Ensure buckets large enough for the scene palette.
@@ -111,6 +139,37 @@ export class Renderer {
       bucket.lineTo(p.to_pos[0], p.to_pos[1]);
       this.activeBuckets[p.color] = true;
     }
+
+    // Compute world bounding box from nodes and path endpoints.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of scene.nodes) {
+      if (n.pos[0] < minX) minX = n.pos[0];
+      if (n.pos[1] < minY) minY = n.pos[1];
+      if (n.pos[0] > maxX) maxX = n.pos[0];
+      if (n.pos[1] > maxY) maxY = n.pos[1];
+    }
+    for (const p of scene.paths) {
+      for (const pt of [p.from_pos, p.to_pos]) {
+        if (pt[0] < minX) minX = pt[0];
+        if (pt[1] < minY) minY = pt[1];
+        if (pt[0] > maxX) maxX = pt[0];
+        if (pt[1] > maxY) maxY = pt[1];
+      }
+    }
+    if (minX !== Infinity) {
+      this.worldMinX = minX;
+      this.worldMinY = minY;
+      this.worldMaxX = maxX;
+      this.worldMaxY = maxY;
+      this.hasWorldBounds = true;
+    } else {
+      this.hasWorldBounds = false;
+    }
+
+    const fit = this.computeFit();
+    this.fitViewport = fit;
+    this.viewport = { ...fit };
+
     this.currentScene = scene;
   }
 
@@ -127,8 +186,14 @@ export class Renderer {
 
     const cssW = canvas.width / dpr;
     const cssH = canvas.height / dpr;
+    // Background fill in screen space (no viewport transform).
     ctx.fillStyle = backgroundColor(input.theme);
     ctx.fillRect(0, 0, cssW, cssH);
+
+    // Apply viewport transform for all world-space drawing.
+    ctx.save();
+    ctx.translate(this.viewport.offsetX, this.viewport.offsetY);
+    ctx.scale(this.viewport.scale, this.viewport.scale);
 
     this.drawPathsBatched(input.theme);
     this.drawNodes(input.theme, input.scene.nodes);
@@ -138,6 +203,113 @@ export class Renderer {
     }
 
     ctx.restore();
+    ctx.restore();
+  }
+
+  /** Pan the viewport by (dx, dy) in CSS/screen pixels. */
+  panBy(dx: number, dy: number): void {
+    this.viewport.offsetX += dx;
+    this.viewport.offsetY += dy;
+  }
+
+  /**
+   * Zoom by `factor` keeping the world point under (screenX, screenY) stable.
+   * Scale is clamped to [MIN_SCALE, MAX_SCALE].
+   */
+  zoomAt(screenX: number, screenY: number, factor: number): void {
+    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, this.viewport.scale * factor));
+    const scaleRatio = newScale / this.viewport.scale;
+    // Anchor: screenPt = worldPt * scale + offset  →  offset' = screenPt - worldPt * newScale
+    //       = screenPt * (1 - scaleRatio) + offset * scaleRatio
+    this.viewport.offsetX = screenX * (1 - scaleRatio) + this.viewport.offsetX * scaleRatio;
+    this.viewport.offsetY = screenY * (1 - scaleRatio) + this.viewport.offsetY * scaleRatio;
+    this.viewport.scale = newScale;
+  }
+
+  /** Reset to the auto-fit viewport computed at the last setScene(). */
+  resetViewport(): void {
+    this.viewport = { ...this.fitViewport };
+  }
+
+  /**
+   * Wire pointer drag, wheel zoom, and double-click reset to the canvas.
+   * Call once after construction in the app boot sequence.
+   */
+  attachViewportControls(): void {
+    const canvas = this.canvas;
+    let isDragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (canvas.setPointerCapture !== undefined) {
+        canvas.setPointerCapture(e.pointerId);
+      }
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      this.panBy(dx, dy);
+    });
+
+    const endDrag = (): void => {
+      isDragging = false;
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+
+    canvas.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        // Each wheel tick zooms ~10%; deltaY > 0 → scroll down → zoom out.
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        this.zoomAt(screenX, screenY, factor);
+      },
+      { passive: false }
+    );
+
+    canvas.addEventListener("dblclick", () => {
+      this.resetViewport();
+    });
+  }
+
+  // --- Private helpers ---
+
+  /** Compute the fit viewport from the stored world bounds and current canvas size. */
+  private computeFit(): Viewport {
+    if (!this.hasWorldBounds) {
+      return { scale: 1, offsetX: 0, offsetY: 0 };
+    }
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    const cssW = this.canvas.width / dpr;
+    const cssH = this.canvas.height / dpr;
+
+    const worldW = this.worldMaxX - this.worldMinX;
+    const worldH = this.worldMaxY - this.worldMinY;
+
+    if (worldW <= 0 || worldH <= 0) {
+      return { scale: 1, offsetX: 0, offsetY: 0 };
+    }
+
+    const availW = cssW - FIT_PADDING * 2;
+    const availH = cssH - FIT_PADDING * 2;
+    const scale = Math.min(availW / worldW, availH / worldH);
+
+    const offsetX = cssW / 2 - (this.worldMinX + worldW / 2) * scale;
+    const offsetY = cssH / 2 - (this.worldMinY + worldH / 2) * scale;
+
+    return { scale, offsetX, offsetY };
   }
 
   private drawPathsBatched(theme: Theme): void {

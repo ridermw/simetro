@@ -57,19 +57,32 @@ test.describe("simetro smoke", () => {
 
   test("canvas has rendered content (not blank)", async ({ page }) => {
     await page.goto("/");
-    await page.waitForTimeout(200); // Allow first rAF frame.
-    // Use a small JS evaluation to sample the canvas pixel buffer.
-    const isNotBlack = await page.evaluate(() => {
+    await page.waitForTimeout(300); // Allow first rAF frame + mock transport tick.
+    // Use the viewport transform to compute where node id=1 (world 200,200)
+    // actually lands on screen after auto-fit, then check that pixel is non-background.
+    const isNotBlank = await page.evaluate(() => {
       const c = document.getElementById("scene") as HTMLCanvasElement | null;
       if (c === null) return false;
       const ctx = c.getContext("2d");
       if (ctx === null) return false;
-      // Sample a node we know exists in demo: node id=1 at (200, 200).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = (window as any).__simetroRenderer;
       const dpr = window.devicePixelRatio || 1;
-      const px = ctx.getImageData(200 * dpr, 200 * dpr, 1, 1).data;
-      // px[0..2] = RGB. The background is #0e1116 (14, 17, 22).
+      let sx: number, sy: number;
+      if (r?.viewportForTest !== undefined) {
+        const vp: { scale: number; offsetX: number; offsetY: number } = r.viewportForTest;
+        // Node id=1 is at world position (200, 200) in the demo scene.
+        sx = Math.round((200 * vp.scale + vp.offsetX) * dpr);
+        sy = Math.round((200 * vp.scale + vp.offsetY) * dpr);
+      } else {
+        // Fallback if renderer not exposed: sample original demo position.
+        sx = Math.round(200 * dpr);
+        sy = Math.round(200 * dpr);
+      }
+      const px = ctx.getImageData(sx, sy, 1, 1).data;
+      // Background color is #0e1116 (14, 17, 22).
       return px[0] !== 14 || px[1] !== 17 || px[2] !== 22;
     });
-    expect(isNotBlack).toBe(true);
+    expect(isNotBlank).toBe(true);
   });
 });

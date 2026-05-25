@@ -377,6 +377,10 @@ function boot(): void {
 
   const renderer = new Renderer(canvas);
   renderer.warm(DEFAULT_THEME);
+  renderer.attachViewportControls();
+  // Expose renderer for e2e viewport inspection (non-Tauri builds only).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__simetroRenderer = renderer;
   const state = createAppState();
 
   const appRoot = document.getElementById("app");
