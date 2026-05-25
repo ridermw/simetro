@@ -11,9 +11,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use simetro_engine::{load_scene_str, LoadedScene};
 #[cfg(not(feature = "llm-live"))]
 use simetro_engine::LoadError;
+use simetro_engine::{load_scene_str, LoadedScene};
 
 #[test]
 fn games_are_polished_v1_worlds() {
