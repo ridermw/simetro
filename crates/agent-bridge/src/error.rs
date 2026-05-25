@@ -47,22 +47,21 @@ impl LlmError {
 
     /// Catalogue of every `LlmError` variant identifier.
     ///
-    /// **Compile-time guarantee.** This function pairs the name list
-    /// with an exhaustive match over `LlmError`. The match's only
-    /// purpose is to force the compiler to fail when a new variant is
-    /// added without being represented here: each match arm
-    /// `Self::Foo { .. } => "foo"` makes the arm-and-name a single
-    /// edit, so omitting either side is a one-line review catch.
+    /// **Compile-time guarantee.** Each entry in the returned vec is
+    /// produced by calling `name_for(&Self::SomeVariant {...})`, so
+    /// the name returned ALWAYS comes from the exhaustive match in
+    /// `name_for`. Arm-vs-name drift is structurally impossible:
+    /// adding a new variant requires (1) an arm in `name_for`
+    /// (compile error if missing) and (2) a `name_for(&Self::New {})`
+    /// call below (no compile-time check, but visible adjacent edit).
     ///
-    /// The list returned is sorted by enum declaration order so test
-    /// output is stable.
+    /// The list is in enum declaration order so test output is
+    /// stable.
     #[must_use]
     pub fn all_variants() -> Vec<&'static str> {
-        // The match exists ONLY to make the compiler error when a
-        // new variant is added without updating the list below. If
-        // this match goes stale, `cargo build` fails.
-        #[allow(dead_code)]
-        fn _exhaustive_check(e: &LlmError) -> &'static str {
+        // EXHAUSTIVE match. Adding a variant without an arm here
+        // fails to compile.
+        fn name_for(e: &LlmError) -> &'static str {
             match e {
                 LlmError::NotAuthenticated => "not_authenticated",
                 LlmError::SubprocessDied { .. } => "subprocess_died",
@@ -74,13 +73,22 @@ impl LlmError {
             }
         }
         vec![
-            "not_authenticated",
-            "subprocess_died",
-            "refused",
-            "timeout",
-            "rate_limited",
-            "malformed_response",
-            "disconnected",
+            name_for(&LlmError::NotAuthenticated),
+            name_for(&LlmError::SubprocessDied { code: None }),
+            name_for(&LlmError::Refused {
+                agent_id: String::new(),
+                message: String::new(),
+            }),
+            name_for(&LlmError::Timeout {
+                agent_id: String::new(),
+                elapsed_ms: 0,
+            }),
+            name_for(&LlmError::RateLimited { retry_after_ms: 0 }),
+            name_for(&LlmError::MalformedResponse {
+                agent_id: String::new(),
+                raw: String::new(),
+            }),
+            name_for(&LlmError::Disconnected),
         ]
     }
 }
