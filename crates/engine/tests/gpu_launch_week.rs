@@ -1,30 +1,38 @@
-//! GPU Launch Week scene integration test (PR 6 + PR 7).
+//! GPU Launch Week scene integration test (PRs 6–12a).
 //!
-//! The dedicated scene under `games/gpu-launch-week.json` is the first
-//! `scenario_language_v1` world to ship in the polished `games/`
-//! catalog. PR 6 established the base scene (places, links, things,
-//! transforms, demand); PR 7 appended two pressure entries
-//! (`gpu-fault-storm` at tick 1500 and `dashboard-storm` at tick 2400).
+//! The dedicated scene under `games/gpu-launch-week.json` exercises
+//! every `scenario_language_v1` primitive: places, links, things,
+//! transforms, demand, pressure (PR 7), objectives, failure conditions,
+//! victory conditions (PR 8), observability (PR 9), agents (PR 10),
+//! and milestones (PR 11). PR 12a wires all of these together and
+//! proves the scene reaches `GameOutcome::Won` deterministically.
 //!
-//! This test does NOT commit a state-hash baseline yet. The scene is
-//! expected to grow further with objectives (PR 8), observability
-//! (PR 9), agents (PR 10), and milestones (PR 11) — baselining the
-//! hash now would create maintenance noise rather than a useful
-//! determinism gate. The hash baseline is locked in at PR 12 (scene
-//! polish).
+//! Scene shape (as of PR 12a):
+//! - 4 places, 3 links, 4 things, 3 transforms, 1 demand
+//! - 2 pressures: `gpu-fault-storm` (ticks 1500–2100),
+//!   `dashboard-storm` (ticks 2400–2700)
+//! - 3 objectives, 2 failure conditions, 1 victory condition
+//!   (`survive_until` at tick 2800)
+//! - observability: 3 metrics, 2 dashboards, 2 alerts
+//! - 2 agents (mock observer + builtin demand-throttler)
+//! - 6 milestones (4 pressure-lifecycle, 1 dashboard-state, 1
+//!   metric-threshold)
 //!
-//! Instead, this test asserts the contract across PRs 0-7:
+//! The deterministic hash baseline is captured at `BASELINE_TICKS=2800`
+//! (the victory tick) so the hash is not coupled to post-terminal
+//! behavior.
 //!
-//! - the file loads cleanly via the SL1 loader,
-//! - the deterministic single-place pipeline runs for 600 ticks with
-//!   zero warnings (no starvation, no blocked transforms, no demand
-//!   drops, no backlog overflow) — the two pressures both activate
-//!   after tick 600 so this window stays clean,
-//! - the protocol static payload exposes the expected SL1 metadata
-//!   counts (places, links, things, transforms, demand, pressure),
-//! - the demand `exec-dashboard-refresh` actually fulfills on its
-//!   scheduled cadence — proving the inventory wiring is real, not
-//!   just declarative.
+//! This test suite asserts:
+//! - the file loads cleanly and exposes all SL1 static-payload counts,
+//! - the pipeline runs for 600 ticks with zero warnings,
+//! - the demand `exec-dashboard-refresh` fulfills on cadence,
+//! - `GameOutcome::Won` is reached exactly at tick 2800,
+//! - the four pressure-lifecycle milestones fire and the two
+//!   health-signal milestones do NOT fire on the winning path,
+//! - tightening the `stale_target` FC drives the run to
+//!   `GameOutcome::Lost`,
+//! - the state hash is stable across two identical runs and matches
+//!   the committed baseline.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -381,6 +389,20 @@ fn scene_fires_pressure_milestones_during_winning_run() {
         assert!(
             entry.fired_at_tick.is_some(),
             "pressure-lifecycle milestone {id} should fire during the winning run",
+        );
+    }
+    // Health-signal milestones are declared for degenerate runs only; they
+    // must NOT fire on the smooth winning path. If either fires it means the
+    // tuned baseline pipeline is no longer healthy.
+    for id in ["exec-dashboard-went-stale", "platform-compute-saturated-detected"] {
+        let entry = runtime
+            .milestones
+            .get(id)
+            .unwrap_or_else(|| panic!("milestone {id} should be present in runtime"));
+        assert!(
+            entry.fired_at_tick.is_none(),
+            "health-signal milestone {id} should NOT fire during the winning run; \
+             the tuned baseline pipeline should stay healthy",
         );
     }
 }
