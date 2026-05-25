@@ -2,9 +2,12 @@
 
 ## Goal
 
-Replace the visible gallery's simple transit-loop worlds with exactly 40
-new local scenarios so the app presents complex systems-game content by
-default. The new pack is balanced by difficulty:
+Add exactly 40 new local complex scenarios using the abilities currently
+available on `main`. The agent and visibility model upgrades are being
+handled in a separate worktree; this worktree focuses on high-quality
+scenario content that can be registered and validated under today's
+catalog/registry/world-quality invariants. The new pack is balanced by
+difficulty:
 
 | Difficulty | New scenes |
 | --- | ---: |
@@ -19,25 +22,22 @@ therefore contains 20 SL1 scenes and 20 legacy-rendered scenes.
 
 ## Architecture
 
-Each visible scene is a first-class `games/*.json` file with:
+Each new scene is a first-class `games/*.json` file with:
 
 - `schema_version: 1`
 - a `catalog` block that satisfies the world-quality checklist
 - a stable kebab-case slug matching the filename
 - matching entries in `frontend/src/catalog/scenes.ts`
-- matching visible-scene entries in `src-tauri/src/scene_registry.rs`
+- matching entries in `src-tauri/src/scene_registry.rs`
 
-Existing transit-loop scenes must be removed from the visible frontend
-catalog and from the Tauri registry's user-selectable scene list.
-`demo-paths` is the exception: keep the file available as an
-internal/default/test fixture until the engine, driver tests, and
-determinism baselines no longer depend on it. It must not appear in the
-visible gallery after this change.
+Existing transit-loop scenes remain in this worktree so
+`world_quality_checklist` can keep enforcing set equality across
+`games/*.json`, `SCENE_CATALOG`, and `SCENE_ENTRIES`. Removing or hiding
+those scenes, including keeping `demo-paths` as an internal-only fixture,
+belongs to the separate visibility-model worktree.
 
-The initial desktop scene must still resolve through the backend scene
-registry, never from a frontend-supplied path. If `demo-paths` remains
-the default during this pack, the frontend selection state must not
-pretend it is one of the visible catalog scenarios.
+The initial desktop scene continues to resolve through the backend scene
+registry, never from a frontend-supplied path.
 
 ## Scene types
 
@@ -100,18 +100,16 @@ medium, and 10 hard.
 ## Data flow
 
 1. Authored JSON lives in `games/<slug>.json`.
-2. Frontend metadata in `SCENE_CATALOG` exposes only the 40 complex
-   visible scenes in the browser.
-3. Tauri `SceneRegistry` resolves visible scene ids plus any internal
-   default/test fixtures to local `games/*.json` paths; the frontend
-   never sends a file path.
+2. Frontend metadata in `SCENE_CATALOG` exposes the new scenes under the
+   current catalog model.
+3. Tauri `SceneRegistry` resolves scene ids to local `games/*.json`
+   paths; the frontend never sends a file path.
 4. Existing scene switching loads by registry-backed scene id.
 
 ## Error handling and safety
 
 - Catalog and registry entries must stay aligned with `games/*.json`.
 - Scene ids stay stable, local, and kebab-case.
-- Visible catalog entries must exclude old transit-loop scenes.
 - SL1 behavior-bearing fields must use the strict schema accepted by the
   current loader.
 - Invalid scenes must fail visibly through existing load-error paths.
