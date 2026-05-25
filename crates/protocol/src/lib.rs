@@ -185,6 +185,13 @@ pub struct StaticPayload {
     /// Sorted by `id`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_observability_alerts: Vec<Sl1AlertView>,
+    /// SL1 agents for this scene (PR 10). Static metadata only;
+    /// per-tick agent runtime state (last decision tick, cooldown,
+    /// etc.) is not yet exposed in [`SnapshotPayload`] in PR 10.
+    /// Empty for non-SL1 scenes and for SL1 scenes with no `agents`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_agents: Vec<Sl1AgentView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -741,6 +748,29 @@ pub struct Sl1AlertStateView {
     pub fired_at_tick: Option<u64>,
 }
 
+/// Wire-level view of one validated SL1 agent (PR 10). Mirrors
+/// `engine::scenario_language_v1::Sl1Agent` 1:1. Static metadata; the
+/// runtime state (last decision tick, cooldown deadline) is not yet
+/// surfaced in [`SnapshotPayload`] in PR 10.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sl1AgentView {
+    pub id: String,
+    /// Canonical wire string (`mock` / `builtin` / `llm`).
+    pub kind: String,
+    pub role: String,
+    pub interval_ticks: u64,
+    /// `"<kind>:<id>"` strings, sorted (canonical).
+    pub observation_scope: Vec<String>,
+    /// Canonical snake_case action kinds, sorted.
+    pub allowed_actions: Vec<String>,
+    pub max_cost_per_decision: u64,
+    pub cooldown_ticks: u64,
+    /// Per-objective weights in `[0, 1]`. Empty if the author did not
+    /// declare any.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub objective_weights: std::collections::BTreeMap<String, f64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -960,6 +990,39 @@ pub enum SimEvent {
     Sl1AlertCleared {
         alert_id: String,
         metric_id: String,
+        tick: u64,
+    },
+    /// An SL1 agent's decision was accepted (PR 10). `action_kind` is
+    /// the canonical snake_case discriminator
+    /// ([`Sl1AgentActionKind`](../engine/scenario_language_v1/enum.Sl1AgentActionKind.html)).
+    /// `target_id` is the action's primary target identifier (e.g.
+    /// the demand id for `throttle_demand`).
+    Sl1AgentActionApplied {
+        agent_id: String,
+        action_kind: String,
+        target_id: String,
+        cost: u64,
+        tick: u64,
+    },
+    /// An SL1 agent proposed a decision but the runtime rejected it
+    /// (PR 10). `reason` is the canonical snake_case discriminator
+    /// ([`Sl1AgentRejectionReason`](../engine/scenario_language_v1/enum.Sl1AgentRejectionReason.html)).
+    /// `target_id` is `None` only when the rejection is purely
+    /// agent-state-level (e.g. `cooldown`).
+    Sl1AgentActionRejected {
+        agent_id: String,
+        action_kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_id: Option<String>,
+        reason: String,
+        tick: u64,
+    },
+    /// One-shot per agent: emitted the first time an `llm`-kind agent
+    /// would have fired (PR 10) but the live LLM backend is disabled
+    /// in this build. Mirrors the bridge's feature-gate so authors can
+    /// distinguish "agent chose not to act" from "live LLM not wired".
+    Sl1AgentLlmDisabled {
+        agent_id: String,
         tick: u64,
     },
 }
@@ -1523,6 +1586,7 @@ mod tests {
             sl1_observability_metrics: Vec::new(),
             sl1_observability_dashboards: Vec::new(),
             sl1_observability_alerts: Vec::new(),
+            sl1_agents: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -1624,6 +1688,7 @@ mod tests {
             sl1_observability_metrics: Vec::new(),
             sl1_observability_dashboards: Vec::new(),
             sl1_observability_alerts: Vec::new(),
+            sl1_agents: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -1663,6 +1728,7 @@ mod tests {
             sl1_observability_metrics: vec![],
             sl1_observability_dashboards: vec![],
             sl1_observability_alerts: vec![],
+            sl1_agents: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -1728,6 +1794,7 @@ mod tests {
             sl1_observability_metrics: vec![],
             sl1_observability_dashboards: vec![],
             sl1_observability_alerts: vec![],
+            sl1_agents: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);

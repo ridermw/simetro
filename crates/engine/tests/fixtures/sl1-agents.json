@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "name": "sl1-agents-fixture",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": { "nodes": [], "paths": [], "movers": [] },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [0.0, 0.0],
+        "capacity": { "machine_hours": 4 },
+        "storage": {
+          "raw_material": { "capacity": 100, "initial": 100 },
+          "report":       { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["report"]
+      },
+      {
+        "id": "sink",
+        "role": "consumer",
+        "pos": [10.0, 0.0],
+        "capacity": { "queries": 8 },
+        "storage": { "report": { "capacity": 100, "initial": 0 } },
+        "accepts": ["report"],
+        "produces": []
+      }
+    ],
+    "things": [
+      { "id": "raw_material", "kind": "input", "tags": [] },
+      { "id": "report",       "kind": "data",  "tags": [], "freshness_budget_ticks": 50 }
+    ],
+    "demand": [
+      {
+        "id": "report_demand",
+        "type": "throughput",
+        "target": { "type": "place", "id": "sink" },
+        "requires": ["report"],
+        "spawn_schedule": { "type": "fixed", "every_ticks": 4, "start_tick": 1 },
+        "deadline_ticks": 200,
+        "priority": "normal",
+        "value": 10,
+        "penalty": { "score": -1 }
+      }
+    ],
+    "observability": {
+      "metrics": [
+        { "id": "factory_load",
+          "source": "place_capacity_used_percent",
+          "place": "factory",
+          "capacity": "machine_hours"
+        }
+      ],
+      "dashboards": [],
+      "alerts": []
+    },
+    "agents": [
+      {
+        "id": "mock_agent",
+        "kind": "mock",
+        "role": "observer",
+        "interval_ticks": 3,
+        "observation_scope": ["metric:factory_load"],
+        "allowed_actions": [],
+        "budgets": { "max_cost_per_decision": 1, "cooldown_ticks": 0 }
+      },
+      {
+        "id": "throttler",
+        "kind": "builtin",
+        "role": "demand_throttler",
+        "interval_ticks": 5,
+        "observation_scope": ["demand:report_demand"],
+        "allowed_actions": ["throttle_demand"],
+        "budgets": { "max_cost_per_decision": 1, "cooldown_ticks": 4 }
+      }
+    ]
+  }
+}

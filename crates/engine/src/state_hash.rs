@@ -439,6 +439,36 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-agent static fingerprint (PR 10). Gated on agents being
+    // non-empty so all prior SL1 baselines (sl1-empty through
+    // sl1-observability) stay bit-for-bit stable.
+    if !sl1.agents.is_empty() {
+        h.update(b"sl1.agents.v1");
+        for a in &sl1.agents {
+            h.update(b"sl1.agent.v1");
+            feed_str(h, &a.id);
+            h.update(a.kind.as_str().as_bytes());
+            feed_str(h, &a.role);
+            h.update(a.interval_ticks.to_le_bytes());
+            h.update((a.observation_scope.len() as u64).to_le_bytes());
+            for t in &a.observation_scope {
+                h.update(t.kind_str().as_bytes());
+                feed_str(h, t.id());
+            }
+            h.update((a.allowed_actions.len() as u64).to_le_bytes());
+            for k in &a.allowed_actions {
+                h.update(k.as_str().as_bytes());
+            }
+            h.update(a.max_cost_per_decision.to_le_bytes());
+            h.update(a.cooldown_ticks.to_le_bytes());
+            h.update((a.objective_weights.len() as u64).to_le_bytes());
+            for (k, v) in &a.objective_weights {
+                feed_str(h, k);
+                h.update(v.to_le_bytes());
+            }
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -603,6 +633,38 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
                     feed_str(h, aid);
                     feed_alert_state(h, *state);
                 }
+            }
+        }
+        // Per-tick agent runtime fingerprint (PR 10). Gated on agents
+        // being present so older baselines stay stable. Captures the
+        // per-agent cadence/cooldown clocks AND any agent-imposed
+        // demand pauses currently in effect, so a scene whose agent
+        // decisions diverge across ticks shows up as a baseline drift.
+        if !sl1.agents.is_empty() {
+            h.update(b"sl1.runtime.agents.v1");
+            h.update((runtime.agents.len() as u64).to_le_bytes());
+            for (aid, s) in &runtime.agents {
+                feed_str(h, aid);
+                match s.last_decision_tick {
+                    Some(t) => {
+                        h.update([1u8]);
+                        h.update(t.to_le_bytes());
+                    }
+                    None => h.update([0u8]),
+                }
+                match s.cooldown_until_tick {
+                    Some(t) => {
+                        h.update([1u8]);
+                        h.update(t.to_le_bytes());
+                    }
+                    None => h.update([0u8]),
+                }
+                h.update([u8::from(s.llm_disabled_emitted)]);
+            }
+            h.update((runtime.agent_demand_pauses.len() as u64).to_le_bytes());
+            for (demand_id, until) in &runtime.agent_demand_pauses {
+                feed_str(h, demand_id);
+                h.update(until.to_le_bytes());
             }
         }
     }
@@ -958,6 +1020,53 @@ fn feed_event(h: &mut Sha256, e: &SimEvent) {
             h.update(alert_id.as_bytes());
             h.update((metric_id.len() as u64).to_le_bytes());
             h.update(metric_id.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1AgentActionApplied {
+            agent_id,
+            action_kind,
+            target_id,
+            cost,
+            tick,
+        } => {
+            h.update([0x1f]);
+            h.update((agent_id.len() as u64).to_le_bytes());
+            h.update(agent_id.as_bytes());
+            h.update((action_kind.len() as u64).to_le_bytes());
+            h.update(action_kind.as_bytes());
+            h.update((target_id.len() as u64).to_le_bytes());
+            h.update(target_id.as_bytes());
+            h.update(cost.to_le_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1AgentActionRejected {
+            agent_id,
+            action_kind,
+            target_id,
+            reason,
+            tick,
+        } => {
+            h.update([0x20]);
+            h.update((agent_id.len() as u64).to_le_bytes());
+            h.update(agent_id.as_bytes());
+            h.update((action_kind.len() as u64).to_le_bytes());
+            h.update(action_kind.as_bytes());
+            match target_id {
+                Some(t) => {
+                    h.update([0x01]);
+                    h.update((t.len() as u64).to_le_bytes());
+                    h.update(t.as_bytes());
+                }
+                None => h.update([0x00]),
+            }
+            h.update((reason.len() as u64).to_le_bytes());
+            h.update(reason.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1AgentLlmDisabled { agent_id, tick } => {
+            h.update([0x21]);
+            h.update((agent_id.len() as u64).to_le_bytes());
+            h.update(agent_id.as_bytes());
             h.update(tick.to_le_bytes());
         }
     }
