@@ -13,6 +13,7 @@ export interface SceneSwitchState {
   hover: { clear(): void; setScene(scene: StaticPayload | null): void } | null;
   fault: { hide(): void; show(fault: FaultPayload): void } | null;
   warnings: { clear(): void } | null;
+  sl1: { reset(): void } | null;
   lastSnapshotAt: number;
   moverScratch: MoverState[];
 }
@@ -61,6 +62,7 @@ function clearSceneScopedUi(state: SceneSwitchState): void {
   state.hover?.clear();
   state.fault?.hide();
   state.warnings?.clear();
+  state.sl1?.reset();
 }
 
 function clearSceneScopedRuntime(state: SceneSwitchState): void {

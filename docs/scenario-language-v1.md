@@ -606,6 +606,60 @@ declaration, and `SnapshotPayload.sl1_demand_states: Vec<Sl1DemandRuntimeView>`
 carries `{ demand_id, outstanding, fulfilled_count, dropped_count,
 next_sequence }` per tick.
 
+## Frontend HUD (PR 12b)
+
+simetro's browser frontend exposes scenario_language_v1 runtime state
+through a small set of HUD components that mount alongside the
+existing fault / warning / heartbeat overlays. These components
+answer the 30-second **viewer litmus** for any SL1 scene:
+
+1. **What is the AI trying to save?** → `Sl1StatusPanel`
+   (`#simetro-sl1-status`) surfaces the current `GameOutcome` state
+   (`in_progress` / `won` / `lost`), the derived game phase
+   (`winning` / `losing` / `stabilizing` / `spiraling`), and the
+   loss reason when applicable.
+2. **What is going wrong?** → `Sl1DashboardChips`
+   (`#simetro-sl1-dashboards`) shows one chip per dashboard with its
+   freshness state colour-coded (`ok` / `stale` / `no_data`).
+   `Sl1AlertStrip` (`#simetro-sl1-alerts`) renders a severity-coded
+   pill per firing alert and removes the pill once the alert
+   resolves.
+3. **Did the last action help?** → `Sl1MilestoneStrip`
+   (`#simetro-sl1-milestones`) appends one chip per fired milestone
+   in fire order, deduplicated by `milestone_id` for replay safety.
+
+### Safe-text contract
+
+Every author-supplied string surfaced by these components
+(milestone labels, dashboard ids, alert ids, outcome reasons)
+renders via `textContent`. This is the SL1 reviewer policy: any
+string ultimately sourced from JSON, user input, or an LLM is a
+prompt-injection / XSS vector, and `innerHTML` is forbidden for it.
+Unit tests in `frontend/src/tests/unit/sl1_hud.test.ts` exercise
+this by feeding `<script>` and `<svg onload=…>` payloads to every
+component and asserting they appear verbatim (and that no script
+node is created).
+
+### Browser-only SL1 demo (`?sl1demo=1`)
+
+The browser-only `MockTransport` accepts an optional `sl1Mode`
+flag, surfaced as the `?sl1demo=1` query parameter on the dev
+server. When enabled, the mock decorates the demo scene with one
+dashboard, one alert, and two milestones, and runs a short
+scripted timeline so the SL1 HUD exercises every state transition
+(ok → stale → ok, milestone fires, outcome flips to `won`). This
+is what the Playwright suite at
+`frontend/src/tests/e2e/sl1_hud.spec.ts` drives — the Tauri shell
+is not required.
+
+### Scene-switch reset
+
+`resetLocalSceneState` (`frontend/src/app/scene_switch.ts`) calls
+`hud.reset()` so every chip strip, status panel, and alert pill
+clears when the registry-backed scene switch fires. Non-SL1 scenes
+hide the panels (`display: none`) so the canvas surface stays
+visually unchanged.
+
 ## Roadmap (per `plan.md`)
 
 | PR | Adds |
