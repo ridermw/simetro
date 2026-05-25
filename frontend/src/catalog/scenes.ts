@@ -3,7 +3,7 @@
 // Static gallery metadata for local scenes. These strings are content, not
 // markup; future UI should render them with textContent only.
 
-export type SceneWorldKind = "transit_loop";
+export type SceneWorldKind = "transit_loop" | "sl1_scenario";
 export type SceneDifficulty = "intro" | "easy" | "medium" | "hard";
 export type SceneStatus = "ready" | "draft" | "planned";
 
@@ -298,6 +298,27 @@ export const SCENE_CATALOG = [
       "Hexagons, circles, diamonds, triangles, and squares distinguish command hubs, docks, windows, burn beacons, solar arrays, and cargo yards.",
     ],
     status: "ready",
+  }),
+  defineScene({
+    id: "gpu-launch-week",
+    title: "GPU Launch Week",
+    subtitle:
+      "An HPC cluster keeps GPU jobs and health dashboards stable through telemetry, fact-building, and report-refresh pressure. SL1 scene v0 — visuals land in a later PR.",
+    world_kind: "sl1_scenario",
+    difficulty: "medium",
+    palette_name: "gpu_launch_week_midnight",
+    rules_summary: [
+      "The scene is the first scenario_language_v1 world: places, links, things, transforms, and demand replace the legacy mover loop.",
+      "All transforms colocate on the gpu-platform place: heartbeats are normalized, normalized signals become uptime facts, and facts refresh the dashboard report.",
+      "A critical executive dashboard demand fires every 60 ticks starting at tick 120 and observes the dashboard_result thing at the gpu-platform target.",
+      "Pressure events, visible objectives, observability, agents, and a winnable/losable HUD are explicitly scheduled for later PRs in the roadmap.",
+    ],
+    visual_notes: [
+      "Marked status=draft because the SL1 canvas renderer is not yet wired; selecting the scene loads it and shows catalog metadata in the scene browser.",
+      "Four SL1 places form a wide pipeline silhouette: source telemetry upper-left, central gpu-platform cluster, kusto dashboard upper-right, incident-room operator overlay below.",
+      "Place roles (source / compute_cluster / dashboard / operator) act as the SL1 node language and will drive future render hints.",
+    ],
+    status: "draft",
   }),
 ] as const satisfies readonly SceneCatalogEntry[];
 

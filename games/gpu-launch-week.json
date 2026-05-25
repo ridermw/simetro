@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "name": "gpu-launch-week",
+  "theme": {
+    "palette": ["#0b1020", "#e8eaed", "#7aa2f7", "#f7768e", "#9ece6a", "#e0af68", "#bb9af7"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "gpu-launch-week",
+    "title": "GPU Launch Week",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "Agents keep GPU jobs and health dashboards stable through HPC and data-platform pressure. PR 6 v0 establishes the scene shape using only PRs 0-5 primitives: places, links, things, transforms, demand. Pressure, objectives, observability, agents, milestones, and visible win/loss arrive in PRs 7-12.",
+    "tags": ["sl1", "scenario_language_v1", "gpu", "hpc", "draft"],
+    "palette_note": "Dark midnight background with neutral foreground; blue for compute pipelines, magenta for fault telemetry, green for healthy facts, amber for dashboard freshness, violet for operator overlay. Hex codes chosen for >=45 pairwise color distance per quality gate.",
+    "layout_note": "Four SL1 places form a wide pipeline silhouette: source telemetry at the upper-left edge, the central gpu-platform cluster, a kusto dashboard at the upper-right edge, and an incident-room operator overlay below. Positions form a meaningful triangular silhouette; legacy pieces.nodes is intentionally empty because SL1 rendering ships in a later PR.",
+    "node_language_note": "Place roles act as the node language for SL1 scenes: source / compute_cluster / dashboard / operator. Each role is distinct and matches the role's render hint and accept/produce contract. Visual node shapes/colors will be derived from place role + render hint when the SL1 frontend renderer lands.",
+    "mover_path_note": "Movers do not exist yet for SL1 scenes; the legacy pieces.movers array is intentionally empty. SL1 links represent typed dependency and future transport topology between places. Cross-place inventory transport over links lands in a later PR; PR 6 colocates transforms on gpu-platform so the deterministic pipeline runs entirely within one place's typed storage.",
+    "review_note": "Marked status=draft in the frontend catalog because the SL1 canvas renderer is not yet wired. Selecting this scene loads it successfully and shows catalog metadata in the scene browser. PR 12 will polish the canvas, lock the deterministic hash baseline, and flip status to ready."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "mycroft-telemetry",
+        "role": "source",
+        "pos": [-360.0, -160.0],
+        "capacity": { "events_per_tick": 200 },
+        "storage": {},
+        "accepts": [],
+        "produces": ["gpu_heartbeat"],
+        "failure_domains": ["eastus", "az1"],
+        "operating_states": {}
+      },
+      {
+        "id": "gpu-platform",
+        "role": "compute_cluster",
+        "pos": [0.0, 0.0],
+        "capacity": { "query_slots": 24, "compute_units": 16 },
+        "storage": {
+          "gpu_heartbeat": { "capacity": 5000, "initial": 2000 },
+          "normalized_heartbeat": { "capacity": 2000, "initial": 4 },
+          "gpu_uptime_fact": { "capacity": 500, "initial": 2 },
+          "dashboard_result": { "capacity": 200, "initial": 2 }
+        },
+        "accepts": ["gpu_heartbeat", "normalized_heartbeat", "gpu_uptime_fact"],
+        "produces": ["normalized_heartbeat", "gpu_uptime_fact", "dashboard_result"],
+        "failure_domains": ["eastus", "az1", "data-platform"],
+        "operating_states": {}
+      },
+      {
+        "id": "kusto-dashboard",
+        "role": "dashboard",
+        "pos": [360.0, -160.0],
+        "capacity": {},
+        "storage": {},
+        "accepts": ["dashboard_result"],
+        "produces": [],
+        "failure_domains": ["eastus", "az1", "observability"],
+        "operating_states": {}
+      },
+      {
+        "id": "incident-room",
+        "role": "operator",
+        "pos": [0.0, 200.0],
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": ["eastus", "az1", "operator"],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "telemetry-to-platform",
+        "type": "data_stream",
+        "from": "mycroft-telemetry",
+        "to": "gpu-platform",
+        "direction": "forward",
+        "capacity": { "events_per_tick": 200 },
+        "travel_ticks": 1,
+        "compatibility": ["gpu_heartbeat"],
+        "queue_capacity": 1000,
+        "backpressure": "block_upstream",
+        "render": { "style": "flow", "color": 2 }
+      },
+      {
+        "id": "platform-to-dashboard",
+        "type": "report_feed",
+        "from": "gpu-platform",
+        "to": "kusto-dashboard",
+        "direction": "forward",
+        "capacity": { "reports_per_tick": 8 },
+        "travel_ticks": 2,
+        "compatibility": ["dashboard_result"],
+        "queue_capacity": 200,
+        "backpressure": "drop_low_priority",
+        "render": { "style": "flow", "color": 5 }
+      },
+      {
+        "id": "platform-to-operator",
+        "type": "control_bus",
+        "from": "gpu-platform",
+        "to": "incident-room",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 4,
+        "compatibility": [],
+        "queue_capacity": 64,
+        "backpressure": "spill_to_buffer",
+        "render": { "style": "control", "color": 6 }
+      }
+    ],
+    "things": [
+      {
+        "id": "gpu_heartbeat",
+        "kind": "raw_signal",
+        "tags": ["telemetry", "gpu", "host"],
+        "freshness_budget_ticks": 120
+      },
+      {
+        "id": "normalized_heartbeat",
+        "kind": "derived_signal",
+        "tags": ["telemetry", "gpu"],
+        "freshness_budget_ticks": 180
+      },
+      {
+        "id": "gpu_uptime_fact",
+        "kind": "fact",
+        "tags": ["health", "gpu"],
+        "freshness_budget_ticks": 600
+      },
+      {
+        "id": "dashboard_result",
+        "kind": "report",
+        "tags": ["dashboard", "executive"],
+        "freshness_budget_ticks": 300
+      }
+    ],
+    "transforms": [
+      {
+        "id": "normalize-heartbeats",
+        "type": "normalize",
+        "runs_on": "gpu-platform",
+        "inputs": [{ "thing": "gpu_heartbeat", "amount": 1 }],
+        "outputs": [{ "thing": "normalized_heartbeat", "amount": 1 }],
+        "cadence_ticks": 2,
+        "duration_ticks": 1,
+        "deadline_ticks": 3,
+        "capacity_cost": { "compute_units": 1 },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "build-uptime-facts",
+        "type": "materialized_view",
+        "runs_on": "gpu-platform",
+        "inputs": [{ "thing": "normalized_heartbeat", "amount": 4 }],
+        "outputs": [{ "thing": "gpu_uptime_fact", "amount": 1 }],
+        "cadence_ticks": 10,
+        "duration_ticks": 4,
+        "deadline_ticks": 15,
+        "capacity_cost": { "query_slots": 4 },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "refresh-dashboard",
+        "type": "report_refresh",
+        "runs_on": "gpu-platform",
+        "inputs": [{ "thing": "gpu_uptime_fact", "amount": 2 }],
+        "outputs": [{ "thing": "dashboard_result", "amount": 1 }],
+        "cadence_ticks": 30,
+        "duration_ticks": 5,
+        "deadline_ticks": 60,
+        "capacity_cost": { "query_slots": 3 },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      }
+    ],
+    "demand": [
+      {
+        "id": "exec-dashboard-refresh",
+        "type": "report_refresh",
+        "target": { "type": "place", "id": "gpu-platform" },
+        "requires": ["dashboard_result"],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 60,
+          "start_tick": 120
+        },
+        "deadline_ticks": 120,
+        "priority": "critical",
+        "value": 100,
+        "penalty": { "score": -500, "warning": "critical_report_stale" }
+      }
+    ],
+    "pressure": [],
+    "objectives": [],
+    "failure_conditions": [],
+    "agents": [],
+    "milestones": []
+  }
+}

@@ -74,9 +74,19 @@ fn validate_world(path: &Path) -> String {
         Err(err) => panic!("{label}: v1 loader rejected world: {err}"),
     };
     validate_palette(&label, &loaded);
-    validate_layout_silhouette(&label, &loaded);
-    validate_node_language(&label, &value, &loaded);
-    validate_mover_paths(&label, &loaded);
+
+    // SL1 scenes carry their game-bearing structure in
+    // `scenario_language_v1` and leave `pieces.{nodes,paths,movers}`
+    // intentionally empty (the SL1 frontend renderer ships later).
+    // Apply SL1-specific topology checks instead of the legacy
+    // node-shape/mover-path validators.
+    if value.get("scenario_language_v1").is_some() {
+        validate_sl1_topology(&label, &value, &loaded);
+    } else {
+        validate_layout_silhouette(&label, &loaded);
+        validate_node_language(&label, &value, &loaded);
+        validate_mover_paths(&label, &loaded);
+    }
 
     slug
 }
@@ -403,4 +413,93 @@ fn path_length(a: [f32; 2], b: [f32; 2]) -> f32 {
     let dx = b[0] - a[0];
     let dy = b[1] - a[1];
     (dx * dx + dy * dy).sqrt()
+}
+
+/// SL1 polished-world validator. Replaces the legacy node/mover
+/// validators for scenes that carry their game-bearing structure in
+/// `scenario_language_v1`. Loader-level reference validation is NOT
+/// duplicated here (see `crates/engine/src/scenario_language_v1.rs`);
+/// these assertions only enforce authored topology quality.
+fn validate_sl1_topology(label: &str, value: &Value, loaded: &LoadedScene) {
+    let sl1 = loaded.world.sl1.as_ref().unwrap_or_else(|| {
+        panic!("{label}: scenario_language_v1 present in source but missing from loaded scene")
+    });
+
+    // SL1 scenes intentionally leave the legacy pieces arrays empty so
+    // the legacy renderer does not draw stale geometry. Lock that in.
+    for legacy in ["nodes", "paths", "movers"] {
+        let arr = value
+            .pointer(&format!("/pieces/{legacy}"))
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("{label}: pieces.{legacy} must be an array"));
+        assert!(
+            arr.is_empty(),
+            "{label}: SL1 scenes must leave pieces.{legacy} empty (SL1 rendering ships separately)",
+        );
+    }
+
+    assert!(
+        sl1.places.len() >= 3,
+        "{label}: SL1 scenes need at least three places for a readable topology",
+    );
+
+    let positions: Vec<[f32; 2]> = sl1.places.iter().map(|p| [p.pos[0], p.pos[1]]).collect();
+    let (min_x, max_x, min_y, max_y) = positions.iter().fold(
+        (
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ),
+        |(min_x, max_x, min_y, max_y), [x, y]| {
+            (min_x.min(*x), max_x.max(*x), min_y.min(*y), max_y.max(*y))
+        },
+    );
+    let width = max_x - min_x;
+    let height = max_y - min_y;
+    assert!(
+        width >= 100.0 && height >= 100.0,
+        "{label}: SL1 place silhouette is too small or line-like",
+    );
+
+    let mut max_triangle_area = 0.0_f32;
+    for (i, a) in positions.iter().enumerate() {
+        for (j, b) in positions.iter().enumerate().skip(i + 1) {
+            for c in positions.iter().skip(j + 1) {
+                max_triangle_area = max_triangle_area.max(triangle_area(*a, *b, *c));
+            }
+        }
+    }
+    assert!(
+        max_triangle_area >= 10_000.0,
+        "{label}: SL1 places do not form a distinct two-dimensional silhouette",
+    );
+
+    let roles: BTreeSet<&str> = sl1.places.iter().map(|p| p.role.as_str()).collect();
+    assert!(
+        roles.len() >= 2,
+        "{label}: SL1 places should use at least two distinct roles for visual language",
+    );
+    assert!(
+        sl1.places.iter().all(|p| !p.role.trim().is_empty()),
+        "{label}: every SL1 place must declare a non-empty role",
+    );
+
+    assert!(
+        sl1.links.len() >= 2,
+        "{label}: SL1 scenes need at least two links to communicate topology",
+    );
+
+    assert!(
+        !sl1.things.is_empty(),
+        "{label}: SL1 scenes need at least one declared thing",
+    );
+    assert!(
+        !sl1.transforms.is_empty(),
+        "{label}: SL1 scenes need at least one transform to drive deterministic behavior",
+    );
+    assert!(
+        !sl1.demand.is_empty(),
+        "{label}: SL1 scenes need at least one demand entry so the run has observable stakes",
+    );
 }
