@@ -30,7 +30,7 @@ The agent is removed from the active set; the engine keeps ticking.
 **Action.**
 1. Check `agent_log.jsonl` for the last few decisions; look for a
    pattern.
-2. If a backend (Copilot, Claude, …) is failing, swap to
+2. If a backend is failing, swap to
    `MockBackend` in the bridge config to keep the sim running.
 3. File an issue with the agent_id and the message.
 
@@ -84,7 +84,7 @@ cd frontend && npm run build
 **Meaning.** An agent tool-called an `Action` the engine rejects, such
 as a malformed or unsafe author action (Place/Connect/Remove; see
 [`agents.md` § Author actions](agents.md#author-actions)).
-Expected during P1 while policies are still narrow.
+Expected while action policies are still narrow.
 
 ### `Warning::Behind { lag_frames, agent_id }`
 
@@ -96,7 +96,7 @@ engine-wide pacing; investigate the named agent first.
 
 ### `Warning::TickOverBudget { ms }`
 
-**Meaning.** A tick took longer than the 33 ms budget (PLAN §13 #6).
+**Meaning.** A tick took longer than the 33 ms budget (tick-budget invariant).
 Single-tick spikes are harmless; sustained means an algorithmic
 regression. Profile with `cargo run -p simetro-headless --release
 -- bench games/<scene>.json`.
@@ -120,7 +120,7 @@ the path supplied to `attach_agent_log`.
 A dead heartbeat with no fault is a transport bug. Restart the
 desktop shell.
 
-## LLM bridge failure modes (P2.A)
+## LLM bridge failure modes
 
 These rows cover failure modes from the live LLM bridge (engine →
 bridge → backend). All are mapped to engine `Fault` / `Warning`
@@ -129,20 +129,19 @@ surfaces by `simetro_agent_bridge::error_mapping::llm_error_to_message`
 
 ### `LlmError::NotAuthenticated` → `Fault::AgentCrashed { agent_id, message: "LLM not authenticated" }`
 
-**Meaning.** The backend (Copilot SDK / Anthropic / OpenAI / etc.)
-rejected the call because credentials are missing or invalid.
+**Meaning.** The backend rejected the call because credentials are
+missing or invalid.
 
-**Action.** For Copilot: run `gh auth status` and re-authenticate
-with `gh auth login --scopes copilot`. For other backends, check the
-relevant env var or OS keychain entry. After fixing credentials,
-restart the bridge process (the engine continues running; the agent
-just stops getting valid replies until restart).
+**Action.** For Copilot: run `gh auth status` and re-authenticate if
+needed. After fixing credentials, restart the bridge process. The
+engine continues running; the agent just stops getting valid replies
+until restart.
 
 ### `LlmError::RateLimited { retry_after_ms }` → `Warning::Behind { lag_frames, agent_id }`
 
 **Meaning.** The backend told the bridge to slow down. The bridge
 treats this as a transient delay; the request will be re-issued
-after the deadline expires per spec §10.2.1.
+after the deadline expires.
 
 **Action.** Usually no action — the simulation continues. If the
 warning sustains, you may be hitting your account-level rate limit;
@@ -178,10 +177,10 @@ its next `interval_ticks`.
 **Meaning.** The model returned text that did not parse as a valid
 tool call (e.g. invalid JSON, schema mismatch). The reason string is
 a hardcoded constant — by design, the `raw` field is **never**
-included in the warning (XPIA hardening, spec §7.1).
+included in the warning (XPIA hardening).
 
 **Action.** Check the AgentLog v2 row for this tick — `raw_response`
-will be there (capped at 64 KiB, secret-redacted per spec §5.3). If
+will be there (capped at 64 KiB and secret-redacted). If
 this is reproducible, raise an issue with the redacted sample. The
 simulation continues; the agent will try again.
 
@@ -190,9 +189,8 @@ simulation continues; the agent will try again.
 **Meaning.** The `simetro-bridge` subprocess exited unexpectedly
 (non-zero `code`, or `None` on signal).
 The engine treats this as fatal for the bridge (the subprocess
-boundary catches panics inside `Backend::invoke` per spec §3.1, so
-exit-with-nonzero typically means a stdio framing error or OS-level
-issue).
+boundary catches panics inside `Backend::invoke`, so exit-with-nonzero
+typically means a stdio framing error or OS-level issue.
 
 **Action.** Check `~/Library/Logs/simetro/bridge.log` (macOS) or
 `~/.local/state/simetro/bridge.log` (Linux). The bridge is restarted
@@ -214,8 +212,8 @@ within ~1 second.
 
 **Meaning.** A reply arrived for a request whose ID is already in
 the `completed` ring. This is a bridge-replay artifact (e.g. the
-bridge crashed mid-write, restarted, and replayed). Spec §10.2.1
-guarantees deduplication.
+bridge crashed mid-write, restarted, and replayed). The request
+lifecycle guarantees deduplication.
 
 **Action.** None — the reply was correctly dropped. If this is
 frequent, the bridge is over-eager about replay; check
@@ -224,8 +222,8 @@ frequent, the bridge is over-eager about replay; check
 ### `Warning::Behind { lag_frames, agent_id }` (backpressure path)
 
 **Meaning.** A second request for the same agent was emitted while
-the first was still pending. Per spec §10.2.1 "one-outstanding-per-
-agent backpressure" rule, the second was dropped and this warning
+the first was still pending. Per the one-outstanding-per-agent
+backpressure rule, the second was dropped and this warning
 was emitted (`lag_frames = current_tick - source_tick`, clamped to
 ≥1; `agent_id` populated). The payload shape is identical to the
 deadline-lag `Behind` variant — distinguish by context (a fresh

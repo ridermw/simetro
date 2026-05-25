@@ -1,7 +1,7 @@
 //! `cargo xtask copilot-smoke` — spawns the real `copilot --acp`
 //! subprocess once and verifies it can be launched cleanly.
 //!
-//! Per spec §3 task 12, this is **human-run only**:
+//! This is **human-run only**:
 //! - Requires `copilot` CLI on PATH (`which copilot`)
 //! - Requires authenticated `gh auth` with the `copilot` scope
 //! - NOT invoked by CI (runners don't have copilot installed)
@@ -16,8 +16,7 @@
 //! We intentionally do NOT try to read stdout — ACP servers produce
 //! nothing until they receive a `tools/initialize` envelope, and a
 //! cross-platform non-blocking pipe read is out of scope for a
-//! "effort: S" smoke. Once the captured ACP fixture lands (spec
-//! §2.5), this smoke can be extended to issue a real `initialize`
+//! "effort: S" smoke. Once the captured ACP fixture lands, this smoke can be extended to issue a real `initialize`
 //! and verify the reply shape.
 //!
 //! Exit codes:
@@ -158,8 +157,7 @@ EXIT CODES:
 /// Walk `PATH` looking for an executable named `name`. Returns the
 /// first matching path, or `None`. Pure std — no `which` shellout
 /// (some minimal Unix devcontainers don't ship `which`, which would
-/// otherwise turn this check into a false negative — Codex PR #23
-/// R1 P2 finding).
+/// otherwise turn this check into a false negative — review finding).
 ///
 /// On Unix, considers a file "executable" if it exists and has any
 /// `x` bit set (we don't try to match the current user's

@@ -1,6 +1,6 @@
 # simetro architecture
 
-> One-page tour. For the full plan, see [`../PLAN.md`](../PLAN.md).
+> One-page tour. For the active roadmap, see [`../PLAN.md`](../PLAN.md).
 
 simetro is a **single-binary Rust + Canvas2D desktop app** (via Tauri)
 plus a **separate process** for LLM agents (the `agent-bridge`), built
@@ -14,7 +14,7 @@ engine via the same protocol's `Action` shapes via the bridge.
   |  + WebView (TS UI)   |<-----> |   (separate proc)   |
   |                      |  JSON  |   - MockBackend     |
   +----------+-----------+        |   - CopilotBackend  |
-             ^                    |   - (P2: Claude/API)|
+             ^                    |   - future backends  |
              | StaticPayload      +----------+----------+
              | Snapshot @ 20Hz               ^
              | Events                        | Observation
@@ -37,9 +37,9 @@ engine via the same protocol's `Action` shapes via the bridge.
 | `crates/protocol`  | Wire types: `SimMessage`, `AgentMessage`, `Action`, faults.   |
 | `crates/loader`    | JSON → world graph; bounds checks; typed `LoadError`.         |
 | `crates/headless`  | CLI: `run`, `bench`, `hash`, `replay`, `export-session`.      |
-| `crates/agent-bridge` | LLM connector: `Backend` trait, Mock, Copilot (P1 stub).   |
+| `crates/agent-bridge` | LLM connector boundary: `Backend` trait, Mock, Copilot stub. |
 | `frontend/`        | Vite + TS + Canvas2D + Tone.js renderer, inspector, UI shell. |
-| `src-tauri/`       | Tauri wrapper around `frontend/dist`. (Step 22 scaffold.)     |
+| `src-tauri/`       | Tauri wrapper around `frontend/dist`.                         |
 
 ## Determinism contract
 

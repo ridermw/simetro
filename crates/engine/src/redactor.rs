@@ -1,19 +1,16 @@
-//! # Secret-pattern redactor (P2.A0.6)
+//! # Secret-pattern redactor
 //!
 //! Pre-write redactor for [`AgentLog`](crate::agent_log) `raw_response`
-//! content. Defends against the spec §5.3 threat: an LLM echoes back a
-//! token that was inadvertently included in the prompt, and AgentLog
-//! persists the secret to disk in plaintext.
+//! content. Defends against the threat that an LLM echoes back a token
+//! inadvertently included in the prompt and AgentLog persists the secret
+//! to disk in plaintext.
 //!
-//! **Single source of truth.** The pattern list below MUST stay in
-//! lock-step with the same list in
-//! `docs/superpowers/analysis/p2a-error-map.md` §4 and the spec
-//! `p2a-security-threat-model.md` §5.3. A drift-detection test
-//! (`drift_check_against_security_threat_model_§5_3`) lives in this
-//! module so any future PR that adds/removes a pattern in one place
-//! without updating the other fails CI.
+//! **Single source of truth.** The pattern list below and the
+//! drift-detection test in this module are authoritative. Any future PR
+//! that adds/removes a pattern must update the test and receive security
+//! review.
 //!
-//! **Markdown vs real regex note.** The spec §5.3 table column uses
+//! **Markdown vs real regex note.** The secret-redaction policy table column uses
 //! `\|` to satisfy GitHub Flavored Markdown table parsing; the
 //! authoritative regex strings (BELOW the table) use real `|` for
 //! alternation. This module follows the authoritative form. The
@@ -63,9 +60,8 @@ pub fn marker_for(name: PatternName) -> String {
 
 /// Authoritative pattern list. Order matters: more specific FIRST.
 /// Adding or removing an entry requires updating
-/// `docs/superpowers/analysis/p2a-error-map.md` §4 and
-/// `docs/superpowers/analysis/p2a-security-threat-model.md` §5.3 in
-/// the same PR, with a security-review pass per spec §2.7.4.
+/// the drift-detection test in this module in the same PR, with a
+/// security-review pass.
 const PATTERN_DEFINITIONS: &[(&str, &str)] = &[
     // Anthropic API keys — runs BEFORE openai_api_key because
     // `sk-ant-...` also matches the OpenAI prefix.
@@ -384,15 +380,13 @@ mod tests {
         }
     }
 
-    // --- Drift detection against spec §5.3 / error-map §4 list. ---
+    // --- Drift detection against the authoritative pattern list. ---
 
     #[test]
-    fn drift_check_against_security_threat_model_5_3() {
-        // EXACT names enumerated in
-        // docs/superpowers/analysis/p2a-security-threat-model.md §5.3
-        // + p2a-error-map.md §4. If you add/remove a pattern in the
-        // redactor, you MUST update both docs and this list in the
-        // SAME PR, with a §2.7.4 security review.
+    fn drift_check_against_authoritative_pattern_list() {
+        // EXACT names that define the current redaction surface. If
+        // you add/remove a pattern in the redactor, update this list in
+        // the same PR and request security-focused review.
         let expected = vec![
             PatternName("anthropic_api_key"),
             PatternName("openai_api_key"),
@@ -408,13 +402,13 @@ mod tests {
         let actual = pattern_names();
         assert_eq!(
             actual, expected,
-            "Redactor pattern list drifted from §5.3 / §4. Update both docs + this test."
+            "Redactor pattern list drifted. Update this test with the pattern change."
         );
     }
 
     #[test]
     fn redactor_uses_true_alternation() {
-        // Markdown-escaping foot-gun (spec §5.3 implementer note):
+        // Markdown-escaping foot-gun (secret-redaction policy implementer note):
         // make sure the GitHub modern-token regex uses real `|` not
         // `\|`. If someone copy-pasted from the spec table, the
         // compiled regex would treat the prefix as the literal string

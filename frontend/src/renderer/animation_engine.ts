@@ -1,6 +1,6 @@
 // frontend/src/renderer/animation_engine.ts
 //
-// PLAN §9 / §14: animations are draw calls layered ON TOP of the
+// renderer batching and allocation target: animations are draw calls layered ON TOP of the
 // static scene from canvas.ts. Each SimEvent becomes a short-lived
 // slot in a ring of active animations; each frame the engine walks
 // the slots and asks each spec.render to draw at the current eased t.
@@ -26,7 +26,7 @@ export class AnimationEngine {
   private readonly slots: Slot[] = [];
   private nextIndex = 0;
   /** ResolveCtx is reused every frame (mutated in place) to avoid
-   *  per-frame allocations (PLAN §14). */
+   *  per-frame allocations (zero-allocation target). */
   private readonly resolve: ResolveCtx = {
     theme: { palette: [], background_index: 0, font: "" },
     scene: {

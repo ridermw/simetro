@@ -6,12 +6,11 @@
 //! `Reply` (or `LlmError`-mapped warning) back to stdout. Exits
 //! cleanly on `Shutdown` or EOF.
 //!
-//! Backend selection (P2.A task 6 ships only the `mock` backend
-//! wired into the loop; `copilot` arrives with task 2-real gated on
-//! the captured ACP fixture):
+//! Backend selection:
 //!
 //! - `SIMETRO_BRIDGE_BACKEND=mock` (default) → [`MockBackend`]
-//! - any other value → logs and exits with code 2
+//! - any other value → logs and exits with code 2 until live provider
+//!   wiring is explicitly enabled
 //!
 //! ## Determinism
 //!
@@ -45,7 +44,7 @@ fn main() -> std::process::ExitCode {
         other => {
             eprintln!(
                 "simetro-bridge: unknown backend `{other}` (only `mock` is wired today; \
-                 `copilot` ships with task 2-real, gated on captured ACP fixture)"
+                 live providers remain feature-gated/default-off)"
             );
             return std::process::ExitCode::from(2);
         }
@@ -112,8 +111,7 @@ async fn run_loop(backend: Box<dyn Backend>) -> std::io::Result<()> {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "schema_version mismatch: peer={}, ours={}; refusing to process payload \
-                     (per spec §10.1)",
+                    "schema_version mismatch: peer={}, ours={}; refusing to process payload",
                     env.schema_version,
                     simetro_protocol::SCHEMA_VERSION
                 ),
@@ -179,8 +177,7 @@ async fn dispatch(
                         confidence: 1.0,
                     },
                     Err(parse_err) => {
-                        // Per spec §11.1 + Codex PR #21 R2 finding:
-                        // malformed tool calls MUST surface as a
+                        // Malformed tool calls MUST surface as a
                         // typed Warning::InvalidAction, not a silent
                         // NoOp. Route through the same error mapping
                         // as backend-level errors so observability /

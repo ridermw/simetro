@@ -1,6 +1,6 @@
 // frontend/src/tests/e2e/animates.spec.ts
 //
-// P1.5 Step 6 — Assert that movers actually animate over time.
+// animation smoke test — Assert that movers actually animate over time.
 // The animated MockTransport continuously advances mover positions,
 // so after sufficient elapsed time the canvas content must differ.
 

@@ -8,7 +8,7 @@
 //!
 //! Renamed from `ecs.rs` per plan Issue 8A. Numeric IDs are owned by the
 //! loader, which interns string IDs from JSON to `u32` at parse time
-//! (PLAN §5.2). The engine never carries string IDs in hot paths.
+//! (identifier interning contract). The engine never carries string IDs in hot paths.
 
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +110,7 @@ pub struct Mover {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
     pub id: ResourceId,
-    /// Stable human-readable name. Author actions (P2.A task 9 —
+    /// Stable human-readable name. Author actions (—
     /// `DefineResource` / `AddProducer` / `AddConsumer`) reference
     /// resources by this name; loader-defined resources use the JSON
     /// id verbatim. Names must match `[A-Za-z0-9_-]+` and be ≤64 chars

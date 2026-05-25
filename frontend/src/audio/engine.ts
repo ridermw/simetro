@@ -1,6 +1,6 @@
 // frontend/src/audio/engine.ts
 //
-// PLAN §4 / §20 DoD #16 / §21 delight #7. Tone.js voice pool.
+// Tone.js voice pool for semantic simulation events.
 //
 //   ┌──────────────────────────────────────────────────────────────┐
 //   │   SimEvent (MoverArrived) ──▶ mappings.toneFor(shape)        │
@@ -13,7 +13,7 @@
 //   │   until then, play() is a no-op (no errors, no console spam).│
 //   └──────────────────────────────────────────────────────────────┘
 //
-// PLAN §13 #6: tick budget — voice triggers are constant-time and
+// tick-budget invariant: tick budget — voice triggers are constant-time and
 // never allocate beyond initial setup, so audio never contributes to
 // `Warning::TickOverBudget`.
 

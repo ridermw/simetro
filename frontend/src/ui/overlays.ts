@@ -1,6 +1,6 @@
 // frontend/src/ui/overlays.ts
 //
-// PLAN §11.1 / §11.2 / §20 DoD #11 — fault overlay + heartbeat +
+// fault/warning overlay contract — fault overlay + heartbeat +
 // perf overlay. These three pieces handle every "something is wrong
 // or sluggish" surface the user can see:
 //
@@ -11,11 +11,11 @@
 //                      invalid_action, behind, tick_over_budget).
 //   HeartbeatBadge   — green dot when snapshots are arriving on
 //                      schedule, amber when stale > 1s, red after
-//                      3s (PLAN §13 #1 stale-channel detection).
+//                      3s (stale-channel detection).
 //   PerfOverlay      — fps + tick budget read-out, toggled by a
 //                      query param (?perf=1) or a hotkey.
 //
-// All text goes through textContent (PLAN §5.1 / §12). Faults carry
+// All text goes through textContent (safe text-rendering policy). Faults carry
 // loader-supplied strings; we treat them as untrusted on principle.
 
 import type { FaultPayload, WarningPayload } from "../protocol/messages";

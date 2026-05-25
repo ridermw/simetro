@@ -1,9 +1,10 @@
 //! Interaction system: routes movers that just arrived onto the next
 //! outgoing path from their current node.
 //!
-//! Routing policy in P1 is "lowest PathId out of this node, deterministic".
-//! That makes the demo scene's a→b→c→a cycle behave predictably. Real
-//! routing (capacity-aware, agent-directed) lands in P2.
+//! Legacy routing policy is "lowest PathId out of this node,
+//! deterministic". That keeps v1/v2 demo scenes predictable. Stakes-v1
+//! game-language work will add capacity-aware, agent-directed policy on
+//! top of the same deterministic tick discipline.
 
 use simetro_protocol::SimEvent;
 
@@ -16,7 +17,8 @@ pub type RouteScratch = (MoverId, PathId, NodeId);
 /// For every mover that is `Waiting`, pick the lowest-id outgoing path
 /// from the current node and begin travel. Emits `MoverDeparted`.
 ///
-/// `scratch` is reused across ticks (zero-alloc target — PLAN §14).
+/// `scratch` is reused across ticks to preserve the steady-state
+/// zero-allocation target.
 pub fn run(world: &mut World, events: &mut Vec<SimEvent>, scratch: &mut Vec<RouteScratch>) {
     scratch.clear();
 

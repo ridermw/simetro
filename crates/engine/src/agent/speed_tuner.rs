@@ -1,4 +1,4 @@
-//! `SpeedTuner` — the canonical P1 built-in agent.
+//! `SpeedTuner` — the canonical legacy built-in agent.
 //!
 //! Every `interval_ticks` ticks it looks at the world, picks the
 //! lowest-id Waiting mover, and proposes three options: speed up, hold,

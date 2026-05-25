@@ -1,6 +1,6 @@
 //! `simetro-headless` binary.
 //!
-//! Subcommands per PLAN §19 step 13:
+//! Subcommands per headless CLI contract:
 //!
 //! ```text
 //!   simetro-headless run            --scene PATH --ticks N --seed S
@@ -87,7 +87,7 @@ enum Cmd {
     /// When `--bundle` is given, the bundle directory contents are
     /// ALSO packaged into a `<out>.tar` file alongside the directory
     /// (the directory is kept for backward-compat with existing
-    /// tooling; future P2.B replay UI reads the `.tar` form).
+    /// tooling; future replay UI reads the `.tar` form).
     ExportSession {
         #[arg(long)]
         scene: PathBuf,
@@ -627,13 +627,13 @@ fn cmd_export_session(
     out: &std::path::Path,
     bundle: bool,
 ) -> i32 {
-    // Layout per PLAN §15:
+    // Layout per AgentLog contract:
     //  out/
     //    scene.json
     //    baseline.hash
     //    manifest.json
-    //    agent-log.jsonl  (empty in P1; populated when an agent is registered)
-    //    tracing.jsonl    (empty in P1; populated when tracing subscriber is wired)
+    //    agent-log.jsonl  (empty unless an agent is registered)
+    //    tracing.jsonl    (empty unless a tracing subscriber is wired)
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("error: failed to create {}: {e}", out.display());
         return 3;
@@ -701,7 +701,7 @@ fn cmd_export_session(
     drop(f);
 
     if bundle {
-        // Per Codex PR #24 R1 P2: `out.with_extension(...)` REPLACES
+        // Per review finding: `out.with_extension(...)` REPLACES
         // any existing extension, so `--out session.v1` would write
         // `session.tar` (clobbering an unrelated file). Append `.tar`
         // verbatim so `--out session.v1` produces `session.v1.tar`.
@@ -737,7 +737,7 @@ fn cmd_export_session(
 ///
 /// The result is byte-for-byte reproducible across runs and machines
 /// for the same input directory + contents (same hash → same archive
-/// bytes). Per Codex PR #24 R1 P1 + R2 reviewer's observation that
+/// bytes). Per reviewer observation that
 /// the previous fix only addressed uid/gid, not mtime.
 fn package_bundle_tar(
     bundle_dir: &std::path::Path,
@@ -973,7 +973,7 @@ mod tests {
         let _ = std::fs::remove_file(&tar_path);
     }
 
-    /// Per Codex PR #24 R1 P1 + R2 + R3 + R4: building the same
+    /// Per review finding + R3 + R4: building the same
     /// directory contents twice MUST produce identical tar bytes.
     ///
     /// **What this test actually checks**: that the END STATE of the

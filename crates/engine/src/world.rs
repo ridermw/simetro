@@ -1,7 +1,7 @@
 //! `World` is the owning container for simulation state.
 //!
 //! Collections are `BTreeMap` rather than `HashMap` so iteration order
-//! is deterministic across runs and platforms (PLAN §16).
+//! is deterministic across runs and platforms (determinism contract).
 
 use std::collections::BTreeMap;
 
@@ -11,7 +11,7 @@ use crate::components::{
 };
 use crate::rng::SimRng;
 
-/// Top-level run state per PLAN §3.6.
+/// Top-level run state per run-state model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunState {
     /// World exists but has nothing loaded.
@@ -93,7 +93,7 @@ impl World {
 
     /// Find a resource by its stable string name. Linear in number of
     /// resources — fine for the typical few-dozen-resource scenes. Used
-    /// by author-tool actions (P2.A task 9) so the LLM can reference
+    /// by author-tool actions  so the LLM can reference
     /// resources by the same name the scene JSON uses.
     #[must_use]
     pub fn resource_id_by_name(&self, name: &str) -> Option<crate::components::ResourceId> {

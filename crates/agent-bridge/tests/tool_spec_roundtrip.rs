@@ -1,6 +1,6 @@
-//! P2.A task 1: Tool-spec round-trip & exhaustiveness tests.
+//! Tool-spec round-trip & exhaustiveness tests.
 //!
-//! Acceptance criterion from spec §3 task 1:
+//! Tool-spec round-trip acceptance criteria:
 //!
 //! > Assert every `Action` variant in `actions.rs` has a matching
 //! > `ToolSpec` and the inline JSON Schema in `tools.rs` validates a

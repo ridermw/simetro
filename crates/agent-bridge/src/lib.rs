@@ -9,8 +9,8 @@
 //!                                                          │
 //!                                            ┌─────────────┼──────────────┐
 //!                                            ▼             ▼              ▼
-//!                                          Mock         Copilot      OpenAI(P2)
-//!                                                       (P1 stub)
+//!                                          Mock         Copilot      future
+//!                                                       (stub)
 //! ```
 
 pub mod backend;

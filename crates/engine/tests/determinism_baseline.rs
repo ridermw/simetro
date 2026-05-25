@@ -1,4 +1,4 @@
-//! Determinism baseline gate (PLAN §16).
+//! Determinism baseline gate (determinism contract).
 //!
 //! Re-hashes the canonical demo scene at the canonical seed and tick
 //! count and diffs against the committed baseline. Any drift fails
@@ -10,7 +10,7 @@
 //!   1. cargo run --release -p simetro-headless -- hash \
 //!      --scene games/demo-paths.json --ticks 10000 --seed 42
 //!   2. Replace the contents of tests/baselines/demo-paths.hash
-//!   3. Document the cause in the commit message (PLAN §17).
+//!   3. Document the cause in the commit message (validation workflow).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 

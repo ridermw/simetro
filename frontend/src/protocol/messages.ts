@@ -1,6 +1,6 @@
 // frontend/src/protocol/messages.ts
 //
-// PLAN §6 — Wire-protocol type mirror. These types MUST stay in lock-
+// wire-protocol contract — Wire-protocol type mirror. These types MUST stay in lock-
 // step with `crates/protocol/src/lib.rs`. The Rust source uses
 // `#[serde(tag = "kind", content = "payload", rename_all =
 // "snake_case")]` on `SimMessage` and `AgentMessage`, and
@@ -12,10 +12,9 @@
 // Drift is caught two ways:
 //   1. The Envelope.schema_version check on every inbound message; a
 //      mismatch raises a Fault::SchemaMismatch banner and freezes the
-//      renderer (PLAN §6, §11.2).
-//   2. P2 will codegen these from a shared schema; for now they are
-//      hand-mirrored and the matching Rust side has roundtrip JSON
-//      tests (see crates/protocol/src/lib.rs#[cfg(test)] mod tests).
+//      renderer (protocol compatibility).
+//   2. These are hand-mirrored today. The matching Rust side has
+//      roundtrip JSON tests (see crates/protocol/src/lib.rs).
 //
 // Numeric IDs (u32 in Rust) become `number` here — JS safely represents
 // integers up to 2^53, well above our piece-count cap of 100_000.
@@ -45,7 +44,7 @@ export interface NodeView {
 export interface PathView {
   id: number;
   /** Endpoints baked into the view so the renderer can group all
-   *  paths of one color into a single `Path2D` (PLAN §9). */
+   *  paths of one color into a single `Path2D` (renderer batching target). */
   from_pos: [number, number];
   to_pos: [number, number];
   color: number;
@@ -80,7 +79,7 @@ export interface SnapshotPayload {
 }
 
 // ---------------------------------------------------------------------
-//  Semantic events (PLAN §7). Flat tagged union: `kind` + fields.
+//  Semantic events (event protocol contract). Flat tagged union: `kind` + fields.
 // ---------------------------------------------------------------------
 
 export type HighlightReason = "agent_focus" | "bottleneck" | "goal_reached";
@@ -159,7 +158,7 @@ export type SimMessage =
   | { kind: "warning"; payload: WarningPayload };
 
 // ---------------------------------------------------------------------
-//  Agent  →  engine (P2)
+//  Agent  →  engine (future)
 // ---------------------------------------------------------------------
 
 export type AgentMessage =
@@ -172,7 +171,7 @@ export type AgentMessage =
 //  Helpers
 // ---------------------------------------------------------------------
 
-/** Type guard used by transport implementations to enforce §6 on every
+/** Type guard used by transport implementations to enforce schema compatibility on every
  *  inbound message. A bad envelope is fatal — we do not try to recover. */
 export function isCurrentSchema(env: Envelope<unknown>): boolean {
   return env.schema_version === SCHEMA_VERSION;

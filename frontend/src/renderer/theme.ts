@@ -1,11 +1,11 @@
 // frontend/src/renderer/theme.ts
 //
-// PLAN §4 — theme module. Single source of truth for palette
+// frontend shell contract — theme module. Single source of truth for palette
 // resolution, typography, and eased curves. Renderer + Inspector +
 // UI all import from here so a palette swap in the JSON scene file
 // re-themes the entire app.
 //
-// PLAN §5.1 — palette indices are bounds-checked (background_index
+// scene loader contract — palette indices are bounds-checked (background_index
 // must be < palette.len()); the loader rejects bad scenes before
 // they reach the frontend. We still defensively fall back to the
 // default dark theme if a renderer ever sees an out-of-range index
@@ -63,7 +63,7 @@ export function foregroundColor(theme: Theme): string {
   return theme.palette[1] ?? DEFAULT_THEME.palette[1]!;
 }
 
-// Easing curves. Step 18 swaps these into the animation table by
+// Easing curves. The animation module swaps these into the animation table by
 // reference; renderer keeps them here so theme.ts owns "visual feel"
 // holistically (color + motion).
 export const easings = {

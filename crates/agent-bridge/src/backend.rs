@@ -33,7 +33,7 @@ pub struct BackendResponse {
     /// The model's raw text response (used by AgentLog).
     pub raw: String,
     /// Tool calls the model emitted, in order. Bridge picks the first
-    /// valid one (PLAN §11.2 InvalidAction warning for malformed).
+    /// valid one (fault/warning mapping contract InvalidAction warning for malformed).
     pub tool_calls: Vec<ToolCall>,
 }
 
@@ -61,6 +61,6 @@ pub trait Backend: Send + Sync {
     /// Issue one call to the model.
     ///
     /// # Errors
-    /// One of the [`LlmError`] variants per PLAN §11.1.
+    /// One of the [`LlmError`] variants per typed-fault contract.
     async fn invoke(&self, req: BackendRequest) -> Result<BackendResponse, LlmError>;
 }

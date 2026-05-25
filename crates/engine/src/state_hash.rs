@@ -1,4 +1,4 @@
-//! Deterministic SHA-256 state hash (PLAN §16).
+//! Deterministic SHA-256 state hash (determinism contract).
 //!
 //! The headless `hash` subcommand walks a scene + seed, runs N ticks,
 //! and emits a SHA-256 over `(world_state_snapshot, event_stream)`.
@@ -403,7 +403,7 @@ fn feed_opt_u32(h: &mut Sha256, v: Option<u32>) {
 /// Run `ticks` ticks against `world` using `runner` and produce the
 /// final hex-encoded SHA-256 of the full event + message stream + ending
 /// world state. The hash is deterministic on every supported platform
-/// when driven by the same scene + seed (PLAN §16).
+/// when driven by the same scene + seed (determinism contract).
 ///
 /// The hash now covers `runner.messages()` in addition to
 /// `runner.events()`. This closes the rubber-duck-identified gap
@@ -704,7 +704,7 @@ mod tests {
     }
 
     /// Closes the specific edge case the codex-connector reviewer
-    /// flagged on PR #5: two runs whose `chosen` action ends in a
+    /// flagged on review: two runs whose `chosen` action ends in a
     /// rejection/no-op (so the apply pipeline produces identical
     /// downstream events or warnings) but whose AgentReport.chosen
     /// payloads differ must still hash differently. We hash the full
@@ -772,7 +772,7 @@ mod tests {
              rejected and downstream events are identical, the \
              AgentReport.chosen payload must contribute to the hash. \
              If this fails, `feed_agent_report` is hashing only the \
-             tag and the Codex-reviewer-identified edge case is back."
+             tag and the reviewer-identified edge case is back."
         );
     }
 }

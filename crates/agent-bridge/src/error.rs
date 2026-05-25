@@ -28,8 +28,8 @@ pub enum LlmError {
 
 impl LlmError {
     /// Stable string identifier for this variant. Used by the
-    /// fixture-suite drift-detection test (P2.A task 11) and the
-    /// runbook docs. The match is exhaustive — adding a new variant
+    /// fixture-suite drift-detection test and the runbook docs. The
+    /// match is exhaustive — adding a new variant
     /// without an arm here fails to compile, so the variant catalogue
     /// CANNOT drift from the enum definition.
     #[must_use]

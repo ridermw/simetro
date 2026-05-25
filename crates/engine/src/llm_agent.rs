@@ -11,7 +11,7 @@
 //! 3. Returns a "thinking" [`AgentReport`] **immediately** with
 //!    `chosen: None`. The real action is applied later by
 //!    [`AgentRuntime::process_reply`] when the bridge writes back into
-//!    the inbox — typically on a later tick, per spec §10.2.1.
+//!    the inbox — typically on a later tick, per lifecycle invariant.
 //!
 //! ## Why a shared `Arc<Mutex<AgentRuntime>>`?
 //!
@@ -54,7 +54,7 @@ impl LlmAgent {
     ///   and the `RequestId.agent_id` field on every outbox entry.
     /// - `interval_ticks`: how often the engine ticks the agent. Must
     ///   match the same loader constraint as other agents (1..=10_000).
-    /// - `deadline_ticks`: per spec §10.2.1, the bridge has this many
+    /// - `deadline_ticks`: per lifecycle invariant, the bridge has this many
     ///   ticks to reply before the request is expired and (possibly)
     ///   re-issued. Typical values 30–600 depending on backend speed.
     /// - `runtime`: shared handle to the engine's [`AgentRuntime`].

@@ -17,7 +17,7 @@ pub type SpawnScratch = (MoverId, PathId, NodeId);
 /// spawned mover.
 ///
 /// `scratch` is reused across ticks to avoid per-tick allocations
-/// (PLAN §14 zero-alloc target). Callers should own one buffer and
+/// (zero-allocation target). Callers should own one buffer and
 /// pass it back every tick.
 pub fn run(world: &mut World, events: &mut Vec<SimEvent>, scratch: &mut Vec<SpawnScratch>) {
     scratch.clear();

@@ -1,6 +1,6 @@
 // frontend/src/store/snapshots.ts
 //
-// PLAN §4 / §13 — Snapshot buffer + interpolation gate.
+// snapshot/interpolation contract — Snapshot buffer + interpolation gate.
 //
 //   ┌──────────────────────────────────────────────────────────┐
 //   │  transport ──▶ push(snapshot) ──▶ ring buffer (cap 4)    │
@@ -12,14 +12,13 @@
 // Two-snapshot interpolation: renderer asks for `interpolated()` at
 // every animation frame; if we have a previous + current pair we
 // lerp positions over the tick window. With a single snapshot we
-// render statically (covers Step 16's case and PLAN §13 edge case
-// #2: "first snapshot before first event").
+// render statically (covers edge case #2: first snapshot before first event).
 //
-// Tab-refocus edge case (PLAN §13 #5): when the page is hidden the
+// Tab-refocus edge case (tab-refocus invariant): when the page is hidden the
 // rAF loop pauses; on resume we jump-cut to the latest snapshot
 // instead of catching up animations — see `markStale()`.
 //
-// Per PR #1 review (Copilot, P1): `prevById` is a reusable Map
+// Per review feedback: `prevById` is a reusable Map
 // field that is cleared and refilled each interpolation pass,
 // rather than `new Map(...)`'d every frame. Snapshots are
 // movers-only now (geometry lives in `StaticPayload`).
@@ -66,7 +65,7 @@ export class SnapshotBuffer {
    * Lerp mover positions between previous and current at fraction
    * `alpha` in [0,1]. If only one snapshot is available, returns it
    * unchanged. Mutates and returns the supplied `out` array — zero
-   * per-frame allocation (PLAN §14).
+   * per-frame allocation (zero-allocation target).
    */
   interpolatedMovers(alpha: number, out: MoverState[]): MoverState[] {
     const cur = this.current();

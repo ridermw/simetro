@@ -1,14 +1,9 @@
-//! P2.A task 4: typed `LlmError` → `SimMessage` mapping.
+//! Typed `LlmError` → `SimMessage` mapping.
 //!
 //! The mapping is **table-driven**: every `LlmError` variant maps to
 //! exactly one `Fault` or `Warning` SimMessage. The mapping is
-//! authoritative per `docs/superpowers/analysis/p2a-error-map.md`
-//! §1 (the rescue-action / user-visible-behavior matrix) and per
-//! spec §10.4 (the error-mapping table).
-//!
-//! Acceptance criterion from spec §3 task 4:
-//!
-//! > Table-driven mapping with a unit test per variant.
+//! This table is the bridge-side safety boundary: every backend failure
+//! must become a typed `Fault` or `Warning`, never a silent no-op.
 //!
 //! This module is the single source of truth for the bridge-side
 //! mapping. The engine consumes `SimMessage` produced here and
@@ -338,8 +333,7 @@ mod tests {
                 assert!(
                     !reason.contains("ghp_"),
                     "reason MUST NOT include the raw response body \
-                     (raw can carry secrets per p2a-security-threat-model.md §5.3); \
-                     got reason: {reason}"
+                     (raw can carry secrets); got reason: {reason}"
                 );
             }
             other => panic!("expected Warning::InvalidAction, got {other:?}"),
@@ -414,7 +408,7 @@ mod tests {
         }
     }
 
-    /// Closes PR #11 R1 MEDIUM: `Warning::Behind { lag_frames: 0 }`
+    /// Closes review finding: `Warning::Behind { lag_frames: 0 }`
     /// semantically means "on time", which contradicts the error.
     /// Verify the mapping clamps to a minimum of 1 for Timeout +
     /// RateLimited so the resulting Warning is never self-contradictory.

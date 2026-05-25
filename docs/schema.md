@@ -4,7 +4,7 @@ simetro reads a single JSON file (a "scene") and instantiates the
 engine's world from it. The schema is versioned (`schema_version: 1`
 or `2`) and every field is bounds-checked at load time; violations surface as
 typed [`LoadError`](../crates/engine/src/error.rs) variants and reach
-the renderer as a `Fault::LoadError` overlay (PLAN §5.1, §11.2).
+the renderer as a `Fault::LoadError` overlay.
 
 The canonical loader is
 [`crates/engine/src/loader.rs`](../crates/engine/src/loader.rs); this
@@ -51,7 +51,7 @@ document mirrors what it accepts.
 
 | Field            | Type   | Notes                                                          |
 | ---------------- | ------ | -------------------------------------------------------------- |
-| `schema_version` | u32    | `1` for P1 scenes, `2` for resource-chain scenes.              |
+| `schema_version` | u32    | `1` for legacy scenes, `2` for resource-chain scenes.              |
 | `name`           | string | ≤200 chars, no control characters.                             |
 | `pieces`         | object | Container with `nodes` / `paths` / `movers` arrays (each opt). |
 
@@ -117,7 +117,7 @@ gate.
 ## Pieces
 
 The `pieces` object has three optional arrays. Each array is capped at
-**100,000** entries (PLAN §5.1).
+**100,000** entries (scene loader contract).
 
 ### Nodes
 
@@ -159,15 +159,16 @@ The `pieces` object has three optional arrays. Each array is capped at
 
 ## Goals
 
-P1 supports a single goal kind. The shape is a tagged union with
+Current v1/v2 scenes support a single goal kind. The shape is a tagged union with
 `type` as the discriminant:
 
 ```jsonc
 [{ "type": "loop_forever" }]
 ```
 
-`loop_forever` declares "no terminal condition; run until paused." P2
-will add scored goals (`accumulate_resource`, `connect_all`, etc.).
+`loop_forever` declares "no terminal condition; run until paused." The
+`scenario_language_v1` roadmap replaces this with explicit objectives, failure
+conditions, and `GameOutcome` for `scenario_language_v1` scenes.
 
 ## Agents
 
@@ -177,7 +178,7 @@ will add scored goals (`accumulate_resource`, `connect_all`, etc.).
 
 | Field            | Type   | Constraint                                                |
 | ---------------- | ------ | --------------------------------------------------------- |
-| `kind`           | string | P1 supports `"speed_tuner"`. Unknown kinds → `LoadError`. |
+| `kind`           | string | Current loader supports `"speed_tuner"`. Unknown kinds → `LoadError`. |
 | `interval_ticks` | u32    | `1..=10_000`. How often the engine calls `Agent::act`.    |
 
 ## Resources, inventory, producers, consumers (v2)

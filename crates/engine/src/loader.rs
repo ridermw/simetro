@@ -9,7 +9,7 @@
 //! ```
 //!
 //! Loader is split in two halves: deserialization (serde) and validation
-//! (this file). Validation enforces every row in PLAN §5.1. Each field's
+//! (this file). Validation enforces every row in scene loader contract. Each field's
 //! violation maps to a specific [`LoadError`] variant so the canvas
 //! overlay can point at the source location.
 
@@ -43,14 +43,15 @@ const AMOUNT_MAX: u64 = 1_000_000;
 pub struct AgentSpec {
     pub kind: String,
     pub interval_ticks: u32,
-    /// Per spec §10.2.1: ticks the bridge has to reply before an LLM
+    /// Per lifecycle invariant: ticks the bridge has to reply before an LLM
     /// request is expired and (possibly) re-issued. Only meaningful
     /// for `kind: "llm"`; ignored otherwise. Default 60 (≈1 s @ 60 Hz)
     /// applied when the JSON omits it.
     pub deadline_ticks: u32,
 }
 
-/// Win/end condition for the scene. Only `LoopForever` is defined in P1.
+/// Win/end condition for legacy scenes. `scenario_language_v1` will add
+/// explicit objectives, failure conditions, and `GameOutcome`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Goal {
     LoopForever,
@@ -662,7 +663,7 @@ fn validate_amount(field: &'static str, amount: u64) -> Result<(), LoadError> {
     Ok(())
 }
 
-/// Per spec §3 task 10. Accept only known agent kinds; reject
+/// Per tool-spec round-trip acceptance criteria. Accept only known agent kinds; reject
 /// feature-gated kinds when the binary wasn't built with the
 /// corresponding feature.
 fn validate_agent_kind(index: usize, kind: &str) -> Result<(), LoadError> {

@@ -9,7 +9,7 @@ platform that silently drops an action, swallows a load failure,
 or fails to render a stuck agent is worse than one that crashes —
 you can't even tell something is wrong.
 
-The mega plan review (Sections 1A, 2A, 11A) made this a P1
+The mega plan review (Sections 1A, 2A, 11A) made this a legacy
 requirement: every failure mode must surface visibly, with enough
 context to act on.
 
@@ -38,7 +38,7 @@ enum EngineWarning {
 ```
 
 The frontend has a `FaultOverlay` (full-bleed, blocking) and a
-`WarningStrip` (pill list, auto-expiring, see PLAN §13 #1). Every
+`WarningStrip` (pill list, auto-expiring, see stale-channel detection). Every
 variant has a dedicated formatter in
 `frontend/src/ui/overlays.ts`. The runbook
 (`docs/runbook.md`) prescribes the operational response per

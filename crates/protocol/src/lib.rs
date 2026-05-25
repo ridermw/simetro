@@ -91,10 +91,10 @@ pub struct StaticPayload {
     pub nodes: Vec<NodeView>,
     /// All paths in the scene with endpoints baked to positions so the
     /// renderer can group by `color` into one `Path2D` per color and
-    /// hit the PLAN §9 / §14 batching target (~6 draw calls per scene).
+    /// hit the renderer batching target (~6 draw calls per scene).
     pub paths: Vec<PathView>,
     /// JSON string id → numeric id, segregated by section so two kinds
-    /// can share an id space without collision (PLAN §5.2).
+    /// can share an id space without collision (identifier interning contract).
     pub node_names: std::collections::BTreeMap<u32, String>,
     pub path_names: std::collections::BTreeMap<u32, String>,
     pub mover_names: std::collections::BTreeMap<u32, String>,
@@ -143,7 +143,7 @@ pub struct MoverState {
 }
 
 // ---------------------------------------------------------------------
-//  Semantic events (PLAN §7). Renamed from `Event` per Issue 8A to
+//  Semantic events (event protocol contract). Renamed from `Event` per Issue 8A to
 //  avoid clash with DOM/Tauri/channel `Event` types.
 // ---------------------------------------------------------------------
 
@@ -318,7 +318,7 @@ pub enum AgentMessage {
 }
 
 /// Actions an agent may take. Author actions (PlacePiece/ConnectPieces/
-/// RemovePiece, plus the P2.A task 9 resource/production tools
+/// RemovePiece, plus the resource/production tools
 /// DefineResource/AddProducer/AddConsumer/SetGoal) mutate the world
 /// when valid; malformed or unsafe requests are rejected with a typed
 /// [`WarningPayload::InvalidAction`].
@@ -342,7 +342,7 @@ pub enum Action {
         id: u32,
     },
 
-    // ---- Author tools (P2.A task 9) ---------------------------------
+    // ---- Author tools  ---------------------------------
     /// Create a new resource kind addressable by `name`. `color` is a
     /// palette index validated against the loaded theme.
     DefineResource {

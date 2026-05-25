@@ -1,6 +1,6 @@
 // frontend/src/transport/mock.ts
 //
-// PLAN §3.3 / P1.5 Step 1 — Animated mock transport for browser-only dev.
+// browser-only animated mock transport — Animated mock transport for browser-only dev.
 //
 // In browser dev (no Tauri shell) this transport drives the renderer with
 // a continuous stream of snapshots + semantic events so movers visibly

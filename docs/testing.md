@@ -54,7 +54,7 @@ boots `vite preview` on port 4173 against the production bundle.
 
 ## XSS regression tests
 
-Two tests pin our `textContent`-only policy (PLAN §5.1 / §12):
+Two tests pin our `textContent`-only policy (safe text-rendering policy):
 
 - `inspector.test.ts`: feeds `<img src=x onerror=alert(1)>` as a
   rationale and asserts the literal characters survive AND no `<img>`
