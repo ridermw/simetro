@@ -111,7 +111,8 @@ pub fn run(scene: &Sl1Scene, runtime: &mut Sl1RuntimeState, now: u64, events: &m
                 events.push(SimEvent::Sl1AlertFired {
                     alert_id: alert.id.clone(),
                     metric_id: alert.metric.clone(),
-                    value: emitted_value.unwrap_or(0),
+                    value: emitted_value
+                        .expect("emitted_value is always Some when transitioning Inactive→Firing"),
                     severity: alert.severity.as_str().to_string(),
                     predicate: alert.predicate.summary(),
                     tick: now,
@@ -247,6 +248,10 @@ fn compute_metric_state(
     }
 }
 
+// Intentionally coarse: events fire only on variant transitions
+// (Ok ↔ Stale ↔ NoData), not on `freshness_ticks` value changes
+// within Stale.  Tick-level freshness updates are surfaced via the
+// snapshot's `sl1_dashboard_states`, not via events.
 fn discriminants_differ(a: Sl1DashboardState, b: Sl1DashboardState) -> bool {
     a.discriminant_str() != b.discriminant_str()
 }

@@ -747,20 +747,10 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
         }
         for (dashboard_id, state) in runtime.dashboard_states.iter() {
             let (state_str, freshness_ticks) = match state {
-                crate::scenario_language_v1::Sl1DashboardState::Ok => ("ok".to_string(), Some(0)),
-                crate::scenario_language_v1::Sl1DashboardState::Stale { freshness_ticks } => {
-                    ("stale".to_string(), Some(*freshness_ticks))
-                }
-                crate::scenario_language_v1::Sl1DashboardState::NoData => {
-                    ("no_data".to_string(), None)
-                }
-            };
-            // For Ok, recompute and surface the actual freshness age so
-            // the HUD always has a numeric chip to render. Look up via
-            // the scene's dashboard def.
-            let freshness_ticks =
-                if matches!(state, crate::scenario_language_v1::Sl1DashboardState::Ok) {
-                    world
+                crate::scenario_language_v1::Sl1DashboardState::Ok => {
+                    // Recompute the actual freshness age so the HUD always
+                    // has a numeric chip to render even in the Ok state.
+                    let age = world
                         .sl1
                         .as_ref()
                         .and_then(|s| s.observability.as_ref())
@@ -768,10 +758,16 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
                         .map(|d| {
                             crate::sl1_observability::dashboard_freshness(d, runtime, world.tick)
                                 .unwrap_or(0)
-                        })
-                } else {
-                    freshness_ticks
-                };
+                        });
+                    ("ok".to_string(), age)
+                }
+                crate::scenario_language_v1::Sl1DashboardState::Stale { freshness_ticks } => {
+                    ("stale".to_string(), Some(*freshness_ticks))
+                }
+                crate::scenario_language_v1::Sl1DashboardState::NoData => {
+                    ("no_data".to_string(), None)
+                }
+            };
             out.sl1_dashboard_states.push(Sl1DashboardStateView {
                 dashboard_id: dashboard_id.clone(),
                 state: state_str,
