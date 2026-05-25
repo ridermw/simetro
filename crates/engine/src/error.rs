@@ -96,6 +96,18 @@ pub enum LoadError {
     )]
     Sl1ReservedKeyAtTopLevel { name: &'static str },
 
+    /// A top-level key was authored that looks like an attempt at the
+    /// `scenario_language_v1` block (e.g. a typo such as
+    /// `scenario_langauge_v1` or a forward-looking `scenario_language_v2`)
+    /// but does not match the canonical key. Without this guard the SL1
+    /// block would be silently dropped and the scene would fail open
+    /// as legacy, masking objectives, agents, and failure conditions.
+    #[error(
+        "top-level `{name}` looks like a misspelling of `scenario_language_v1`; \
+         rename it or remove it"
+    )]
+    Sl1MisspelledTopLevelKey { name: String },
+
     /// Wraps an `scenario_language_v1`-specific load failure so the
     /// surrounding scene loader returns a uniform [`LoadError`].
     #[error(transparent)]

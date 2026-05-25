@@ -281,3 +281,57 @@ fn legacy_scene_without_sl1_block_still_loads() {
     assert!(loaded.world.sl1.is_none());
     assert_eq!(loaded.world.sl1_outcome(), GameOutcome::InProgress);
 }
+
+#[test]
+fn loader_rejects_misspelled_scenario_language_top_level_key() {
+    // Typo'd key (e → a swap) must NOT silently fall back to legacy and
+    // drop the SL1 block. Without this guard the scene loads as legacy
+    // and the author thinks SL1 objectives are active when they are not.
+    let json = r##"{
+        "schema_version": 1,
+        "name": "typo-sl1",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_langauge_v1": {
+            "schema_version": 1
+        }
+    }"##;
+
+    let err = load_scene_str(json, 0).expect_err("typo'd SL1 key must be rejected");
+    match err {
+        LoadError::Sl1MisspelledTopLevelKey { name } => {
+            assert_eq!(name, "scenario_langauge_v1");
+        }
+        other => panic!("expected Sl1MisspelledTopLevelKey, got {other:?}"),
+    }
+}
+
+#[test]
+fn loader_rejects_future_scenario_language_version_at_top_level() {
+    // A future-versioned key must also be rejected rather than silently
+    // dropped — surfacing as a typed error keeps tooling and authors in
+    // sync with what the engine actually supports.
+    let json = r##"{
+        "schema_version": 1,
+        "name": "future-sl1",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v2": {}
+    }"##;
+
+    let err = load_scene_str(json, 0).expect_err("future SL key must be rejected");
+    match err {
+        LoadError::Sl1MisspelledTopLevelKey { name } => {
+            assert_eq!(name, "scenario_language_v2");
+        }
+        other => panic!("expected Sl1MisspelledTopLevelKey, got {other:?}"),
+    }
+}

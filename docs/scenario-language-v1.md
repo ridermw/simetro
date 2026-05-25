@@ -73,6 +73,16 @@ explicit `"scenario_language_v1": null` is rejected with
 `LoadError::Sl1(Sl1LoadError::ExpectedObject { found: "null" })` so a
 scene cannot bypass SL1 validation by writing null.
 
+Misspelled or future-versioned top-level keys are also rejected. Any
+top-level field starting with `scenario_` other than the canonical
+`scenario_language_v1` surfaces as
+`LoadError::Sl1MisspelledTopLevelKey { name }`. This closes a
+fail-open trap where a typo such as `scenario_langauge_v1` (note
+`au` ↔ `ua`) would otherwise be silently dropped and the scene
+would load as legacy with no SL1 validation. Forward-looking keys
+like `scenario_language_v2` are blocked the same way until the
+engine declares support for them.
+
 ## Taxonomy
 
 PR 0 introduces four typed surfaces that later PRs populate:

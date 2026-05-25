@@ -327,6 +327,22 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         }
     }
 
+    // Reject typo'd / future-versioned SL1 root keys at the top level.
+    // Any unmatched top-level key starting with `scenario_` (case
+    // insensitive) is almost certainly an authoring mistake that would
+    // otherwise fail open by loading as a legacy scene with the SL1
+    // block silently dropped. A prefix check catches both "near-miss"
+    // typos like `scenario_langauge_v1` (where `ua` → `au` defeats a
+    // substring match) and forward-looking keys like
+    // `scenario_language_v2`. No legacy or v1/v2 scene field starts
+    // with `scenario_`, so the check is safe. BTreeMap iteration is
+    // sorted, so the first reported misspelling is deterministic.
+    for key in raw.extra.keys() {
+        if key.to_ascii_lowercase().starts_with("scenario_") {
+            return Err(LoadError::Sl1MisspelledTopLevelKey { name: key.clone() });
+        }
+    }
+
     validate_name(&raw.name)?;
 
     let theme = validate_theme(raw.theme)?;
