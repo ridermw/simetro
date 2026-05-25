@@ -148,6 +148,16 @@ pub const COMPLETED_RING_CAP: usize = 1024;
 ///
 /// All outcomes are DETERMINISTIC — they depend only on the request
 /// state and the current tick, never on wall-clock timing.
+//
+// `clippy::large_enum_variant`: variants like `Duplicate { message: SimMessage }`
+// embed a full `SimMessage`, which contains `Static(StaticPayload)`. As SL1
+// primitives land in subsequent PRs, `StaticPayload` accumulates extra
+// `Vec` fields and crosses the 200-byte clippy threshold. These outcome
+// values are constructed at most once per agent-decision lifecycle event
+// (low rate), so the size disparity is not a hot-path concern. A future
+// hardening pass can box the `message`/`warning` fields uniformly across
+// `DrainOutcome`, `ExpiryOutcome`, and `EnqueueOutcome`.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DrainOutcome {
     /// On-time reply. Caller should apply `chosen` (or NoOp if None)
@@ -172,6 +182,7 @@ pub enum DrainOutcome {
 /// What happened when the lifecycle expired a pending request that
 /// hit its deadline. Caller acts on this to either re-issue or give
 /// up.
+#[allow(clippy::large_enum_variant)] // see DrainOutcome note.
 #[derive(Debug, Clone)]
 pub enum ExpiryOutcome {
     /// Re-issue the request with `attempt += 1`. Caller enqueues the
@@ -187,6 +198,7 @@ pub enum ExpiryOutcome {
 }
 
 /// What happened when the lifecycle tried to enqueue a new request.
+#[allow(clippy::large_enum_variant)] // see DrainOutcome note.
 #[derive(Debug, Clone)]
 pub enum EnqueueOutcome {
     /// Request accepted into the outbox; lifecycle is now tracking

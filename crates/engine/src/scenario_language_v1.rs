@@ -59,6 +59,16 @@ const SL1_COORD_LIMIT: f32 = 1.0e6;
 /// an author typo.
 const SL1_PERCENT_MAX: u8 = 100;
 
+/// Upper bound for `Sl1Link.queue_capacity`. Caps author-supplied queue
+/// sizes well below `u64::MAX` so future runtime systems cannot
+/// accidentally request pathological allocations from a typo.
+pub const MAX_LINK_QUEUE_CAPACITY: u64 = 1_000_000_000;
+
+/// Upper bound for `Sl1Link.travel_ticks`. Same rationale as
+/// [`MAX_LINK_QUEUE_CAPACITY`]: keep author-supplied ticks in a
+/// human-meaningful range.
+pub const MAX_LINK_TRAVEL_TICKS: u64 = 1_000_000_000;
+
 // ---------------------------------------------------------------------------
 // Raw (post-serde, pre-validation) SL1 scene block.
 // ---------------------------------------------------------------------------
@@ -81,7 +91,7 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub places: Vec<RawSl1Place>,
     #[serde(default)]
-    pub links: Vec<serde_json::Value>,
+    pub links: Vec<RawSl1Link>,
     #[serde(default)]
     pub things: Vec<serde_json::Value>,
     #[serde(default)]
@@ -286,9 +296,105 @@ pub enum Sl1OperatingPredicate {
     OverloadedTicksGt { ticks: u64 },
 }
 
-/// Placeholder loaded `link`. Populated in PR 2.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Link;
+/// Raw, post-serde representation of a `links[]` entry. Strict-schema:
+/// `#[serde(deny_unknown_fields)]` ensures nested typos do not silently
+/// no-op. `direction` and `backpressure` are deserialized as
+/// `Option<String>` rather than typed enums so the validator can
+/// distinguish *missing* values (a hard error in PR 2; future PRs may
+/// allow omitted `direction` for dependency-only links) from *unknown*
+/// values (typed [`Sl1LoadError::LinkUnknownDirection`] /
+/// [`Sl1LoadError::LinkUnknownBackpressure`]) — serde enums would
+/// collapse both cases into a generic parse error.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Link {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub link_type: String,
+    pub from: String,
+    pub to: String,
+    /// Required in PR 2. Future PRs may relax omission to mean
+    /// "dependency-only link", which is why this is `Option<String>`
+    /// (so the validator can emit [`Sl1LoadError::LinkMissingDirection`]
+    /// instead of having serde silently apply a default).
+    #[serde(default)]
+    pub direction: Option<String>,
+    #[serde(default)]
+    pub capacity: BTreeMap<String, u64>,
+    pub travel_ticks: u64,
+    #[serde(default)]
+    pub compatibility: Vec<String>,
+    pub queue_capacity: u64,
+    /// Required in PR 2. Same `Option<String>` rationale as
+    /// [`Self::direction`].
+    #[serde(default)]
+    pub backpressure: Option<String>,
+    #[serde(default)]
+    pub render: Option<RawSl1LinkRenderHint>,
+}
+
+/// Optional render hint for a [`RawSl1Link`]. Carried opaquely from
+/// scene JSON; PR 6's frontend interprets `style` and `color`. PR 1's
+/// rubber-duck review surfaced the same need for places: type render
+/// hints now so typos like `"styl"` fail load instead of being
+/// silently discarded by an untyped `serde_json::Value` carrier.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1LinkRenderHint {
+    pub style: String,
+    #[serde(default)]
+    pub color: Option<u32>,
+}
+
+/// Validated `link` primitive (PR 2). Declarative only — runtime
+/// queue mutation lands alongside transforms (PR 4) and demand
+/// (PR 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Link {
+    pub id: String,
+    pub link_type: String,
+    pub from: String,
+    pub to: String,
+    pub direction: Sl1LinkDirection,
+    /// Named, unitless capacity buckets (e.g. `events_per_tick`).
+    /// Sorted by key.
+    pub capacity: BTreeMap<String, u64>,
+    pub travel_ticks: u64,
+    /// Sorted + deduplicated. Values reference `things[].id` *or* a
+    /// thing tag — PR 3 lands the cross-check against the `things[]`
+    /// catalog. PR 2 only canonicalizes.
+    pub compatibility: Vec<String>,
+    pub queue_capacity: u64,
+    pub backpressure: Sl1LinkBackpressure,
+    pub render: Option<Sl1LinkRenderHint>,
+}
+
+/// Validated render hint for a link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1LinkRenderHint {
+    pub style: String,
+    pub color: Option<u32>,
+}
+
+/// Closed set of supported `direction` values for PR 2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1LinkDirection {
+    Forward,
+    Bidirectional,
+}
+
+/// Closed set of supported `backpressure` policies. Runtime semantics
+/// land in PR 4/5 when transforms/demand actually push items through
+/// the link queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1LinkBackpressure {
+    BlockUpstream,
+    DropLowPriority,
+    SpillToBuffer,
+    DegradeQuality,
+}
 
 /// Placeholder loaded `thing`. Populated in PR 3.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -482,6 +588,89 @@ pub enum Sl1LoadError {
         state: String,
         metric: String,
     },
+
+    // ---- Link primitive (PR 2) --------------------------------------------
+    /// Two `links[]` entries declared the same `id`.
+    #[error("scenario_language_v1.links: duplicate id {id:?}")]
+    LinkDuplicateId { id: String },
+
+    /// A link `id` is empty, too long, or contains characters outside
+    /// the allowed alphanumeric/`_`/`-` charset.
+    #[error("scenario_language_v1.links: invalid id {id:?}")]
+    LinkInvalidId { id: String },
+
+    /// A link `type` is empty.
+    #[error("scenario_language_v1.links[{id:?}].type: must be non-empty")]
+    LinkEmptyType { id: String },
+
+    /// A link's `from` or `to` does not match any declared place id.
+    /// `which` is the literal `"from"` or `"to"` so diagnostics point
+    /// at the offending field.
+    #[error("scenario_language_v1.links[{id:?}].{which}: unknown place {place:?}")]
+    LinkUnknownPlace {
+        id: String,
+        which: &'static str,
+        place: String,
+    },
+
+    /// A link's `from` equals its `to`. Self-looping transport links
+    /// are almost certainly an authoring mistake. Future PRs may
+    /// reintroduce self-references explicitly for dependency-only
+    /// link types.
+    #[error("scenario_language_v1.links[{id:?}]: self-loop ({place:?} -> {place:?}) not allowed")]
+    LinkSelfLoop { id: String, place: String },
+
+    /// `direction` was omitted. Required in PR 2 to keep the omission
+    /// slot reserved for future dependency-only link semantics.
+    #[error("scenario_language_v1.links[{id:?}].direction: required field missing")]
+    LinkMissingDirection { id: String },
+
+    /// `direction` was supplied but did not match a supported value.
+    #[error("scenario_language_v1.links[{id:?}].direction: unknown value {value:?}")]
+    LinkUnknownDirection { id: String, value: String },
+
+    /// `backpressure` was omitted. Required in PR 2 — the spec
+    /// explicitly says backpressure policies must be explicit.
+    #[error("scenario_language_v1.links[{id:?}].backpressure: required field missing")]
+    LinkMissingBackpressure { id: String },
+
+    /// `backpressure` was supplied but did not match a supported value.
+    #[error("scenario_language_v1.links[{id:?}].backpressure: unknown value {value:?}")]
+    LinkUnknownBackpressure { id: String, value: String },
+
+    /// A `capacity` or `compatibility` entry is empty.
+    #[error("scenario_language_v1.links[{id:?}].{field}: empty entry not allowed")]
+    LinkEmptyEntry { id: String, field: &'static str },
+
+    /// A `compatibility` list contains a duplicate entry.
+    #[error("scenario_language_v1.links[{id:?}].compatibility: duplicate entry {value:?}")]
+    LinkDuplicateCompatibility { id: String, value: String },
+
+    /// `travel_ticks` is zero. PR 2 transport links require >0; future
+    /// PRs may reintroduce zero-tick edges as a distinct dependency-only
+    /// concept.
+    #[error("scenario_language_v1.links[{id:?}].travel_ticks: must be > 0")]
+    LinkTravelTicksZero { id: String },
+
+    /// `travel_ticks` exceeds [`MAX_LINK_TRAVEL_TICKS`].
+    #[error("scenario_language_v1.links[{id:?}].travel_ticks: {value} exceeds maximum {max}")]
+    LinkTravelTicksOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `queue_capacity` is zero. Zero-capacity queues are degenerate;
+    /// backpressure policies cannot meaningfully apply.
+    #[error("scenario_language_v1.links[{id:?}].queue_capacity: must be > 0")]
+    LinkQueueCapacityZero { id: String },
+
+    /// `queue_capacity` exceeds [`MAX_LINK_QUEUE_CAPACITY`].
+    #[error("scenario_language_v1.links[{id:?}].queue_capacity: {value} exceeds maximum {max}")]
+    LinkQueueCapacityOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `render.style` is empty. Authors who want default rendering
+    /// should omit the `render` field entirely.
+    #[error(
+        "scenario_language_v1.links[{id:?}].render.style: empty string (omit render for default)"
+    )]
+    LinkEmptyRenderStyle { id: String },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -608,7 +797,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.links, "links");
     reject_non_empty!(raw.things, "things");
     reject_non_empty!(raw.transforms, "transforms");
     reject_non_empty!(raw.demand, "demand");
@@ -631,6 +819,24 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     // Sort places by id so engine iteration order is independent of
     // declaration order in the source JSON.
     places.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // Validate links (PR 2). Links may reference any declared place
+    // regardless of declaration order, so we collect the full set of
+    // valid place ids first.
+    let place_ids: std::collections::BTreeSet<String> =
+        places.iter().map(|p| p.id.clone()).collect();
+    let mut links: Vec<Sl1Link> = Vec::with_capacity(raw.links.len());
+    let mut seen_link_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_link in raw.links {
+        let link = validate_link(raw_link, &place_ids)?;
+        if !seen_link_ids.insert(link.id.clone()) {
+            return Err(Sl1LoadError::LinkDuplicateId { id: link.id });
+        }
+        links.push(link);
+    }
+    // Sort links by id so engine iteration order is independent of
+    // declaration order.
+    links.sort_by(|a, b| a.id.cmp(&b.id));
 
     // The optional observability block must be an empty object until
     // PR 9 implements its schema.
@@ -658,7 +864,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
         places,
-        links: Vec::new(),
+        links,
         things: Vec::new(),
         transforms: Vec::new(),
         demand: Vec::new(),
@@ -800,13 +1006,16 @@ fn validate_place(raw: RawSl1Place) -> Result<Sl1Place, Sl1LoadError> {
     })
 }
 
-fn validate_sl1_id(id: &str) -> Result<(), Sl1LoadError> {
-    if id.is_empty()
-        || id.len() > MAX_SL1_ID_LEN
-        || !id
+fn is_valid_sl1_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_SL1_ID_LEN
+        && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+}
+
+fn validate_sl1_id(id: &str) -> Result<(), Sl1LoadError> {
+    if !is_valid_sl1_id(id) {
         return Err(Sl1LoadError::PlaceInvalidId { id: id.to_string() });
     }
     Ok(())
@@ -833,6 +1042,147 @@ fn canonicalize_set(
             return Err(Sl1LoadError::PlaceDuplicateEntry {
                 id: place_id.to_string(),
                 field,
+                value: entry.clone(),
+            });
+        }
+    }
+    Ok(seen.into_iter().collect())
+}
+
+// ---------------------------------------------------------------------------
+// Link validation helpers (PR 2).
+// ---------------------------------------------------------------------------
+
+fn validate_link(
+    raw: RawSl1Link,
+    place_ids: &std::collections::BTreeSet<String>,
+) -> Result<Sl1Link, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::LinkInvalidId { id: raw.id });
+    }
+    if raw.link_type.trim().is_empty() {
+        return Err(Sl1LoadError::LinkEmptyType { id: raw.id });
+    }
+    if !place_ids.contains(&raw.from) {
+        return Err(Sl1LoadError::LinkUnknownPlace {
+            id: raw.id,
+            which: "from",
+            place: raw.from,
+        });
+    }
+    if !place_ids.contains(&raw.to) {
+        return Err(Sl1LoadError::LinkUnknownPlace {
+            id: raw.id,
+            which: "to",
+            place: raw.to,
+        });
+    }
+    if raw.from == raw.to {
+        let place = raw.from.clone();
+        return Err(Sl1LoadError::LinkSelfLoop { id: raw.id, place });
+    }
+
+    let direction = match raw.direction.as_deref() {
+        None => return Err(Sl1LoadError::LinkMissingDirection { id: raw.id }),
+        Some("forward") => Sl1LinkDirection::Forward,
+        Some("bidirectional") => Sl1LinkDirection::Bidirectional,
+        Some(other) => {
+            return Err(Sl1LoadError::LinkUnknownDirection {
+                id: raw.id,
+                value: other.to_string(),
+            });
+        }
+    };
+
+    let backpressure = match raw.backpressure.as_deref() {
+        None => return Err(Sl1LoadError::LinkMissingBackpressure { id: raw.id }),
+        Some("block_upstream") => Sl1LinkBackpressure::BlockUpstream,
+        Some("drop_low_priority") => Sl1LinkBackpressure::DropLowPriority,
+        Some("spill_to_buffer") => Sl1LinkBackpressure::SpillToBuffer,
+        Some("degrade_quality") => Sl1LinkBackpressure::DegradeQuality,
+        Some(other) => {
+            return Err(Sl1LoadError::LinkUnknownBackpressure {
+                id: raw.id,
+                value: other.to_string(),
+            });
+        }
+    };
+
+    for key in raw.capacity.keys() {
+        if key.trim().is_empty() {
+            return Err(Sl1LoadError::LinkEmptyEntry {
+                id: raw.id,
+                field: "capacity",
+            });
+        }
+    }
+
+    if raw.travel_ticks == 0 {
+        return Err(Sl1LoadError::LinkTravelTicksZero { id: raw.id });
+    }
+    if raw.travel_ticks > MAX_LINK_TRAVEL_TICKS {
+        return Err(Sl1LoadError::LinkTravelTicksOutOfRange {
+            id: raw.id,
+            value: raw.travel_ticks,
+            max: MAX_LINK_TRAVEL_TICKS,
+        });
+    }
+
+    if raw.queue_capacity == 0 {
+        return Err(Sl1LoadError::LinkQueueCapacityZero { id: raw.id });
+    }
+    if raw.queue_capacity > MAX_LINK_QUEUE_CAPACITY {
+        return Err(Sl1LoadError::LinkQueueCapacityOutOfRange {
+            id: raw.id,
+            value: raw.queue_capacity,
+            max: MAX_LINK_QUEUE_CAPACITY,
+        });
+    }
+
+    let compatibility = canonicalize_link_compatibility(&raw.id, raw.compatibility)?;
+
+    let render = if let Some(r) = raw.render {
+        if r.style.trim().is_empty() {
+            return Err(Sl1LoadError::LinkEmptyRenderStyle { id: raw.id });
+        }
+        Some(Sl1LinkRenderHint {
+            style: r.style,
+            color: r.color,
+        })
+    } else {
+        None
+    };
+
+    Ok(Sl1Link {
+        id: raw.id,
+        link_type: raw.link_type,
+        from: raw.from,
+        to: raw.to,
+        direction,
+        capacity: raw.capacity,
+        travel_ticks: raw.travel_ticks,
+        compatibility,
+        queue_capacity: raw.queue_capacity,
+        backpressure,
+        render,
+    })
+}
+
+fn canonicalize_link_compatibility(
+    link_id: &str,
+    raw: Vec<String>,
+) -> Result<Vec<String>, Sl1LoadError> {
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in &raw {
+        if entry.trim().is_empty() {
+            return Err(Sl1LoadError::LinkEmptyEntry {
+                id: link_id.to_string(),
+                field: "compatibility",
+            });
+        }
+        if !seen.insert(entry.clone()) {
+            return Err(Sl1LoadError::LinkDuplicateCompatibility {
+                id: link_id.to_string(),
                 value: entry.clone(),
             });
         }
@@ -1071,12 +1421,12 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 2-11 have no behavior for their primitive — even a
+        // PRs 3-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
         // proto-SL1 scene would silently no-op. PR 1 removed `places`
-        // from this guard because places are now typed and validated.
+        // and PR 2 removed `links` from this guard because both are
+        // now typed and validated.
         for (json, expected_section) in [
-            (r#"{"links": [{}]}"#, "links"),
             (r#"{"things": [{}]}"#, "things"),
             (r#"{"transforms": [{}]}"#, "transforms"),
             (r#"{"demand": [{}]}"#, "demand"),
@@ -1162,7 +1512,7 @@ mod tests {
         // typo at the top level is surfaced even if the author also
         // populated a primitive that would have hit
         // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "links": [{}]}"#).unwrap_err();
+        let err = load_str(r#"{"mystery": 1, "things": [{}]}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),

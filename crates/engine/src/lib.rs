@@ -49,9 +49,10 @@ pub use loader::{load_scene_str, AgentSpec, Goal, IdMap, LoadedScene, Theme};
 pub use rng::SimRng;
 pub use scenario_language_v1::{
     load_str as load_sl1_str, load_value as load_sl1_value, validate as validate_sl1, GameOutcome,
-    RawSl1Scene, Sl1Agent, Sl1Demand, Sl1FailureCondition, Sl1Fault, Sl1Link, Sl1LoadError,
-    Sl1Milestone, Sl1Objective, Sl1Observability, Sl1Place, Sl1Pressure, Sl1Scene, Sl1Thing,
-    Sl1Transform, Sl1Warning, SL1_SCHEMA_VERSION,
+    RawSl1Scene, Sl1Agent, Sl1Demand, Sl1FailureCondition, Sl1Fault, Sl1Link, Sl1LinkBackpressure,
+    Sl1LinkDirection, Sl1LinkRenderHint, Sl1LoadError, Sl1Milestone, Sl1Objective,
+    Sl1Observability, Sl1Place, Sl1Pressure, Sl1Scene, Sl1Thing, Sl1Transform, Sl1Warning,
+    SL1_SCHEMA_VERSION,
 };
 pub use snapshot::{color_batches, encode_snapshot, encode_static, encode_static_parts};
 pub use state_hash::{hash_run, hash_world};

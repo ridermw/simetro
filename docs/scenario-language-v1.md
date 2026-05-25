@@ -1,8 +1,8 @@
 # scenario_language_v1 (SL1)
 
-> **Status:** PR 1 — Places landed. The SL1 root, taxonomy, and Place
-> primitive ship; later primitives (links, things, transforms, …)
-> arrive in subsequent PRs.
+> **Status:** PR 2 — Links landed. The SL1 root, taxonomy, Place
+> primitive, and Link primitive ship; later primitives (things,
+> transforms, demand, …) arrive in subsequent PRs.
 >
 > **Authoritative spec:**
 > [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](superpowers/specs/2026-05-24-scenario_language_v1-plan.md)
@@ -189,6 +189,99 @@ mirrors the engine struct one-to-one. The field uses
 `#[serde(default, skip_serializing_if = "Vec::is_empty")]`, so legacy
 non-SL1 scenes serialize without an `sl1_places` field at all and
 non-Rust consumers can ignore the field until they need it.
+
+## Links (PR 2)
+
+A **Link** is a typed declarative edge between two places. PR 2 ships
+loader + validation + deterministic hash + protocol mirror only —
+runtime queue mutation, backpressure execution, and frontend
+rendering arrive in later PRs (transforms/demand and PR 6's first
+frontend touch).
+
+### Schema
+
+```jsonc
+{
+  "id": "telemetry-to-normalizer",     // required, same id grammar as places
+  "type": "data_stream",               // required, free-form non-empty
+  "from": "mycroft-gpu-heartbeats",    // required, must reference a declared place
+  "to":   "normalize-heartbeats",      // required, must reference a declared place
+  "direction": "forward",              // required: "forward" | "bidirectional"
+  "capacity": {                        // optional map<string, u64>
+    "events_per_tick": 120
+  },
+  "travel_ticks": 1,                   // required, u64 in 1..=MAX_LINK_TRAVEL_TICKS
+  "compatibility": ["gpu_heartbeat"],  // optional set<string>; canonicalized
+  "queue_capacity": 1000,              // required, u64 in 1..=MAX_LINK_QUEUE_CAPACITY
+  "backpressure": "block_upstream",    // required: see backpressure table
+  "render": {                          // optional render hint, carried opaquely
+    "style": "flow",                   // required non-empty if `render` present
+    "color": 3                         // optional palette index (u32)
+  }
+}
+```
+
+Unknown fields on a link or on its `render` block are rejected at the
+serde layer (`#[serde(deny_unknown_fields)]`) and surface as
+`Sl1LoadError::Parse { message }`.
+
+### Closed enums
+
+| Field          | Allowed values                                                              |
+|----------------|-----------------------------------------------------------------------------|
+| `direction`    | `forward`, `bidirectional`                                                  |
+| `backpressure` | `block_upstream`, `drop_low_priority`, `spill_to_buffer`, `degrade_quality` |
+
+Both fields are **required**. Omission and unknown-value cases produce
+*distinct* typed errors (e.g. `LinkMissingDirection` vs
+`LinkUnknownDirection`) so authoring tools can pinpoint the problem.
+
+### Validation rules
+
+| Rule | Error variant |
+|---|---|
+| `id` non-empty, ≤64 chars, `[a-zA-Z0-9_-]` only | `LinkInvalidId` |
+| `id` unique across all links | `LinkDuplicateId` |
+| `type` non-empty | `LinkEmptyType` |
+| `from` references a declared place | `LinkUnknownPlace { which: "from" }` |
+| `to` references a declared place | `LinkUnknownPlace { which: "to" }` |
+| `from != to` (no self-loops) | `LinkSelfLoop` |
+| `direction` present | `LinkMissingDirection` |
+| `direction` value is closed-enum | `LinkUnknownDirection` |
+| `backpressure` present | `LinkMissingBackpressure` |
+| `backpressure` value is closed-enum | `LinkUnknownBackpressure` |
+| `capacity` map keys non-empty | `LinkEmptyEntry { field: "capacity" }` |
+| `compatibility` entries non-empty | `LinkEmptyEntry { field: "compatibility" }` |
+| `compatibility` entries unique | `LinkDuplicateCompatibility` |
+| `travel_ticks > 0` | `LinkTravelTicksZero` |
+| `travel_ticks <= MAX_LINK_TRAVEL_TICKS` (1_000_000_000) | `LinkTravelTicksOutOfRange` |
+| `queue_capacity > 0` | `LinkQueueCapacityZero` |
+| `queue_capacity <= MAX_LINK_QUEUE_CAPACITY` (1_000_000_000) | `LinkQueueCapacityOutOfRange` |
+| `render.style` non-empty when `render` present | `LinkEmptyRenderStyle` |
+
+`compatibility` is stored sorted ascending and de-duplicated. The
+`capacity` map's keys are deduplicated naturally by serde (last-wins
+for duplicate JSON keys); only the `Vec<String>` form gets explicit
+duplicate detection.
+
+Cross-checking `compatibility` against declared `things[]` is **deferred
+to PR 3** because the `things` primitive itself is not yet typed.
+
+### Deterministic exposure
+
+Links are iterated in stable id order in every system, hashed in that
+order in `state_hash::feed_sl1`, and serialized in that order into
+`StaticPayload.sl1_links`. The empty-SL1 and places-only hash
+baselines are preserved because the per-link loop runs zero times
+when no links are declared.
+
+### Protocol mirror
+
+`StaticPayload` carries an `sl1_links: Vec<Sl1LinkView>` field that
+mirrors `Sl1Link` one-to-one, including typed `direction` and
+`backpressure` enum views and an optional `render` hint. The field
+uses `#[serde(default, skip_serializing_if = "Vec::is_empty")]` so
+non-SL1 (or SL1 scenes with no links) serialize without the field.
 
 ## Roadmap (per `plan.md`)
 

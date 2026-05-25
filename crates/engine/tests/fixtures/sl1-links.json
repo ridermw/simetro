@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "name": "sl1-links",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7", "#f7768e"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [{ "type": "loop_forever" }],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "mycroft-gpu-heartbeats",
+        "role": "source",
+        "pos": [0.0, 0.0],
+        "capacity": { "events_per_tick": 200 },
+        "storage": {},
+        "accepts": [],
+        "produces": ["gpu_heartbeat"],
+        "failure_domains": ["eastus"],
+        "operating_states": {}
+      },
+      {
+        "id": "normalize-heartbeats",
+        "role": "transform",
+        "pos": [120.0, 0.0],
+        "capacity": { "events_per_tick": 200 },
+        "storage": {},
+        "accepts": ["gpu_heartbeat"],
+        "produces": ["normalized_gpu_heartbeat"],
+        "failure_domains": ["eastus"],
+        "operating_states": {}
+      },
+      {
+        "id": "fact-store",
+        "role": "storage",
+        "pos": [240.0, 0.0],
+        "capacity": {},
+        "storage": {
+          "facts": { "capacity": 1024, "initial": 0 }
+        },
+        "accepts": ["normalized_gpu_heartbeat"],
+        "produces": [],
+        "failure_domains": ["eastus", "az1"],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "telemetry-to-normalizer",
+        "type": "data_stream",
+        "from": "mycroft-gpu-heartbeats",
+        "to": "normalize-heartbeats",
+        "direction": "forward",
+        "capacity": { "events_per_tick": 120 },
+        "travel_ticks": 1,
+        "compatibility": ["gpu_heartbeat"],
+        "queue_capacity": 1000,
+        "backpressure": "block_upstream",
+        "render": { "style": "flow", "color": 3 }
+      },
+      {
+        "id": "normalizer-to-store",
+        "type": "data_stream",
+        "from": "normalize-heartbeats",
+        "to": "fact-store",
+        "direction": "forward",
+        "capacity": { "events_per_tick": 100 },
+        "travel_ticks": 2,
+        "compatibility": ["normalized_gpu_heartbeat"],
+        "queue_capacity": 500,
+        "backpressure": "drop_low_priority"
+      },
+      {
+        "id": "ops-bus",
+        "type": "control_bus",
+        "from": "fact-store",
+        "to": "mycroft-gpu-heartbeats",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 5,
+        "compatibility": [],
+        "queue_capacity": 8,
+        "backpressure": "spill_to_buffer"
+      }
+    ],
+    "things": [],
+    "transforms": [],
+    "demand": [],
+    "pressure": [],
+    "objectives": [],
+    "failure_conditions": [],
+    "agents": [],
+    "milestones": []
+  }
+}

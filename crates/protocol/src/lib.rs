@@ -106,6 +106,13 @@ pub struct StaticPayload {
     /// Sorted by `id` for deterministic ordering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_places: Vec<Sl1PlaceView>,
+    /// `scenario_language_v1` links — author-declared transport edges
+    /// between places. Static metadata only; per-tick queue
+    /// utilization (PR 4/5) goes in [`SnapshotPayload`]. Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `links`. Sorted by
+    /// `id` for deterministic ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_links: Vec<Sl1LinkView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -156,6 +163,50 @@ pub struct Sl1OperatingStateView {
 pub enum Sl1OperatingPredicateView {
     UsedPercentGte { metric: String, threshold: u8 },
     OverloadedTicksGt { ticks: u64 },
+}
+
+/// Wire-level view of one validated SL1 link. Mirrors
+/// `engine::scenario_language_v1::Sl1Link` 1:1.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1LinkView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub link_type: String,
+    pub from: String,
+    pub to: String,
+    pub direction: Sl1LinkDirectionView,
+    pub capacity: std::collections::BTreeMap<String, u64>,
+    pub travel_ticks: u64,
+    pub compatibility: Vec<String>,
+    pub queue_capacity: u64,
+    pub backpressure: Sl1LinkBackpressureView,
+    /// Optional render hint carried opaquely from the scene JSON. PR 6
+    /// is the first frontend consumer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render: Option<Sl1LinkRenderHintView>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1LinkDirectionView {
+    Forward,
+    Bidirectional,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1LinkBackpressureView {
+    BlockUpstream,
+    DropLowPriority,
+    SpillToBuffer,
+    DegradeQuality,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1LinkRenderHintView {
+    pub style: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -679,6 +730,7 @@ mod tests {
             path_names,
             mover_names: std::collections::BTreeMap::new(),
             sl1_places: Vec::new(),
+            sl1_links: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -769,6 +821,7 @@ mod tests {
                     operating_states: std::collections::BTreeMap::new(),
                 },
             ],
+            sl1_links: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -797,9 +850,74 @@ mod tests {
             path_names: std::collections::BTreeMap::new(),
             mover_names: std::collections::BTreeMap::new(),
             sl1_places: vec![],
+            sl1_links: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
+        assert!(bare_json.get("sl1_links").is_none());
+    }
+
+    #[test]
+    fn sl1_links_round_trip_through_static_payload() {
+        // Covers both directions, every backpressure, render
+        // presence/absence + color presence/absence, sorted
+        // compatibility, and skip-if-empty semantics.
+        let mut cap = std::collections::BTreeMap::new();
+        cap.insert("events_per_tick".to_string(), 120u64);
+        let links = vec![
+            Sl1LinkView {
+                id: "telemetry-to-normalizer".into(),
+                link_type: "data_stream".into(),
+                from: "src".into(),
+                to: "dst".into(),
+                direction: Sl1LinkDirectionView::Forward,
+                capacity: cap.clone(),
+                travel_ticks: 1,
+                compatibility: vec!["gpu_heartbeat".into()],
+                queue_capacity: 1000,
+                backpressure: Sl1LinkBackpressureView::BlockUpstream,
+                render: Some(Sl1LinkRenderHintView {
+                    style: "flow".into(),
+                    color: Some(3),
+                }),
+            },
+            Sl1LinkView {
+                id: "two-way".into(),
+                link_type: "bus".into(),
+                from: "a".into(),
+                to: "b".into(),
+                direction: Sl1LinkDirectionView::Bidirectional,
+                capacity: std::collections::BTreeMap::new(),
+                travel_ticks: 5,
+                compatibility: vec![],
+                queue_capacity: 1,
+                backpressure: Sl1LinkBackpressureView::DropLowPriority,
+                render: None,
+            },
+        ];
+        let sp = StaticPayload {
+            name: "demo".into(),
+            palette: vec!["#000".into()],
+            background_index: 0,
+            nodes: vec![],
+            paths: vec![],
+            node_names: std::collections::BTreeMap::new(),
+            path_names: std::collections::BTreeMap::new(),
+            mover_names: std::collections::BTreeMap::new(),
+            sl1_places: vec![],
+            sl1_links: links.clone(),
+        };
+        let back: StaticPayload = roundtrip(&sp);
+        assert_eq!(back.sl1_links, links);
+
+        let json = serde_json::to_value(&sp).unwrap();
+        assert_eq!(json["sl1_links"][0]["type"], "data_stream");
+        assert_eq!(json["sl1_links"][0]["direction"], "forward");
+        assert_eq!(json["sl1_links"][0]["backpressure"], "block_upstream");
+        assert_eq!(json["sl1_links"][1]["direction"], "bidirectional");
+        assert_eq!(json["sl1_links"][1]["backpressure"], "drop_low_priority");
+        // Render absent -> field skipped.
+        assert!(json["sl1_links"][1].get("render").is_none());
     }
 
     // ---- 7. AgentReport --------------------------------------------
