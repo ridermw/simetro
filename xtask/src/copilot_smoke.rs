@@ -54,15 +54,21 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
     }
 
     println!("[xtask copilot-smoke] looking for `copilot` on PATH…");
-    if !binary_exists("copilot") {
-        eprintln!(
-            "[xtask copilot-smoke] FAIL: `copilot` not found on PATH.\n\
-             Install GitHub Copilot CLI first:\n\
-             https://docs.github.com/en/copilot/github-copilot-cli"
+    if let Some(path) = find_in_path("copilot") {
+        println!(
+            "[xtask copilot-smoke] found `copilot` at {}",
+            path.display()
         );
-        return std::process::ExitCode::from(1);
+    } else {
+        // We don't bail here — the spawn below will produce a cleaner
+        // error if the binary genuinely isn't launchable. PATH-walking
+        // can have false negatives (e.g. ACL-restricted entries) on
+        // some platforms.
+        println!(
+            "[xtask copilot-smoke] `copilot` not found via PATH walk; \
+             attempting spawn anyway (PATH lookup is best-effort)"
+        );
     }
-    println!("[xtask copilot-smoke] found `copilot`");
 
     println!("[xtask copilot-smoke] spawning `copilot --acp`…");
     let mut child = match Command::new("copilot")
@@ -73,6 +79,15 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
         .spawn()
     {
         Ok(c) => c,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "[xtask copilot-smoke] FAIL: `copilot` not found on PATH.\n\
+                 Install GitHub Copilot CLI first:\n\
+                 https://docs.github.com/en/copilot/github-copilot-cli\n\
+                 (underlying error: {err})"
+            );
+            return std::process::ExitCode::from(1);
+        }
         Err(err) => {
             eprintln!("[xtask copilot-smoke] FAIL: spawn failed: {err}");
             return std::process::ExitCode::from(1);
@@ -140,12 +155,60 @@ EXIT CODES:
     );
 }
 
-fn binary_exists(name: &str) -> bool {
-    #[cfg(unix)]
-    let probe = Command::new("which").arg(name).output();
-    #[cfg(windows)]
-    let probe = Command::new("where").arg(name).output();
-    matches!(probe, Ok(out) if out.status.success() && !out.stdout.is_empty())
+/// Walk `PATH` looking for an executable named `name`. Returns the
+/// first matching path, or `None`. Pure std — no `which` shellout
+/// (some minimal Unix devcontainers don't ship `which`, which would
+/// otherwise turn this check into a false negative — Codex PR #23
+/// R1 P2 finding).
+///
+/// On Unix, considers a file "executable" if it exists and has any
+/// `x` bit set (we don't try to match the current user's
+/// uid/gid/group permissions exactly; spawn() will fail clearly if
+/// the file is not actually launchable). On Windows, considers the
+/// raw `name`, `name.exe`, `name.cmd`, and `name.bat`.
+fn find_in_path(name: &str) -> Option<std::path::PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        for candidate in candidate_filenames(name) {
+            let full = dir.join(&candidate);
+            if is_executable(&full) {
+                return Some(full);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
+fn candidate_filenames(name: &str) -> Vec<String> {
+    vec![name.to_string()]
+}
+
+#[cfg(windows)]
+fn candidate_filenames(name: &str) -> Vec<String> {
+    vec![
+        name.to_string(),
+        format!("{name}.exe"),
+        format!("{name}.cmd"),
+        format!("{name}.bat"),
+    ]
+}
+
+#[cfg(unix)]
+fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn is_executable(path: &std::path::Path) -> bool {
+    // Windows treats any file with the right extension as executable;
+    // candidate_filenames already constrained the search.
+    std::fs::metadata(path)
+        .map(|m| m.is_file())
+        .unwrap_or(false)
 }
 
 fn drain_stderr_for_diagnostics(child: &mut std::process::Child, verbose: bool) {
