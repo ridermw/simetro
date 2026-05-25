@@ -26,6 +26,7 @@ pub mod redactor;
 pub mod rng;
 pub mod scenario_language_v1;
 pub mod sl1_agents;
+pub mod sl1_milestones;
 pub mod sl1_objectives;
 pub mod sl1_observability;
 pub mod sl1_pressure;
@@ -60,7 +61,8 @@ pub use scenario_language_v1::{
     Sl1DemandSchedule, Sl1DemandTarget, Sl1FailureCondition, Sl1FailureConditionKind,
     Sl1FailureConditionParams, Sl1FailureConditionRuntime, Sl1FailurePolicy, Sl1Fault,
     Sl1GamePhase, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1LinkRenderHint, Sl1LoadError,
-    Sl1Milestone, Sl1Objective, Sl1ObjectiveKind, Sl1ObjectiveParams, Sl1ObjectiveRuntime,
+    Sl1Milestone, Sl1MilestoneDashboardState, Sl1MilestonePredicate, Sl1MilestoneRuntime,
+    Sl1MilestoneTrigger, Sl1Objective, Sl1ObjectiveKind, Sl1ObjectiveParams, Sl1ObjectiveRuntime,
     Sl1ObjectiveStatus, Sl1Observability, Sl1Place, Sl1Pressure, Sl1RuntimeState, Sl1Scene,
     Sl1Thing, Sl1ThingQualityContract, Sl1ThingRenderHint, Sl1Transform, Sl1TransformIo,
     Sl1TransformState, Sl1VictoryCondition, Sl1VictoryConditionKind, Sl1VictoryConditionParams,

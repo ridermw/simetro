@@ -469,6 +469,58 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-milestone static fingerprint (PR 11). Gated on milestones
+    // being non-empty so prior SL1 baselines (sl1-empty through
+    // sl1-agents) stay bit-for-bit stable.
+    if !sl1.milestones.is_empty() {
+        h.update(b"sl1.milestones.v1");
+        for m in &sl1.milestones {
+            h.update(b"sl1.milestone.v1");
+            feed_str(h, &m.id);
+            feed_str(h, &m.label);
+            match &m.trigger {
+                crate::scenario_language_v1::Sl1MilestoneTrigger::PressureActivated {
+                    pressure,
+                } => {
+                    h.update([0x01]);
+                    feed_str(h, pressure);
+                }
+                crate::scenario_language_v1::Sl1MilestoneTrigger::PressureDeactivated {
+                    pressure,
+                } => {
+                    h.update([0x02]);
+                    feed_str(h, pressure);
+                }
+                crate::scenario_language_v1::Sl1MilestoneTrigger::MetricThreshold {
+                    metric,
+                    predicate,
+                    value,
+                } => {
+                    h.update([0x03]);
+                    feed_str(h, metric);
+                    h.update(predicate.as_str().as_bytes());
+                    h.update(value.to_le_bytes());
+                }
+                crate::scenario_language_v1::Sl1MilestoneTrigger::DashboardState {
+                    dashboard,
+                    target_state,
+                } => {
+                    h.update([0x04]);
+                    feed_str(h, dashboard);
+                    h.update(target_state.as_str().as_bytes());
+                }
+            }
+            feed_str_list(h, &m.camera_focus);
+            match &m.highlight {
+                Some(s) => {
+                    h.update([0x01]);
+                    feed_str(h, s);
+                }
+                None => h.update([0x00]),
+            }
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -665,6 +717,25 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
             for (demand_id, until) in &runtime.agent_demand_pauses {
                 feed_str(h, demand_id);
                 h.update(until.to_le_bytes());
+            }
+        }
+        // Per-tick milestone runtime fingerprint (PR 11). Gated on
+        // milestones being present so older baselines stay stable.
+        // Captures `fired_at_tick` and `armed` per milestone in stable
+        // id order.
+        if !sl1.milestones.is_empty() {
+            h.update(b"sl1.runtime.milestones.v1");
+            h.update((runtime.milestones.len() as u64).to_le_bytes());
+            for (mid, s) in &runtime.milestones {
+                feed_str(h, mid);
+                match s.fired_at_tick {
+                    Some(t) => {
+                        h.update([1u8]);
+                        h.update(t.to_le_bytes());
+                    }
+                    None => h.update([0u8]),
+                }
+                h.update([u8::from(s.armed)]);
             }
         }
     }
@@ -1067,6 +1138,36 @@ fn feed_event(h: &mut Sha256, e: &SimEvent) {
             h.update([0x21]);
             h.update((agent_id.len() as u64).to_le_bytes());
             h.update(agent_id.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1MilestoneFired {
+            milestone_id,
+            label,
+            trigger_kind,
+            camera_focus,
+            highlight,
+            tick,
+        } => {
+            h.update([0x22]);
+            h.update((milestone_id.len() as u64).to_le_bytes());
+            h.update(milestone_id.as_bytes());
+            h.update((label.len() as u64).to_le_bytes());
+            h.update(label.as_bytes());
+            h.update((trigger_kind.len() as u64).to_le_bytes());
+            h.update(trigger_kind.as_bytes());
+            h.update((camera_focus.len() as u64).to_le_bytes());
+            for c in camera_focus {
+                h.update((c.len() as u64).to_le_bytes());
+                h.update(c.as_bytes());
+            }
+            match highlight {
+                Some(s) => {
+                    h.update([0x01]);
+                    h.update((s.len() as u64).to_le_bytes());
+                    h.update(s.as_bytes());
+                }
+                None => h.update([0x00]),
+            }
             h.update(tick.to_le_bytes());
         }
     }

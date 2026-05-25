@@ -133,13 +133,14 @@ fn loader_rejects_explicit_null_sl1_block() {
 }
 
 #[test]
-fn legacy_top_level_agents_still_loads_but_nested_milestones_does_not() {
+fn legacy_top_level_agents_still_loads_and_nested_typed_milestones_validate() {
     // `agents` is intentionally excluded from the reserved-top-level
     // guard because legacy v1/v2 scenes use it at the top level
     // alongside `pieces`. This test documents both halves of that
-    // intentional collision: top-level `agents` still loads, while a
-    // nested SL1 placeholder primitive (`milestones`, still
-    // unimplemented as of PR 10) fails with PrimitiveNotImplemented.
+    // intentional collision: top-level `agents` still loads, and a
+    // nested `milestones` primitive (typed as of PR 11) now surfaces a
+    // typed Parse error when given a non-conformant entry instead of
+    // the PR 0 `PrimitiveNotImplemented` placeholder.
 
     let with_legacy_agents = r##"{
         "schema_version": 1,
@@ -169,12 +170,10 @@ fn legacy_top_level_agents_still_loads_but_nested_milestones_does_not() {
         }
     }"##;
     let err = load_scene_str(with_nested_agents, 0)
-        .expect_err("nested SL1 `milestones` must fail until PR 11");
+        .expect_err("nested SL1 `milestones` with malformed entry must fail");
     match err {
-        LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "milestones");
-        }
-        other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
+        LoadError::Sl1(Sl1LoadError::Parse { .. }) => {}
+        other => panic!("expected LoadError::Sl1(Parse), got {other:?}"),
     }
 }
 
@@ -206,15 +205,12 @@ fn loader_rejects_misplaced_top_level_sl1_primitive() {
 }
 
 #[test]
-fn loader_rejects_non_empty_primitive_until_pr_lands() {
-    // PR 11 has no behavior for its primitive — even a well-formed
-    // entry must fail load so authors cannot build proto-SL1 scenes
-    // that silently no-op. PRs 1–5 promoted `places`, `links`,
-    // `things`, `transforms`, and `demand`, PR 7 promoted `pressure`,
-    // PR 8 promoted `objectives` / `failure_conditions` /
-    // `victory_conditions`, and PR 10 promoted `agents`. This
-    // regression test uses `milestones` (still a placeholder until
-    // PR 11).
+fn loader_rejects_malformed_typed_primitive() {
+    // PR 11 promoted `milestones` from placeholder to typed primitive.
+    // A malformed entry now surfaces a typed `Parse` error instead of
+    // the PR 0 `PrimitiveNotImplemented` placeholder; this regression
+    // test documents that typed-loader rejection still happens (so
+    // authors cannot silently ship malformed milestones).
     let json = r##"{
         "schema_version": 1,
         "name": "sl1-non-empty-milestones",
@@ -228,13 +224,10 @@ fn loader_rejects_non_empty_primitive_until_pr_lands() {
             "milestones": [{}]
         }
     }"##;
-    let err =
-        load_scene_str(json, 0).expect_err("non-empty SL1 placeholder primitive must be rejected");
+    let err = load_scene_str(json, 0).expect_err("malformed SL1 milestone entry must be rejected");
     match err {
-        LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "milestones");
-        }
-        other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
+        LoadError::Sl1(Sl1LoadError::Parse { .. }) => {}
+        other => panic!("expected LoadError::Sl1(Parse), got {other:?}"),
     }
 }
 
