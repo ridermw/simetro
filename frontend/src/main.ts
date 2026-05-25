@@ -377,13 +377,17 @@ function boot(): void {
 
   const renderer = new Renderer(canvas);
   renderer.warm(DEFAULT_THEME);
+  renderer.attachViewportControls();
+  // Expose renderer for e2e viewport inspection (non-Tauri builds only).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__simetroRenderer = renderer;
   const state = createAppState();
 
   const appRoot = document.getElementById("app");
   if (appRoot !== null) {
     state.inspector = new InspectorPanel(appRoot);
     state.hover = new HoverTooltip(appRoot);
-    state.hover.attach(canvas);
+    state.hover.attach(canvas, (x, y) => renderer.screenToWorld(x, y));
     state.fault = new FaultOverlay(appRoot);
     state.warnings = new WarningStrip(appRoot);
     state.heartbeat = new HeartbeatBadge(appRoot);
@@ -411,7 +415,10 @@ function boot(): void {
     }
   }
 
-  window.addEventListener("resize", () => resize(canvas));
+  window.addEventListener("resize", () => {
+    resize(canvas);
+    renderer.refitViewport();
+  });
 
   // tab-refocus invariant: when tab regains focus, jump-cut to latest snapshot.
   document.addEventListener("visibilitychange", () => {
