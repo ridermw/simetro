@@ -16,7 +16,7 @@ name = "simetro-tauri-app"
 path = "src/main.rs"
 
 [dependencies]
-simetro-engine = { workspace = true }
+simetro-engine = { workspace = true, features = ["llm-live"] }
 simetro-protocol = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

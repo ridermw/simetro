@@ -11,6 +11,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+#[cfg(not(feature = "llm-live"))]
+use simetro_engine::LoadError;
 use simetro_engine::{load_scene_str, LoadedScene};
 
 #[test]
@@ -57,8 +59,6 @@ fn validate_world(path: &Path) -> String {
     let src = fs::read_to_string(path).unwrap_or_else(|err| panic!("{label}: read failed: {err}"));
     let value = serde_json::from_str::<Value>(&src)
         .unwrap_or_else(|err| panic!("{label}: JSON parse failed: {err}"));
-    let loaded = load_scene_str(&src, 42)
-        .unwrap_or_else(|err| panic!("{label}: v1 loader rejected world: {err}"));
 
     assert_eq!(
         value.get("schema_version").and_then(Value::as_u64),
@@ -67,6 +67,12 @@ fn validate_world(path: &Path) -> String {
     );
 
     let slug = validate_catalog(path, &value);
+    let loaded = match load_scene_str(&src, 42) {
+        Ok(loaded) => loaded,
+        #[cfg(not(feature = "llm-live"))]
+        Err(LoadError::AgentKindRequiresFeature { kind, .. }) if kind == "llm" => return slug,
+        Err(err) => panic!("{label}: v1 loader rejected world: {err}"),
+    };
     validate_palette(&label, &loaded);
     validate_layout_silhouette(&label, &loaded);
     validate_node_language(&label, &value, &loaded);
