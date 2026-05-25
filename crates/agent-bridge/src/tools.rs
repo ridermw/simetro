@@ -27,7 +27,7 @@ pub mod names {
     pub const CONNECT_PIECES: &str = "connect_pieces";
     pub const REMOVE_PIECE: &str = "remove_piece";
 
-    // Author tools (P2.A task 9).
+    // Author tools .
     pub const DEFINE_RESOURCE: &str = "define_resource";
     pub const ADD_PRODUCER: &str = "add_producer";
     pub const ADD_CONSUMER: &str = "add_consumer";
@@ -144,8 +144,7 @@ const SET_GOAL_SCHEMA: &str = r#"{
 }"#;
 
 /// The full set of tool specs the bridge sends to the model. Author
-/// tools (PlacePiece / ConnectPieces / RemovePiece, plus the P2.A
-/// task 9 graph tools DefineResource / AddProducer / AddConsumer /
+/// tools (PlacePiece / ConnectPieces / RemovePiece, plus the graph tools DefineResource / AddProducer / AddConsumer /
 /// SetGoal) are engine-validated: valid requests mutate the world,
 /// invalid ones surface as typed `Warning::InvalidAction` messages.
 #[must_use]

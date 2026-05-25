@@ -264,7 +264,7 @@ impl AgentRuntime {
                     let _ = self.timeline.reissue(timeline_id);
                     // Re-enqueue at the lifecycle with the new
                     // current_tick so deadline_abs rebases (per PR #12
-                    // R2 Codex P1 fix). Push the request to the outbox
+                    // R2 Codex legacy fix). Push the request to the outbox
                     // for the bridge to pick up.
                     match self
                         .lifecycle
@@ -373,7 +373,7 @@ fn warning_payload(msg: &SimMessage) -> Option<&simetro_protocol::WarningPayload
 
 // Used by record_fault docs / convention; not currently emitted by
 // AgentRuntime itself but kept here so callers needing to convert an
-// error back into a SimMessage stay consistent with §10.2.1.
+// error back into a SimMessage stay consistent with lifecycle invariant.
 #[doc(hidden)]
 pub fn fault_message_for(reason: impl Into<String>) -> SimMessage {
     SimMessage::Fault(FaultPayload::EngineFault {

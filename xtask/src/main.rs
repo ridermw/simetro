@@ -1,4 +1,4 @@
-//! `cargo xtask` — project-specific build helpers (P2.A task 12).
+//! `cargo xtask` — project-specific build helpers (project helper).
 //!
 //! ## Subcommands
 //!

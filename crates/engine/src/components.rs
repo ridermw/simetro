@@ -110,7 +110,7 @@ pub struct Mover {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
     pub id: ResourceId,
-    /// Stable human-readable name. Author actions (P2.A task 9 —
+    /// Stable human-readable name. Author actions (—
     /// `DefineResource` / `AddProducer` / `AddConsumer`) reference
     /// resources by this name; loader-defined resources use the JSON
     /// id verbatim. Names must match `[A-Za-z0-9_-]+` and be ≤64 chars

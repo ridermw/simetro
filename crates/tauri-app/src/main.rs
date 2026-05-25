@@ -4,5 +4,5 @@
 
 fn main() {
     tracing_subscriber::fmt::init();
-    tracing::info!("simetro-tauri-app: stub (Step 1)");
+    tracing::info!("simetro-tauri-app: stub (workspace)");
 }

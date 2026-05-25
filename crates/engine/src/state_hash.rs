@@ -704,7 +704,7 @@ mod tests {
     }
 
     /// Closes the specific edge case the codex-connector reviewer
-    /// flagged on PR #5: two runs whose `chosen` action ends in a
+    /// flagged on review: two runs whose `chosen` action ends in a
     /// rejection/no-op (so the apply pipeline produces identical
     /// downstream events or warnings) but whose AgentReport.chosen
     /// payloads differ must still hash differently. We hash the full
@@ -772,7 +772,7 @@ mod tests {
              rejected and downstream events are identical, the \
              AgentReport.chosen payload must contribute to the hash. \
              If this fails, `feed_agent_report` is hashing only the \
-             tag and the Codex-reviewer-identified edge case is back."
+             tag and the reviewer-identified edge case is back."
         );
     }
 }

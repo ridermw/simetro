@@ -111,8 +111,7 @@ async fn run_loop(backend: Box<dyn Backend>) -> std::io::Result<()> {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "schema_version mismatch: peer={}, ours={}; refusing to process payload \
-                     (per spec §10.1)",
+                    "schema_version mismatch: peer={}, ours={}; refusing to process payload",
                     env.schema_version,
                     simetro_protocol::SCHEMA_VERSION
                 ),
@@ -178,8 +177,7 @@ async fn dispatch(
                         confidence: 1.0,
                     },
                     Err(parse_err) => {
-                        // Per spec §11.1 + Codex PR #21 R2 finding:
-                        // malformed tool calls MUST surface as a
+                        // Malformed tool calls MUST surface as a
                         // typed Warning::InvalidAction, not a silent
                         // NoOp. Route through the same error mapping
                         // as backend-level errors so observability /

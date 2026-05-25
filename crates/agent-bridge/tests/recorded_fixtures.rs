@@ -1,8 +1,7 @@
-//! # Recorded-fixture test suite (P2.A task 11)
+//! # Recorded-fixture test suite
 //!
 //! Drives the `simetro-bridge` dispatch path through one fixture per
-//! `LlmError` variant + happy/edge paths. Per spec §3 task 11, each
-//! variant has its own fixture file under `tests/fixtures/error_modes/`
+//! `LlmError` variant + happy/edge paths. Each variant has its own fixture file under `tests/fixtures/error_modes/`
 //! so adding a new error mode is a one-file change.
 //!
 //! Fixture shape (JSON):
@@ -294,7 +293,7 @@ async fn every_fixture_round_trips_through_bridge_dispatch() {
             assert!(
                 !reply.rationale.contains(forbidden),
                 "[{label}] {path:?}: rationale {:?} contains forbidden substring {forbidden:?} \
-                 (spec §7.1 XPIA hardening — `raw` must NOT surface)",
+                 (XPIA hardening XPIA hardening — `raw` must NOT surface)",
                 reply.rationale
             );
         }

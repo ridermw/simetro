@@ -29,14 +29,14 @@ pressure, quota/cost pressure, and dashboard freshness constraints.
 
 ## Non-negotiables
 
-- The first v3 scene must be visibly winnable and losable.
+- The first `scenario_language_v1` scene must be visibly winnable and losable.
 - Within 30 seconds, a viewer should understand what the AI is trying to
   save, what is going wrong, and whether the latest AI action helped.
 - Keep Azure/Kusto/Fabric/Power BI/HPC/autoresearch concepts simulated.
   Do not add live cloud integrations as part of the `scenario_language_v1` slice.
 - Keep engine behavior deterministic: stable IDs, stable system order,
   typed predicates, bounded queues, and replayable outcomes.
-- Use explicit v3 `LoadError`, `Warning`, `Fault`, and `GameOutcome`
+- Use explicit `scenario_language_v1` `LoadError`, `Warning`, `Fault`, and `GameOutcome`
   surfaces. No silent starvation, backpressure, stale metrics, or
   invalid actions.
 - Extend existing `World` / `Node` / `Path` only through nested semantic

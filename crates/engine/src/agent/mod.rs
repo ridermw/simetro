@@ -12,7 +12,7 @@
 //!
 //!   The `AgentHost` wraps `agent.act()` in `std::panic::catch_unwind`
 //!   so a panicking agent never takes down the engine (agent isolation contract).
-//!   Panics surface as `AgentError::Panicked`, which Step 11 will turn
+//!   Panics surface as `AgentError::Panicked`, which workspace1 will turn
 //!   into a typed `SimMessage::Fault::AgentCrashed` event.
 //! ```
 //!
@@ -66,7 +66,7 @@ pub trait Agent: Send {
 /// - Calls `observe` then `act` once per scheduled invocation.
 /// - Catches panics and converts them to `AgentError::Panicked`.
 /// - Trims oversized `considered` lists and rationale strings to the
-///   plan-mandated caps (agent observation contract, §13).
+///   plan-mandated caps (agent observation contract, runtime safety).
 pub struct AgentHost {
     agent: Box<dyn Agent>,
 }

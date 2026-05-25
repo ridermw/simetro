@@ -1,11 +1,11 @@
-//! # DecisionTimeline (live-LLM foundation task 7)
+//! # DecisionTimeline (DecisionTimeline)
 //!
 //! Promotes per-agent decision history from an ad-hoc engine field to
 //! a **first-class, addressable, version-pinned object** that replay,
 //! the inspector, and the session-bundle exporter can all consume by
 //! stable ID.
 //!
-//! Spec §3 task 7, §10 architecture. The ID space used here is the
+//! The ID space used here is the
 //! source of truth for `RequestId::timeline_id` in the engine's
 //! `lifecycle` module: when the lifecycle re-issues a request,
 //! `timeline_id` is **preserved** and `attempts` on the
@@ -129,7 +129,7 @@ pub struct DecisionEntry {
     pub agent_id: String,
     pub status: DecisionStatus,
     /// Number of OUTGOING attempts so far. `1` after the first issue;
-    /// bumps on each re-issue. See spec §10.2.1.
+    /// bumps on each re-issue.
     pub attempts: u32,
     /// `None` until a reply is drained.
     pub response: Option<DecisionResponse>,

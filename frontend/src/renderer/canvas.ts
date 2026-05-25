@@ -22,7 +22,7 @@
 //   │  N fills (one per piece). Per-frame allocs: 0.      │
 //   └─────────────────────────────────────────────────────┘
 //
-// Per review feedback on PR #1 (Copilot, P1): paths don't move, so
+// Review feedback: paths don't move, so
 // Path2D buckets are rebuilt only when the scene identity changes —
 // not per frame. `activeBuckets` tracks which palette indices have
 // segments, so we never stroke empty buckets.

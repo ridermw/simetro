@@ -210,9 +210,8 @@ pub enum EnqueueOutcome {
 /// - `expired` — requests that hit their deadline and were either
 ///   re-issued or given up on. Bounded ring.
 ///
-/// The lifecycle is intentionally INDEPENDENT of `TickRunner` and
-/// `AgentHost` so it can be tested with a mock reply channel. live-LLM foundation
-/// task 8 will wire it into `TickRunner`.
+/// The lifecycle is intentionally independent of `TickRunner` and
+/// `AgentHost` so it can be tested with a mock reply channel.
 #[derive(Debug, Default)]
 pub struct RequestLifecycle {
     pending: HashMap<RequestId, PendingEntry>,
@@ -781,7 +780,7 @@ mod tests {
     }
 
     /// Critical: drain_reply must enforce the deadline check (spec
-    /// §10.2.1). A reply that arrives for a request whose deadline
+    /// lifecycle invariant). A reply that arrives for a request whose deadline
     /// has passed but `expire_overdue` has not yet run this tick
     /// must be rejected as Stale, NOT applied. Also: the lifecycle
     /// must move the entry to `expired` so a subsequent
@@ -819,7 +818,7 @@ mod tests {
     }
 
     /// Boundary: drain_reply at exactly deadline is on-time per spec
-    /// §10.2.1 (`current_tick ≤ deadline`).
+    /// lifecycle invariant (`current_tick ≤ deadline`).
     #[test]
     fn drain_reply_at_exact_deadline_is_on_time_apply() {
         let mut life = RequestLifecycle::new();
@@ -833,7 +832,7 @@ mod tests {
         );
     }
 
-    /// Regression: Codex bot PR #12 R2 P1 — re-issued requests must
+    /// Regression: review finding — re-issued requests must
     /// get a deadline rebased to the re-issue tick. If a re-issue
     /// kept the original deadline (`source_tick + deadline_ticks`),
     /// the next `expire_overdue` pass would immediately re-expire it

@@ -1,4 +1,4 @@
-//! # Bridge stdio wire protocol (P2.A task 6)
+//! # Bridge stdio wire protocol
 //!
 //! `simetro-bridge` runs as a separate process spawned by the
 //! `simetro-tauri-app` shell (or `simetro-headless`). The engine and
@@ -28,8 +28,7 @@
 //!
 //! Every envelope carries [`simetro_protocol::SCHEMA_VERSION`]. The
 //! receiver MUST reject mismatched versions ([`is_compatible`]) — see
-//! the `Hello` handshake below for negotiation. Per spec §10.1 there's
-//! no silent migration; a version bump requires both ends to update.
+//! the `Hello` handshake below for negotiation. There is no silent migration; a version bump requires both ends to update.
 //!
 //! [`is_compatible`]: simetro_protocol::Envelope::is_compatible
 

@@ -408,7 +408,7 @@ mod tests {
         }
     }
 
-    /// Closes PR #11 R1 MEDIUM: `Warning::Behind { lag_frames: 0 }`
+    /// Closes review finding: `Warning::Behind { lag_frames: 0 }`
     /// semantically means "on time", which contradicts the error.
     /// Verify the mapping clamps to a minimum of 1 for Timeout +
     /// RateLimited so the resulting Warning is never self-contradictory.

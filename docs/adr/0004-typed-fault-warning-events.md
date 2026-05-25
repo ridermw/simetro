@@ -9,7 +9,7 @@ platform that silently drops an action, swallows a load failure,
 or fails to render a stuck agent is worse than one that crashes —
 you can't even tell something is wrong.
 
-The mega plan review (Sections 1A, 2A, 11A) made this a P1
+The mega plan review (Sections 1A, 2A, 11A) made this a legacy
 requirement: every failure mode must surface visibly, with enough
 context to act on.
 

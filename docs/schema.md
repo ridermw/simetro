@@ -51,7 +51,7 @@ document mirrors what it accepts.
 
 | Field            | Type   | Notes                                                          |
 | ---------------- | ------ | -------------------------------------------------------------- |
-| `schema_version` | u32    | `1` for P1 scenes, `2` for resource-chain scenes.              |
+| `schema_version` | u32    | `1` for legacy scenes, `2` for resource-chain scenes.              |
 | `name`           | string | ≤200 chars, no control characters.                             |
 | `pieces`         | object | Container with `nodes` / `paths` / `movers` arrays (each opt). |
 
@@ -168,7 +168,7 @@ Current v1/v2 scenes support a single goal kind. The shape is a tagged union wit
 
 `loop_forever` declares "no terminal condition; run until paused." The
 `scenario_language_v1` roadmap replaces this with explicit objectives, failure
-conditions, and `GameOutcome` for schema v3 scenes.
+conditions, and `GameOutcome` for `scenario_language_v1` scenes.
 
 ## Agents
 
@@ -178,7 +178,7 @@ conditions, and `GameOutcome` for schema v3 scenes.
 
 | Field            | Type   | Constraint                                                |
 | ---------------- | ------ | --------------------------------------------------------- |
-| `kind`           | string | P1 supports `"speed_tuner"`. Unknown kinds → `LoadError`. |
+| `kind`           | string | Current loader supports `"speed_tuner"`. Unknown kinds → `LoadError`. |
 | `interval_ticks` | u32    | `1..=10_000`. How often the engine calls `Agent::act`.    |
 
 ## Resources, inventory, producers, consumers (v2)

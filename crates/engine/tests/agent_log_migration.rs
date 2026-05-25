@@ -1,6 +1,6 @@
 //! AgentLog v2 work: AgentLog v1 → v2 migration shim — golden-file test.
 //!
-//! Acceptance criterion from spec §3.0 AgentLog v2 work:
+//! AgentLog v2 migration acceptance criteria:
 //!
 //! > `simetro-headless replay` works against both a v1 log (existing
 //! > fixture) and a v2 log (new fixture), bit-for-bit deterministic.
@@ -124,7 +124,7 @@ fn v1_row_roundtrip_after_migration_is_stable() {
 
 /// Deterministic replay parity: parsing the v1 fixture twice produces
 /// byte-identical in-memory representations. This is the core
-/// "bit-for-bit deterministic" property the spec §3.0 AgentLog v2 work
+/// "bit-for-bit deterministic" property the AgentLog v2 migration work
 /// acceptance criterion calls out.
 #[test]
 fn parsing_v1_fixture_twice_is_deterministic() {

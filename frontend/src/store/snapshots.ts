@@ -19,7 +19,7 @@
 // rAF loop pauses; on resume we jump-cut to the latest snapshot
 // instead of catching up animations — see `markStale()`.
 //
-// Per PR #1 review (Copilot, P1): `prevById` is a reusable Map
+// Per review feedback: `prevById` is a reusable Map
 // field that is cleared and refilled each interpolation pass,
 // rather than `new Map(...)`'d every frame. Snapshots are
 // movers-only now (geometry lives in `StaticPayload`).

@@ -3,7 +3,7 @@
 //! throughput target: ≥ 50,000 tps on a 3-mover demo. This test runs
 //! 10,000 ticks and asserts a conservative floor (10,000 tps) to keep
 //! the gate green on slow CI runners. The real benchmark lands as a
-//! criterion suite in Step 7+; this is the sanity check.
+//! criterion suite in acceptance; this is the sanity check.
 //!
 //! Run with `cargo test -p simetro-engine --release --test tps_demo`
 //! for a meaningful number.

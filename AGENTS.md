@@ -66,8 +66,8 @@ explicitly promotes them.
   not silent no-ops.
 - Live LLM scenes must be feature-gated; CI never invokes the real
   Copilot provider.
-- For v3/stakes scenes, unknown behavior-bearing schema fields must fail
-  load. Only `catalog`/metadata may remain permissive.
+- For `scenario_language_v1` scenes, unknown behavior-bearing schema
+  fields must fail load. Only `catalog`/metadata may remain permissive.
 - Use typed predicates and bounded declarative policies. Do not add an
   expression language or script-like scene behavior.
 - Keep Azure/Kusto/Fabric/Power BI/HPC/autoresearch concepts simulated

@@ -73,7 +73,7 @@ pub fn apply_action(
 
         Action::RemovePiece { id } => remove_piece(world, agent_id, NodeId(*id)),
 
-        // ---- Author tools (P2.A task 9) -----------------------------
+        // ---- Author tools  -----------------------------
         Action::DefineResource { name, color } => define_resource(world, agent_id, name, *color),
         Action::AddProducer {
             resource,
@@ -240,7 +240,7 @@ fn remove_piece(world: &mut World, agent_id: &str, id: NodeId) -> Outcome {
 }
 
 // =====================================================================
-//  Author tools (P2.A task 9). All four mutate the world's resource /
+//  Author tools . All four mutate the world's resource /
 //  production graph via the deterministic action-application pipeline.
 //  Invalid requests surface as `Warning::InvalidAction`.
 // =====================================================================
@@ -792,7 +792,7 @@ mod tests {
         assert!(ev.is_empty());
     }
 
-    // ---- Author tools (P2.A task 9) ---------------------------------
+    // ---- Author tools  ---------------------------------
 
     #[test]
     fn define_resource_adds_named_resource_and_zero_inventory() {

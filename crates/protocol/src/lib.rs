@@ -318,7 +318,7 @@ pub enum AgentMessage {
 }
 
 /// Actions an agent may take. Author actions (PlacePiece/ConnectPieces/
-/// RemovePiece, plus the P2.A task 9 resource/production tools
+/// RemovePiece, plus the resource/production tools
 /// DefineResource/AddProducer/AddConsumer/SetGoal) mutate the world
 /// when valid; malformed or unsafe requests are rejected with a typed
 /// [`WarningPayload::InvalidAction`].
@@ -342,7 +342,7 @@ pub enum Action {
         id: u32,
     },
 
-    // ---- Author tools (P2.A task 9) ---------------------------------
+    // ---- Author tools  ---------------------------------
     /// Create a new resource kind addressable by `name`. `color` is a
     /// palette index validated against the loaded theme.
     DefineResource {

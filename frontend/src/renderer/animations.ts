@@ -20,7 +20,7 @@
 // └──────────────────────────────────────────────────────────────┘
 //
 // Render functions receive (ctx, easedT, payload, ctxResolver).
-// They MUST NOT allocate. Per PR #1 review (Copilot, P1) the
+// They MUST NOT allocate. Per review feedback the
 // midpoint helper returns a module-level scratch point rather than
 // a fresh `{x, y}` object every call.
 //
@@ -72,7 +72,7 @@ function findMover(snap: SnapshotPayload, id: number): MoverState | undefined {
 
 /** Module-level scratch returned by `findPathMidpoint` so the render
  *  helpers can read x/y without allocating a fresh object per call
- *  (PR #1 Copilot review on zero-allocation invariant). */
+ *  (zero-allocation invariant). */
 const midpointScratch: { x: number; y: number; ok: boolean } = {
   x: 0,
   y: 0,
@@ -180,7 +180,7 @@ const drawPathPulse: RenderFn = (ctx, t, payload, resolve) => {
 
 const drawDecisionPulse: RenderFn = (ctx, t, payload, resolve) => {
   if (payload.kind !== "agent_decided") return;
-  // Small pulse anchored top-left; Step 20 (Inspector) replaces this
+  // Small pulse anchored top-left; inspector (Inspector) replaces this
   // with a pulse on the affected piece once Action carries it.
   const alpha = 1 - t;
   ctx.save();

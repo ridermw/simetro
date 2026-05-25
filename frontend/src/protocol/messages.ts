@@ -171,7 +171,7 @@ export type AgentMessage =
 //  Helpers
 // ---------------------------------------------------------------------
 
-/** Type guard used by transport implementations to enforce §6 on every
+/** Type guard used by transport implementations to enforce schema compatibility on every
  *  inbound message. A bad envelope is fatal — we do not try to recover. */
 export function isCurrentSchema(env: Envelope<unknown>): boolean {
   return env.schema_version === SCHEMA_VERSION;

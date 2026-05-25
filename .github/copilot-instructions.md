@@ -23,10 +23,10 @@ pressure, win/loss, observability, and policy search.
 
 In-scope tracks:
 
-- Unified v3 grammar: places, links, typed things, transforms, demand,
+- Unified `scenario_language_v1` grammar: places, links, typed things, transforms, demand,
   pressure, outcomes, agency, observability, and milestones.
 - GPU Launch Week as the first vertical slice.
-- Strict v3 behavior schema, typed predicates, explicit v3
+- Strict `scenario_language_v1` behavior schema, typed predicates, explicit
   LoadError/Warning/Fault/GameOutcome taxonomy, metric states, and
   scoped agent actions.
 - Simulated autoresearch-style policy search over fixed scenarios.
@@ -77,10 +77,10 @@ When reviewing PRs, focus on:
 
 For `scenario_language_v1` reviews, also require:
 
-11. **Visible stakes.** A new v3 scene must be winnable/losable and must
+11. **Visible stakes.** A new `scenario_language_v1` scene must be winnable/losable and must
     show what the AI is trying to save, what is going wrong, and whether
     the latest action helped within 30 seconds.
-12. **Strict v3 schema.** Unknown behavior-bearing fields fail load.
+12. **Strict `scenario_language_v1` schema.** Unknown behavior-bearing fields fail load.
     Typed predicates only; no string expression evaluator.
 13. **No silent game failures.** Backpressure, starvation, stale
     dashboards, invalid policies, data-quality violations, objective

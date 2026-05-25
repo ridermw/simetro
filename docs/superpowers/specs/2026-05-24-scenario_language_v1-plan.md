@@ -31,9 +31,9 @@ The plan should keep the cathedral vision, but the first implementation must pas
 - Use **one unified grammar**: places, links, typed things, transforms, demand, pressure, outcomes, agency, observability, and milestones.
 - Keep Azure, Kusto, Databricks/Fabric, Power BI, Lens, HPC, and Factorio-like concepts as **simulated domain nouns**, not live integrations.
 - Extend existing `World` / `Node` / `Path` directly, per user direction, but only through **nested semantic structs** and typed maps. Do not add flat optional-field sprawl.
-- Use a **strict v3 behavior schema**. Unknown behavior-bearing fields are load errors; only `catalog`/metadata remains permissive.
+- Use a **strict `scenario_language_v1` behavior schema**. Unknown behavior-bearing fields are load errors; only `catalog`/metadata remains permissive.
 - Use **typed predicates only**. No expression strings or script-like condition language.
-- Add explicit v3 `LoadError`, `Warning`, `Fault`, and `GameOutcome` taxonomy before implementation.
+- Add explicit `scenario_language_v1` `LoadError`, `Warning`, `Fault`, and `GameOutcome` taxonomy before implementation.
 - Add explicit metric states: `ok`, `no_data`, `stale`, `degraded`, `invalid`; never confuse zero with missing telemetry.
 - Add target-scoped agent capabilities and target-version preconditions so multi-agent actions cannot silently stomp stale state.
 - Require visible stakes for every showcase: timer/deadline, pressure source, failure condition, victory condition, and narratable AI actions.
@@ -151,14 +151,14 @@ This is **more in scope than the previous interpretation**. It does not require 
 4. a trial log,
 5. replay diffing between baseline and candidate policies.
 
-It should influence the first v3 design now, even if full overnight policy search ships later. The GPU Launch Week scene should be designed so it can eventually run in two modes:
+It should influence the first `scenario_language_v1` design now, even if full overnight policy search ships later. The GPU Launch Week scene should be designed so it can eventually run in two modes:
 
 - **single-run spectator mode:** watch agents handle one crisis;
 - **autoresearch policy-search mode:** run many trials to discover better agent heuristics for that same crisis.
 
 ### Non-negotiable review constraints
 
-- The first v3 scene must be winnable and losable.
+- The first `scenario_language_v1` scene must be winnable and losable.
 - The HUD must answer: "Are we winning, losing, stabilizing, or spiraling?"
 - Backpressure, starvation, stale dashboards, data-quality violations, invalid actions, and objective breaches must never be silent.
 - Frontend/replay/inspector support is not polish; it is required for the gameplay loop.
@@ -933,7 +933,7 @@ Validation notes:
 ### Compatibility with existing schema
 
 - Existing `pieces.nodes`, `pieces.paths`, and `pieces.movers` can remain as v1/v2 visual/motion scenes.
-- New game-bearing scenes should use schema v3-style `places`, `links`, `things`, and `transforms`.
+- New game-bearing scenes should use `scenario_language_v1` sections: `places`, `links`, `things`, and `transforms`.
 - A migration shim can map simple `pieces.nodes` to places and `pieces.paths` to links for read-only compatibility, but it should not invent capacities/objectives silently.
 - Existing `resources/producers/consumers` can become a subset of `things/transforms`, but global inventory should not be the long-term primary model for strategy-heavy scenes.
 
@@ -949,7 +949,7 @@ The smallest useful implementation does not need every field above. It needs:
 6. `objectives` + `failure_conditions` + first-class `GameOutcome`.
 7. `agents` with target-scoped allowed actions, budgets, cooldowns, target-version preconditions, and structured rejection reasons.
 8. `observability.metrics` with explicit `ok/no_data/stale/degraded/invalid` states for HUD, replay, and agent observations.
-9. v3-specific `LoadError`, `Warning`, and `Fault` variants so invalid schema, silent starvation, stale actions, dashboard staleness, and terminal game loss are all named.
+9. `scenario_language_v1`-specific `LoadError`, `Warning`, and `Fault` variants so invalid schema, silent starvation, stale actions, dashboard staleness, and terminal game loss are all named.
 
 That is enough to build the GPU health dashboard showcase without hard-coding Azure as a special case.
 
@@ -1073,7 +1073,7 @@ This mapping should identify reusable primitives and expose one-off mechanics th
 
 Once the schema and showcase are concrete, implementation should be staged:
 
-1. Add schema v3 raw structs and validation for the minimum slice.
+1. Add `scenario_language_v1` raw structs and validation for the minimum slice.
 2. Add engine state for places, links, things, inventories/queues, transforms, demand, objectives, pressure, and run outcome.
 3. Add deterministic systems in stable order:
 
@@ -1885,7 +1885,7 @@ Autoresearch contributes a clearer **agent gameplay loop** than generic "multi-a
 
 ### Scope recommendation
 
-This is **not required for the first v3 engine slice**, but it is easy to add to the plan and should influence the agent model immediately.
+This is **not required for the first `scenario_language_v1` engine slice**, but it is easy to add to the plan and should influence the agent model immediately.
 
 Recommended placement:
 

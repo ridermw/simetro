@@ -104,7 +104,7 @@ function findArrivalNode(scene: StaticPayload, nodeId: number): NodeView | undef
 }
 
 function resetSnapshotState(state: AppState): void {
-  // Per PR #1 review (Copilot, P1): a Reload that leaves stale
+  // Per review feedback: a Reload that leaves stale
   // snapshot data + lastSnapshotAt around makes the heartbeat lie
   // and the interpolator extrapolate against pre-reload movers.
   resetLocalSceneState(state);

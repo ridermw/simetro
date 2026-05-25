@@ -10,7 +10,7 @@
 //! that adds/removes a pattern must update the test and receive security
 //! review.
 //!
-//! **Markdown vs real regex note.** The spec §5.3 table column uses
+//! **Markdown vs real regex note.** The secret-redaction policy table column uses
 //! `\|` to satisfy GitHub Flavored Markdown table parsing; the
 //! authoritative regex strings (BELOW the table) use real `|` for
 //! alternation. This module follows the authoritative form. The
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn redactor_uses_true_alternation() {
-        // Markdown-escaping foot-gun (spec §5.3 implementer note):
+        // Markdown-escaping foot-gun (secret-redaction policy implementer note):
         // make sure the GitHub modern-token regex uses real `|` not
         // `\|`. If someone copy-pasted from the spec table, the
         // compiled regex would treat the prefix as the literal string
