@@ -297,6 +297,64 @@ fn pressure_unknown_target_link_rejected() {
 }
 
 #[test]
+fn pressure_unsupported_kind_unknown_place_target_rejected() {
+    // Regression for Codex P2: previously, recognized-but-unsupported
+    // kinds (dashboard_storm, spot_eviction_wave, storage_metadata_storm,
+    // cooling_degradation) accepted any target string and only emitted
+    // PressureUnsupportedInThisPr at activation, hiding authoring typos.
+    // Now an unknown place target must fail load.
+    for kind in [
+        "dashboard_storm",
+        "spot_eviction_wave",
+        "storage_metadata_storm",
+        "cooling_degradation",
+    ] {
+        let json = scene_with_pressure(&format!(
+            r#"[{{"id":"p","type":"{kind}","at_tick":5,"duration_ticks":2,
+                  "target":"ghost_place"}}]"#
+        ));
+        match expect_sl1_err(json) {
+            Sl1LoadError::PressureUnknownTarget {
+                expected: "place",
+                target,
+                ..
+            } => assert_eq!(target, "ghost_place", "kind={kind}"),
+            other => panic!("kind={kind}: expected PressureUnknownTarget place, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn pressure_schema_drift_unknown_thing_target_rejected() {
+    // Regression for Codex P2: schema_drift targets a `thing`, so an
+    // unknown thing id must fail load instead of silently activating.
+    let json = scene_with_pressure(
+        r#"[{"id":"p","type":"schema_drift","at_tick":5,"duration_ticks":2,
+             "target":"ghost_thing"}]"#,
+    );
+    match expect_sl1_err(json) {
+        Sl1LoadError::PressureUnknownTarget {
+            expected: "thing",
+            target,
+            ..
+        } => assert_eq!(target, "ghost_thing"),
+        other => panic!("expected PressureUnknownTarget thing, got {other:?}"),
+    }
+}
+
+#[test]
+fn pressure_unsupported_kind_with_valid_target_loads() {
+    // Positive case: the same unsupported kinds with a real declared
+    // target id must still load and only warn at activation.
+    let json = scene_with_pressure(
+        r#"[{"id":"p","type":"dashboard_storm","at_tick":5,"duration_ticks":2,
+             "target":"sink"}]"#,
+    );
+    let scene = load_scene_str(&json, 0).expect("loads with valid place target");
+    assert_eq!(scene.world.sl1.as_ref().unwrap().pressure.len(), 1);
+}
+
+#[test]
 fn pressure_no_storage_slot_rejected() {
     // `sink` has no `raw_material` storage slot.
     let json = scene_with_pressure(

@@ -3862,6 +3862,32 @@ fn validate_pressure(
                 "reduction_percent",
                 raw.reduction_percent.is_some(),
             )?;
+            // Even though these variants do not yet mutate the world,
+            // the `target` must still resolve to a declared scene id so
+            // typos surface as a typed load error instead of a generic
+            // PressureUnsupportedInThisPr warning at activation. The
+            // expected target category is fixed per variant per the SL1
+            // spec.
+            let expected: &'static str = match kind {
+                Sl1PressureKind::SchemaDrift => "thing",
+                Sl1PressureKind::DashboardStorm
+                | Sl1PressureKind::SpotEvictionWave
+                | Sl1PressureKind::StorageMetadataStorm
+                | Sl1PressureKind::CoolingDegradation => "place",
+                _ => unreachable!("supported kinds handled in earlier arms"),
+            };
+            let resolved = match expected {
+                "thing" => thing_ids.contains(&raw.target),
+                "place" => places_by_id.contains_key(raw.target.as_str()),
+                _ => false,
+            };
+            if !resolved {
+                return Err(Sl1LoadError::PressureUnknownTarget {
+                    id: raw.id,
+                    expected,
+                    target: raw.target,
+                });
+            }
             Sl1PressureParams::UnsupportedInThisPr
         }
     };
