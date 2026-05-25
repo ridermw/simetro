@@ -175,12 +175,14 @@ pub struct RawSl1Scene {
     /// Optional `observability` block (PR 9). Carries declarative
     /// metric/dashboard/alert definitions. Omitted block / explicit
     /// `null` / explicit empty object `{}` all yield an empty
-    /// observability. Strict-schema: unknown fields inside
+    /// observability. Non-object payloads (arrays, scalars) are
+    /// rejected by the custom deserializer as a parse error.
+    /// Strict-schema: unknown fields inside
     /// `observability`, `observability.metrics[*]`,
     /// `observability.dashboards[*]`, or `observability.alerts[*]`
     /// are rejected via serde's `deny_unknown_fields`, surfacing as
     /// [`Sl1LoadError::Parse`].
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_observability")]
     pub observability: Option<RawSl1Observability>,
     #[serde(default)]
     pub milestones: Vec<serde_json::Value>,
@@ -1255,6 +1257,41 @@ pub struct RawSl1Observability {
     pub dashboards: Vec<RawSl1Dashboard>,
     #[serde(default)]
     pub alerts: Vec<RawSl1Alert>,
+}
+
+/// Custom deserializer for the top-level `observability` field.
+///
+/// The plain `#[serde(default)] Option<RawSl1Observability>` derive
+/// accepts `"observability": []` as an empty struct because every
+/// inner field is `#[serde(default)]`. That silently swallows
+/// malformed authored scenes that pass an array (or other non-object
+/// shape) and weakens the strict-schema guarantee.
+///
+/// This function inspects the raw JSON value first and rejects
+/// anything that isn't `null` or an object with a typed parse error
+/// matching [`Sl1LoadError::Parse`] semantics.
+fn deserialize_observability<'de, D>(d: D) -> Result<Option<RawSl1Observability>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let value: Option<serde_json::Value> = Option::deserialize(d)?;
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(v @ serde_json::Value::Object(_)) => serde_json::from_value(v)
+            .map(Some)
+            .map_err(D::Error::custom),
+        Some(other) => Err(D::Error::custom(format!(
+            "observability must be a JSON object, got {}",
+            match other {
+                serde_json::Value::Array(_) => "array",
+                serde_json::Value::String(_) => "string",
+                serde_json::Value::Number(_) => "number",
+                serde_json::Value::Bool(_) => "boolean",
+                _ => "non-object",
+            }
+        ))),
+    }
 }
 
 /// Raw `observability.metrics[*]` entry. Strict-schema.
@@ -6310,20 +6347,28 @@ mod tests {
     }
 
     #[test]
-    fn observability_array_yields_empty_observability() {
-        // Note: serde's behavior for `Option<RawSl1Observability>` is
-        // to accept `[]` and treat it as an empty struct (since all
-        // sub-fields default). This is benign — the resulting
-        // observability is empty and observability::run() no-ops.
-        // Documented here so any future tightening (e.g. custom
-        // deserializer that rejects non-object) has a regression
-        // pin.
-        let scene = load_str(r#"{"observability": []}"#)
-            .expect("[] currently parses as empty observability");
-        let obs = scene.observability.as_ref().expect("present");
-        assert!(obs.metrics.is_empty());
-        assert!(obs.dashboards.is_empty());
-        assert!(obs.alerts.is_empty());
+    fn observability_must_be_object() {
+        // PR 9 review: arrays (or any non-object payload) must be a
+        // typed load error rather than silently parsing as an empty
+        // observability block. `deserialize_observability` enforces
+        // this so nested strict-schema is honored at this seam too.
+        let err = load_str(r#"{"observability": []}"#).expect_err("array payload must reject");
+        assert!(
+            matches!(err, Sl1LoadError::Parse { .. }),
+            "expected Sl1LoadError::Parse, got {err:?}"
+        );
+
+        let err = load_str(r#"{"observability": "nope"}"#).expect_err("string payload must reject");
+        assert!(matches!(err, Sl1LoadError::Parse { .. }));
+
+        let err = load_str(r#"{"observability": 7}"#).expect_err("number payload must reject");
+        assert!(matches!(err, Sl1LoadError::Parse { .. }));
+
+        // Sanity: `null` and `{}` remain accepted (= empty observability).
+        let scene = load_str(r#"{"observability": null}"#).expect("null is fine");
+        assert!(scene.observability.is_none());
+        let scene = load_str(r#"{"observability": {}}"#).expect("empty object is fine");
+        assert!(scene.observability.is_some());
     }
 
     #[test]

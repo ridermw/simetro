@@ -133,12 +133,16 @@ pub fn run(scene: &Sl1Scene, runtime: &mut Sl1RuntimeState, now: u64, events: &m
 
 /// Compute the post-aging freshness age for one dashboard, in ticks.
 ///
-/// Returns `None` when at least one `depends_on` thing has no `Ok`
-/// freshness entry anywhere in the world (no place has ever produced
-/// or received the thing). Otherwise returns the maximum age across
-/// every `(place, thing)` pair for the dashboard's `depends_on` set —
-/// this is "how stale is the freshest copy of the latest depended-on
-/// thing?"
+/// Returns `None` when at least one `depends_on` thing has never been
+/// observed anywhere in the world (no place has `FreshnessState::Ok`
+/// or `FreshnessState::Stale` for it — only `NoData` is present, or
+/// no entry at all). Stale entries still carry a `last_set_tick` and
+/// therefore a real (large) age, so they participate in the freshness
+/// calculation; otherwise a dashboard whose feeds have all aged into
+/// `Stale` would silently flip to `NoData` and hide the staleness.
+/// Otherwise returns the maximum age across every `(place, thing)`
+/// pair for the dashboard's `depends_on` set — this is "how stale is
+/// the freshest copy of the latest depended-on thing?"
 ///
 /// Public so [`crate::snapshot`] can re-derive the freshness chip for
 /// `Sl1DashboardState::Ok` (the state carries no age, but the HUD
@@ -154,14 +158,20 @@ pub fn dashboard_freshness(
     }
     let mut max_age: u64 = 0;
     for thing_id in &dashboard.depends_on {
-        // For this thing: find the freshest (= minimum age) Ok entry
-        // across all places. If no place has Ok for this thing → NoData.
+        // For this thing: find the freshest (= minimum age) entry
+        // (`Ok` or `Stale` — both carry a real `last_set_tick`) across
+        // all places. If no place has any timestamped entry for this
+        // thing → NoData. Stale must participate so dashboards whose
+        // feeds have aged into `Stale` keep reporting a real age
+        // instead of silently flipping to `no_data`.
         let mut min_age_for_thing: Option<u64> = None;
         for ((_place_id, t), state) in runtime.freshness.iter() {
             if t != thing_id {
                 continue;
             }
-            if let FreshnessState::Ok { last_set_tick } = *state {
+            if let FreshnessState::Ok { last_set_tick } | FreshnessState::Stale { last_set_tick } =
+                *state
+            {
                 let age = now.saturating_sub(last_set_tick);
                 min_age_for_thing = Some(match min_age_for_thing {
                     Some(prev) => prev.min(age),
