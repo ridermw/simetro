@@ -335,3 +335,108 @@ fn loader_rejects_future_scenario_language_version_at_top_level() {
         other => panic!("expected Sl1MisspelledTopLevelKey, got {other:?}"),
     }
 }
+
+#[test]
+fn loader_rejects_array_sl1_block() {
+    // `"scenario_language_v1": []` must surface as a typed
+    // ExpectedObject error, not silently load as legacy.
+    let json = r##"{
+        "schema_version": 1,
+        "name": "array-sl1",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v1": []
+    }"##;
+    let err = load_scene_str(json, 0).expect_err("array SL1 block must be rejected");
+    match err {
+        LoadError::Sl1(Sl1LoadError::ExpectedObject { found }) => {
+            assert_eq!(found, "array");
+        }
+        other => panic!("expected Sl1(ExpectedObject{{found:\"array\"}}), got {other:?}"),
+    }
+}
+
+#[test]
+fn loader_rejects_string_sl1_block() {
+    let json = r##"{
+        "schema_version": 1,
+        "name": "string-sl1",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v1": "foo"
+    }"##;
+    let err = load_scene_str(json, 0).expect_err("string SL1 block must be rejected");
+    match err {
+        LoadError::Sl1(Sl1LoadError::ExpectedObject { found }) => {
+            assert_eq!(found, "string");
+        }
+        other => panic!("expected Sl1(ExpectedObject{{found:\"string\"}}), got {other:?}"),
+    }
+}
+
+#[test]
+fn loader_rejects_null_inside_sl1_primitive() {
+    // `"places": null` inside the SL1 block is a type-shape error
+    // (primitives must be arrays) and must surface as Sl1(Parse).
+    let json = r##"{
+        "schema_version": 1,
+        "name": "null-primitive",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v1": {
+            "schema_version": 1,
+            "places": null
+        }
+    }"##;
+    let err = load_scene_str(json, 0).expect_err("places:null must be rejected");
+    match err {
+        LoadError::Sl1(Sl1LoadError::Parse { message }) => {
+            // serde's exact wording is "invalid type: null, expected a
+            // sequence" — we don't pin the prose, just confirm we got
+            // a typed Parse error rather than a silent acceptance.
+            assert!(
+                message.to_ascii_lowercase().contains("null")
+                    || message.to_ascii_lowercase().contains("sequence"),
+                "expected serde type-error message, got: {message}"
+            );
+        }
+        other => panic!("expected Sl1(Parse), got {other:?}"),
+    }
+}
+
+#[test]
+fn loader_accepts_null_observability_as_omitted() {
+    // Explicit `"observability": null` is documented as equivalent to
+    // omitting the block — the example in
+    // docs/scenario-language-v1.md uses exactly this form. Lock the
+    // contract so a future refactor cannot silently regress it.
+    let json = r##"{
+        "schema_version": 1,
+        "name": "null-observability",
+        "theme": {
+            "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+            "background_index": 0,
+            "font": "system-ui"
+        },
+        "pieces": { "nodes": [], "paths": [], "movers": [] },
+        "scenario_language_v1": {
+            "schema_version": 1,
+            "observability": null
+        }
+    }"##;
+    let loaded = load_scene_str(json, 0).expect("null observability must be accepted");
+    let sl1 = loaded.sl1.expect("SL1 block should be attached");
+    assert!(sl1.observability.is_none());
+}

@@ -77,6 +77,14 @@ pub struct RawSl1Scene {
     pub failure_conditions: Vec<serde_json::Value>,
     #[serde(default)]
     pub agents: Vec<serde_json::Value>,
+    /// Optional `observability` block. PR 0 accepts an omitted block
+    /// or an explicit empty object `{}`; an explicit JSON `null` is
+    /// treated as equivalent to "omitted" (no observability), matching
+    /// the documented example in `docs/scenario-language-v1.md`. Any
+    /// non-empty object is rejected with
+    /// [`Sl1LoadError::PrimitiveNotImplemented`] until PR 9 adds the
+    /// metrics/dashboards/alerts schema; any non-object value is
+    /// rejected with [`Sl1LoadError::Parse`].
     #[serde(default)]
     pub observability: Option<serde_json::Value>,
     #[serde(default)]
@@ -317,8 +325,12 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
 
     // Defensive per-section item caps. Even though PR 0 rejects any
     // non-empty primitive, the cap is the right shape for later PRs
-    // and serves as a memory-safety guardrail when a primitive
-    // becomes valid.
+    // when a primitive becomes valid. Note: serde has already
+    // allocated `Vec<Value>` by the time this check runs, so the cap
+    // is a diagnostic / sanity bound — not a parse-time memory
+    // defense against a maliciously huge input. A future loader pass
+    // that wants byte-level protection should add streaming or
+    // preallocation limits in addition to this check.
     check_section_cap("places", raw.places.len())?;
     check_section_cap("links", raw.links.len())?;
     check_section_cap("things", raw.things.len())?;
