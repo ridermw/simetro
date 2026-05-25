@@ -161,6 +161,19 @@ pub struct RawSl1Place {
     pub id: String,
     pub role: String,
     pub pos: [f32; 2],
+    /// Optional render hint (e.g. `"hexagon"`, `"circle"`, `"square"`).
+    /// Carried opaquely through the protocol so PR 6's frontend can
+    /// pick a glyph without re-parsing. Validation is delegated to
+    /// the renderer; PR 1 only checks non-emptiness when present.
+    #[serde(default)]
+    pub shape: Option<String>,
+    /// Optional palette index (matches existing `theme.palette[]`
+    /// indexing convention). Carried opaquely. PR 1 does not range-
+    /// check against palette length — that is the renderer's job in
+    /// PR 6, and palette overrides may legitimately introduce new
+    /// indices later.
+    #[serde(default)]
+    pub color: Option<u32>,
     #[serde(default)]
     pub capacity: BTreeMap<String, u64>,
     #[serde(default)]
@@ -214,6 +227,12 @@ pub struct Sl1Place {
     pub id: String,
     pub role: String,
     pub pos: [f32; 2],
+    /// Optional render hint (PR 6 renderer interprets; PR 1 carries
+    /// opaquely). Empty strings are rejected at validation time.
+    pub shape: Option<String>,
+    /// Optional palette index. Carried opaquely; renderer is
+    /// responsible for range checks.
+    pub color: Option<u32>,
     /// Named, unitless capacity buckets (e.g. `query_slots`,
     /// `cooling_tons`). Sorted by key so iteration order is stable.
     pub capacity: BTreeMap<String, u64>,
@@ -442,6 +461,27 @@ pub enum Sl1LoadError {
     /// An operating-state name is empty.
     #[error("scenario_language_v1.places[{id:?}].operating_states: empty state name")]
     PlaceEmptyOperatingStateName { id: String },
+
+    /// `shape` is present but the string is empty/whitespace.
+    /// Authors who want the default glyph should omit the field entirely
+    /// rather than write `""`.
+    #[error("scenario_language_v1.places[{id:?}].shape: empty string (omit field for default)")]
+    PlaceEmptyShape { id: String },
+
+    /// A `used_percent` predicate references a metric name that is not
+    /// declared in this place's `capacity` map. Without a matching
+    /// capacity bucket the predicate has no denominator and would
+    /// silently never fire, which is the silent-fail pattern the SL1
+    /// strict-schema rule exists to prevent.
+    #[error(
+        "scenario_language_v1.places[{id:?}].operating_states[{state:?}].when: \
+         references unknown capacity metric {metric:?}"
+    )]
+    PlacePredicateUnknownMetric {
+        id: String,
+        state: String,
+        metric: String,
+    },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -658,6 +698,11 @@ fn validate_place(raw: RawSl1Place) -> Result<Sl1Place, Sl1LoadError> {
     {
         return Err(Sl1LoadError::PlaceInvalidPos { id: raw.id });
     }
+    if let Some(shape) = raw.shape.as_ref() {
+        if shape.trim().is_empty() {
+            return Err(Sl1LoadError::PlaceEmptyShape { id: raw.id });
+        }
+    }
     // Capacity entries: reject empty keys. Zero values are allowed —
     // the spec example `query_slots: 0` is a valid "declared but
     // currently unavailable" capacity bucket.
@@ -717,6 +762,20 @@ fn validate_place(raw: RawSl1Place) -> Result<Sl1Place, Sl1LoadError> {
             return Err(Sl1LoadError::PlaceEmptyOperatingStateName { id: raw.id });
         }
         let predicate = parse_predicate(&raw.id, &state, &raw_state.when)?;
+        // Strict-schema: a `used_percent` predicate must reference a
+        // capacity bucket that actually exists on this place. Otherwise
+        // the predicate has no denominator and would silently never
+        // fire — the exact silent-fail pattern SL1 is designed to
+        // prevent.
+        if let Sl1OperatingPredicate::UsedPercentGte { metric, .. } = &predicate {
+            if !raw.capacity.contains_key(metric) {
+                return Err(Sl1LoadError::PlacePredicateUnknownMetric {
+                    id: raw.id,
+                    state,
+                    metric: metric.clone(),
+                });
+            }
+        }
         operating_states.insert(
             state,
             Sl1OperatingState {
@@ -730,6 +789,8 @@ fn validate_place(raw: RawSl1Place) -> Result<Sl1Place, Sl1LoadError> {
         id: raw.id,
         role: raw.role,
         pos: raw.pos,
+        shape: raw.shape,
+        color: raw.color,
         capacity: raw.capacity,
         storage,
         accepts,
@@ -1046,6 +1107,8 @@ mod tests {
                     id: format!("p{i}"),
                     role: "filler".to_string(),
                     pos: [0.0, 0.0],
+                    shape: None,
+                    color: None,
                     capacity: BTreeMap::new(),
                     storage: BTreeMap::new(),
                     accepts: Vec::new(),

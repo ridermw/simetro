@@ -20,6 +20,8 @@
         "id": "kusto-cluster",
         "role": "compute",
         "pos": [120.0, 80.0],
+        "shape": "hexagon",
+        "color": 2,
         "capacity": {
           "query_slots": 64,
           "cooling_tons": 0

@@ -115,6 +115,15 @@ pub struct Sl1PlaceView {
     pub id: String,
     pub role: String,
     pub pos: [f32; 2],
+    /// Optional render hint carried opaquely from the scene JSON. PR 6
+    /// is the first frontend consumer; intermediate consumers must
+    /// tolerate `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    /// Optional palette index, carried opaquely. PR 6's renderer is
+    /// responsible for range-checking against `theme.palette`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u32>,
     pub capacity: std::collections::BTreeMap<String, u64>,
     pub storage: std::collections::BTreeMap<String, Sl1StorageSlotView>,
     pub accepts: Vec<String>,
@@ -677,6 +686,120 @@ mod tests {
         assert_eq!(back.path_names[&0], "ab");
         assert_eq!(back.nodes.len(), 1);
         assert_eq!(back.paths[0].color, 3);
+    }
+
+    #[test]
+    fn sl1_places_round_trip_through_static_payload() {
+        // Covers both predicate variants and both with-/without-
+        // grace_ticks, plus shape/color presence and absence. Goal:
+        // detect any silent serde shape change in PR 1's protocol
+        // mirror.
+        let mut capacity = std::collections::BTreeMap::new();
+        capacity.insert("query_slots".to_string(), 64u64);
+        let mut storage = std::collections::BTreeMap::new();
+        storage.insert(
+            "hot_cache".to_string(),
+            Sl1StorageSlotView {
+                capacity: 1024,
+                initial: 256,
+            },
+        );
+        let mut ops = std::collections::BTreeMap::new();
+        ops.insert(
+            "strained".to_string(),
+            Sl1OperatingStateView {
+                predicate: Sl1OperatingPredicateView::UsedPercentGte {
+                    metric: "query_slots".into(),
+                    threshold: 80,
+                },
+                grace_ticks: None,
+            },
+        );
+        ops.insert(
+            "overloaded".to_string(),
+            Sl1OperatingStateView {
+                predicate: Sl1OperatingPredicateView::UsedPercentGte {
+                    metric: "query_slots".into(),
+                    threshold: 95,
+                },
+                grace_ticks: Some(120),
+            },
+        );
+        ops.insert(
+            "failed".to_string(),
+            Sl1OperatingStateView {
+                predicate: Sl1OperatingPredicateView::OverloadedTicksGt { ticks: 600 },
+                grace_ticks: None,
+            },
+        );
+        let sp = StaticPayload {
+            name: "demo".into(),
+            palette: vec!["#000".into()],
+            background_index: 0,
+            nodes: vec![],
+            paths: vec![],
+            node_names: std::collections::BTreeMap::new(),
+            path_names: std::collections::BTreeMap::new(),
+            mover_names: std::collections::BTreeMap::new(),
+            sl1_places: vec![
+                Sl1PlaceView {
+                    id: "kusto-cluster".into(),
+                    role: "compute".into(),
+                    pos: [120.0, 80.0],
+                    shape: Some("hexagon".into()),
+                    color: Some(2),
+                    capacity,
+                    storage,
+                    accepts: vec!["query".into()],
+                    produces: vec!["result".into()],
+                    failure_domains: vec!["az1".into()],
+                    operating_states: ops,
+                },
+                Sl1PlaceView {
+                    id: "dashboard".into(),
+                    role: "observability".into(),
+                    pos: [0.0, 0.0],
+                    shape: None,
+                    color: None,
+                    capacity: std::collections::BTreeMap::new(),
+                    storage: std::collections::BTreeMap::new(),
+                    accepts: vec![],
+                    produces: vec![],
+                    failure_domains: vec![],
+                    operating_states: std::collections::BTreeMap::new(),
+                },
+            ],
+        };
+        let back: StaticPayload = roundtrip(&sp);
+        assert_eq!(back.sl1_places, sp.sl1_places);
+
+        let json = serde_json::to_value(&sp).unwrap();
+        // Predicate shape is internally tagged.
+        let preds = &json["sl1_places"][0]["operating_states"];
+        assert_eq!(preds["strained"]["predicate"]["kind"], "used_percent_gte");
+        assert_eq!(preds["overloaded"]["predicate"]["kind"], "used_percent_gte");
+        assert_eq!(preds["failed"]["predicate"]["kind"], "overloaded_ticks_gt");
+        // Absent grace_ticks must NOT appear (skip_serializing_if).
+        assert!(preds["strained"].get("grace_ticks").is_none());
+        // Absent shape/color must NOT appear (skip_serializing_if).
+        let dashboard = &json["sl1_places"][1];
+        assert!(dashboard.get("shape").is_none());
+        assert!(dashboard.get("color").is_none());
+
+        // Non-SL1 scenes must NOT include the field at all.
+        let bare = StaticPayload {
+            name: "legacy".into(),
+            palette: vec![],
+            background_index: 0,
+            nodes: vec![],
+            paths: vec![],
+            node_names: std::collections::BTreeMap::new(),
+            path_names: std::collections::BTreeMap::new(),
+            mover_names: std::collections::BTreeMap::new(),
+            sl1_places: vec![],
+        };
+        let bare_json = serde_json::to_value(&bare).unwrap();
+        assert!(bare_json.get("sl1_places").is_none());
     }
 
     // ---- 7. AgentReport --------------------------------------------

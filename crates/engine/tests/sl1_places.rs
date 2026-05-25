@@ -224,6 +224,90 @@ fn place_unknown_nested_field_is_parse_error() {
 }
 
 #[test]
+fn place_unknown_nested_storage_field_is_parse_error() {
+    let err = expect_sl1_err(scene_with_places(
+        r#"[{
+            "id":"p1","role":"r","pos":[0,0],
+            "storage": {"bin": {"capacity": 5, "initial": 0, "extra": 1}}
+        }]"#,
+    ));
+    assert!(matches!(err, Sl1LoadError::Parse { .. }), "got {err:?}");
+}
+
+#[test]
+fn place_unknown_nested_operating_state_field_is_parse_error() {
+    let err = expect_sl1_err(scene_with_places(
+        r#"[{
+            "id":"p1","role":"r","pos":[0,0],
+            "capacity": {"slots": 10},
+            "operating_states": {
+                "warn": {"when": "slots.used_percent >= 50", "bogus": true}
+            }
+        }]"#,
+    ));
+    assert!(matches!(err, Sl1LoadError::Parse { .. }), "got {err:?}");
+}
+
+#[test]
+fn place_empty_entry_covers_every_set_and_map_field() {
+    let cases: &[(&str, &str)] = &[
+        ("capacity", r#""capacity": {"": 1}"#),
+        (
+            "storage",
+            r#""storage": {"": {"capacity": 1, "initial": 0}}"#,
+        ),
+        ("accepts", r#""accepts": [""]"#),
+        ("produces", r#""produces": [""]"#),
+        ("failure_domains", r#""failure_domains": [""]"#),
+    ];
+    for (field, snippet) in cases {
+        let err = expect_sl1_err(scene_with_places(&format!(
+            r#"[{{"id":"p1","role":"r","pos":[0,0],{snippet}}}]"#
+        )));
+        assert!(
+            matches!(err, Sl1LoadError::PlaceEmptyEntry { field: f, .. } if f == *field),
+            "got {err:?} for field {field}"
+        );
+    }
+}
+
+#[test]
+fn place_predicate_unknown_metric_rejected() {
+    // `typo_slots.used_percent >= 80` is a syntactically valid
+    // predicate but the metric `typo_slots` is not declared in the
+    // place's capacity map, so the loader must reject it as
+    // PlacePredicateUnknownMetric instead of silently parsing into a
+    // never-firing operating state.
+    let err = expect_sl1_err(scene_with_places(
+        r#"[{
+            "id":"p1","role":"r","pos":[0,0],
+            "capacity": {"query_slots": 64},
+            "operating_states": {
+                "strained": {"when": "typo_slots.used_percent >= 80"}
+            }
+        }]"#,
+    ));
+    assert!(
+        matches!(
+            err,
+            Sl1LoadError::PlacePredicateUnknownMetric { ref metric, .. } if metric == "typo_slots"
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn place_empty_shape_rejected() {
+    let err = expect_sl1_err(scene_with_places(
+        r#"[{"id":"p1","role":"r","pos":[0,0],"shape":""}]"#,
+    ));
+    assert!(
+        matches!(err, Sl1LoadError::PlaceEmptyShape { .. }),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn places_fixture_loads_and_static_payload_carries_them() {
     let loaded = load_scene_str(PLACES_SCENE, SEED).expect("fixture should load");
     let sl1 = loaded.sl1.as_ref().expect("SL1 block present");

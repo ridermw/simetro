@@ -111,6 +111,8 @@ agents, and observability all reference places by id.
   "id": "kusto-cluster",         // required, [a-zA-Z0-9_-]{1..=64}, unique
   "role": "compute",             // required, free-form non-empty string
   "pos": [120.0, 80.0],          // required, two finite f32 in [-1e6, 1e6]
+  "shape": "hexagon",            // optional render hint; carried opaquely
+  "color": 2,                    // optional palette index; carried opaquely
   "capacity": {                  // optional map<string, u64>
     "query_slots": 64,           // bucket name → declared capacity
     "cooling_tons": 0            // 0 is allowed (declared-but-unavailable)
@@ -165,6 +167,8 @@ with later PRs once those metrics exist (PRs 3 and 9).
 | Operating-state predicate matches a template | `PlaceUnsupportedPredicate` |
 | `used_percent >=` threshold in `0..=100` | `PlacePercentThresholdOutOfRange` |
 | Operating-state name non-empty | `PlaceEmptyOperatingStateName` |
+| `used_percent` predicate references a metric in `capacity` | `PlacePredicateUnknownMetric` |
+| `shape` non-empty when present (omit field for default) | `PlaceEmptyShape` |
 
 `accepts`, `produces`, and `failure_domains` are stored sorted
 ascending and de-duplicated. This eliminates cosmetic JSON ordering

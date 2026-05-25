@@ -140,6 +140,20 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         feed_str(h, &place.role);
         h.update(place.pos[0].to_le_bytes());
         h.update(place.pos[1].to_le_bytes());
+        match place.shape.as_deref() {
+            Some(s) => {
+                h.update([1u8]);
+                feed_str(h, s);
+            }
+            None => h.update([0u8]),
+        }
+        match place.color {
+            Some(c) => {
+                h.update([1u8]);
+                h.update(c.to_le_bytes());
+            }
+            None => h.update([0u8]),
+        }
 
         h.update((place.capacity.len() as u64).to_le_bytes());
         for (k, v) in &place.capacity {

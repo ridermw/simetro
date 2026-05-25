@@ -99,6 +99,8 @@ fn place_to_view(place: &Sl1Place) -> Sl1PlaceView {
         id: place.id.clone(),
         role: place.role.clone(),
         pos: place.pos,
+        shape: place.shape.clone(),
+        color: place.color,
         capacity: place.capacity.clone(),
         storage: place
             .storage
