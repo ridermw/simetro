@@ -132,13 +132,18 @@ describe("scene catalog", () => {
     expect(isLocalScenePath("games/nested/demo-paths.json")).toBe(false);
   });
 
-  it("adds the 40-scene complex scenario pack with balanced difficulty and scene kinds", () => {
-    const pack = NEW_SCENARIO_PACK_IDS.map((id) => {
-      const scene = findSceneById(id);
-      expect(scene, `${id} should be registered in SCENE_CATALOG`).toBeDefined();
-      return scene;
-    }).filter((scene): scene is SceneCatalogEntry => scene !== undefined);
+  it("verifies the 40-scene complex scenario pack has balanced difficulty and scene kinds", () => {
+    const scenesById = NEW_SCENARIO_PACK_IDS.map((id) => [id, findSceneById(id)] as const);
+    const missingIds = scenesById
+      .filter(([, scene]) => scene === undefined)
+      .map(([id]) => id);
+    expect(missingIds).toEqual([]);
 
+    const pack: SceneCatalogEntry[] = scenesById
+      .map(([, scene]) => scene)
+      .filter((scene): scene is SceneCatalogEntry => scene !== undefined);
+
+    // These exact counts are deliberate pack invariants from the spec, not flexible heuristics.
     expect(pack).toHaveLength(40);
     expect(new Set(pack.map((scene) => scene.id)).size).toBe(40);
     expect(pack.filter((scene) => scene.world_kind === "sl1_scenario")).toHaveLength(20);
