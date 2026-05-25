@@ -1446,6 +1446,20 @@ pub enum Sl1LoadError {
     #[error("scenario_language_v1.demand[{id:?}].spawn_schedule.ticks: tick 0 is reserved")]
     DemandScheduleScriptedTickZero { id: String },
 
+    /// A schedule field was provided that does not apply to the
+    /// declared schedule type (e.g. `ticks` on a `fixed` schedule, or
+    /// `every_ticks` on a `scripted` schedule). Silently ignoring the
+    /// field would let typos look like behavior changes.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule: \
+         field {field:?} is not valid for schedule type {kind:?}"
+    )]
+    DemandScheduleUnexpectedField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
     /// `deadline_ticks` is zero. Use ≥ 1.
     #[error("scenario_language_v1.demand[{id:?}].deadline_ticks: must be > 0")]
     DemandDeadlineZero { id: String },
@@ -2980,6 +2994,13 @@ fn validate_demand_schedule(
 ) -> Result<Sl1DemandSchedule, Sl1LoadError> {
     match raw.kind.as_str() {
         "fixed" => {
+            if raw.ticks.is_some() {
+                return Err(Sl1LoadError::DemandScheduleUnexpectedField {
+                    id: demand_id.to_string(),
+                    kind: "fixed",
+                    field: "ticks",
+                });
+            }
             let every_ticks =
                 raw.every_ticks
                     .ok_or_else(|| Sl1LoadError::DemandScheduleMissingField {
@@ -3028,6 +3049,20 @@ fn validate_demand_schedule(
             })
         }
         "scripted" => {
+            if raw.every_ticks.is_some() {
+                return Err(Sl1LoadError::DemandScheduleUnexpectedField {
+                    id: demand_id.to_string(),
+                    kind: "scripted",
+                    field: "every_ticks",
+                });
+            }
+            if raw.start_tick.is_some() {
+                return Err(Sl1LoadError::DemandScheduleUnexpectedField {
+                    id: demand_id.to_string(),
+                    kind: "scripted",
+                    field: "start_tick",
+                });
+            }
             let ticks = raw
                 .ticks
                 .ok_or_else(|| Sl1LoadError::DemandScheduleMissingField {

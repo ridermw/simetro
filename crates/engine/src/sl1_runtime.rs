@@ -665,21 +665,10 @@ fn run_demand(
             }));
         }
 
-        // ---------------- fulfill ----------------
-        // Observation-only: presence of every required thing at the
-        // target place. No inventory decrement.
-        let met = demand_requirements_met(def, runtime);
-        if met {
-            if let Some(rt) = runtime.demand.get_mut(&def.id) {
-                if rt.pending.pop_front().is_some() {
-                    rt.fulfilled_count = rt.fulfilled_count.saturating_add(1);
-                }
-            }
-        }
-
-        // ---------------- drop past-deadline + reset overflow ----------------
-        // Collect dropped events first so we can emit warnings after
-        // the &mut borrow ends.
+        // ---------------- drop past-deadline ----------------
+        // Drains expired Pending instances FIRST so a tardy requirement
+        // arriving in the same tick cannot silently fulfill an expired
+        // instance. "Dropped when deadline passes" is the contract.
         let mut dropped_events: Vec<(u64, u64, i64)> = Vec::new();
         if let Some(rt) = runtime.demand.get_mut(&def.id) {
             while let Some(front) = rt.pending.front() {
@@ -692,9 +681,6 @@ fn run_demand(
                     break;
                 }
             }
-            if rt.overflow && rt.pending.len() < MAX_DEMAND_OUTSTANDING {
-                rt.overflow = false;
-            }
         }
         for (sequence, value, penalty_score) in dropped_events {
             messages.push(SimMessage::Warning(WarningPayload::Sl1Demand {
@@ -705,6 +691,26 @@ fn run_demand(
                 value: Some(value),
                 penalty_score: Some(penalty_score),
             }));
+        }
+
+        // ---------------- fulfill ----------------
+        // Observation-only: presence of every required thing at the
+        // target place. No inventory decrement. Only non-expired
+        // instances reach this point (drops above already evicted them).
+        let met = demand_requirements_met(def, runtime);
+        if met {
+            if let Some(rt) = runtime.demand.get_mut(&def.id) {
+                if rt.pending.pop_front().is_some() {
+                    rt.fulfilled_count = rt.fulfilled_count.saturating_add(1);
+                }
+            }
+        }
+
+        // ---------------- reset overflow rearm ----------------
+        if let Some(rt) = runtime.demand.get_mut(&def.id) {
+            if rt.overflow && rt.pending.len() < MAX_DEMAND_OUTSTANDING {
+                rt.overflow = false;
+            }
         }
     }
 }

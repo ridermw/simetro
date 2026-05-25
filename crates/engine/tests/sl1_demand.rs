@@ -846,6 +846,398 @@ fn demand_snapshot_reflects_runtime_state() {
     assert_eq!(snap.sl1_demand_states[0].demand_id, "d1");
 }
 
+#[test]
+fn demand_backlog_overflow_rearms_after_drain() {
+    // Two-phase: scripted schedule fires (cap+1) spawns on ticks
+    // 1..=cap+1 — overflow fires at tick cap+1. Then we leave a
+    // tick-gap. With deadline_ticks = cap+1, all pending expire by
+    // tick (cap+1)+(cap+1)+1 = 2cap+3, draining backlog to 0 and
+    // clearing the overflow flag. Then a second burst on ticks
+    // (3cap+3)..=(4cap+3) re-enters overflow exactly once.
+    //
+    // Requirements stay unmet (storage initial: 0) so spawned
+    // instances accumulate as Pending and overflow can engage.
+    let places = r#"[
+        {
+            "id": "dashboard", "role": "consumer", "pos": [0.0, 0.0],
+            "capacity": {"queries": 1},
+            "storage": {"report": {"capacity": 100, "initial": 0}},
+            "accepts": ["report"], "produces": []
+        }
+    ]"#;
+    let cap = MAX_DEMAND_OUTSTANDING as u64;
+    let mut burst1 = String::new();
+    for t in 1..=(cap + 1) {
+        if !burst1.is_empty() {
+            burst1.push(',');
+        }
+        burst1.push_str(&t.to_string());
+    }
+    let mut burst2 = String::new();
+    let burst2_start = 3 * cap + 3;
+    for t in burst2_start..=(burst2_start + cap) {
+        if !burst2.is_empty() {
+            burst2.push(',');
+        }
+        burst2.push_str(&t.to_string());
+    }
+    let json = scene_with(
+        places,
+        default_things(),
+        "[]",
+        &format!(
+            r#"[{{
+                "id": "d1", "type": "x",
+                "target": {{"type": "place", "id": "dashboard"}},
+                "requires": ["report"],
+                "spawn_schedule": {{"type": "scripted", "ticks": [{burst1}, {burst2}]}},
+                "deadline_ticks": {dl}, "priority": "normal", "value": 1,
+                "penalty": {{"score": -1}}
+            }}]"#,
+            dl = cap + 1
+        ),
+    );
+    let messages = tick_n_collect_warnings(&json, burst2_start + cap + 5);
+    let overflow_count = messages
+        .iter()
+        .filter(|m| {
+            matches!(
+                m,
+                SimMessage::Warning(WarningPayload::Sl1Demand {
+                    event: Sl1DemandWarningKind::BacklogOverflow,
+                    ..
+                })
+            )
+        })
+        .count();
+    assert_eq!(
+        overflow_count, 2,
+        "expected two edge-triggered overflows (one per burst), got {overflow_count}"
+    );
+}
+
+// -------------------------------------------------------------------
+// Negative loader tests (added during PR 5 rubber-duck review)
+// -------------------------------------------------------------------
+
+#[test]
+fn demand_requires_too_many_rejected() {
+    // Add MAX_DEMAND_REQUIRES+1 extra things; reference all of them
+    // in `requires` to exceed the cap.
+    let mut things = String::from(
+        r#"[{"id": "report", "kind": "data", "tags": [], "freshness_budget_ticks": 100}"#,
+    );
+    for i in 0..70 {
+        things.push_str(&format!(
+            r#",{{"id": "t{i}", "kind": "data", "tags": [], "freshness_budget_ticks": 100}}"#
+        ));
+    }
+    things.push(']');
+    let mut requires = String::from(r#"["report""#);
+    for i in 0..70 {
+        requires.push_str(&format!(r#","t{i}""#));
+    }
+    requires.push(']');
+    let json = scene_with(
+        default_places(),
+        &things,
+        "[]",
+        &format!(
+            r#"[{{
+                "id": "d1", "type": "x",
+                "target": {{"type": "place", "id": "dashboard"}},
+                "requires": {requires},
+                "spawn_schedule": {fixed},
+                "deadline_ticks": 10, "priority": "normal", "value": 1,
+                "penalty": {{"score": -1}}
+            }}]"#,
+            fixed = fixed_schedule_json()
+        ),
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::DemandRequiresTooMany { .. }),
+        "expected DemandRequiresTooMany, got {err:?}"
+    );
+}
+
+#[test]
+fn demand_schedule_field_out_of_range_rejected() {
+    // every_ticks > MAX_DEMAND_TICKS.
+    let json = scene_with_demand(&format!(
+        r#"[{{
+            "id": "d1", "type": "x",
+            "target": {{"type": "place", "id": "dashboard"}},
+            "requires": ["report"],
+            "spawn_schedule": {{"type": "fixed", "every_ticks": {huge}, "start_tick": 1}},
+            "deadline_ticks": 10, "priority": "normal", "value": 1,
+            "penalty": {{"score": -1}}
+        }}]"#,
+        huge = u64::MAX
+    ));
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::DemandScheduleFieldOutOfRange { .. }),
+        "expected DemandScheduleFieldOutOfRange, got {err:?}"
+    );
+}
+
+#[test]
+fn demand_schedule_scripted_too_many_rejected() {
+    // Build a strictly-increasing tick list longer than the cap.
+    // The constant lives in the engine; we approximate by exceeding
+    // any practical cap with 100_001 entries.
+    let mut ticks_vec = String::from("[");
+    for i in 1..=100_001u64 {
+        if i > 1 {
+            ticks_vec.push(',');
+        }
+        ticks_vec.push_str(&i.to_string());
+    }
+    ticks_vec.push(']');
+    let json = scene_with_demand(&format!(
+        r#"[{{
+            "id": "d1", "type": "x",
+            "target": {{"type": "place", "id": "dashboard"}},
+            "requires": ["report"],
+            "spawn_schedule": {{"type": "scripted", "ticks": {ticks_vec}}},
+            "deadline_ticks": 10, "priority": "normal", "value": 1,
+            "penalty": {{"score": -1}}
+        }}]"#
+    ));
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::DemandScheduleScriptedTooMany { .. }),
+        "expected DemandScheduleScriptedTooMany, got {err:?}"
+    );
+}
+
+#[test]
+fn demand_deadline_out_of_range_rejected() {
+    let json = scene_with_demand(&format!(
+        r#"[{{
+            "id": "d1", "type": "x",
+            "target": {{"type": "place", "id": "dashboard"}},
+            "requires": ["report"],
+            "spawn_schedule": {fixed},
+            "deadline_ticks": {huge}, "priority": "normal", "value": 1,
+            "penalty": {{"score": -1}}
+        }}]"#,
+        fixed = fixed_schedule_json(),
+        huge = u64::MAX
+    ));
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::DemandDeadlineOutOfRange { .. }),
+        "expected DemandDeadlineOutOfRange, got {err:?}"
+    );
+}
+
+#[test]
+fn demand_value_out_of_range_rejected() {
+    let json = scene_with_demand(&format!(
+        r#"[{{
+            "id": "d1", "type": "x",
+            "target": {{"type": "place", "id": "dashboard"}},
+            "requires": ["report"],
+            "spawn_schedule": {fixed},
+            "deadline_ticks": 10, "priority": "normal", "value": {huge},
+            "penalty": {{"score": -1}}
+        }}]"#,
+        fixed = fixed_schedule_json(),
+        huge = u64::MAX
+    ));
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::DemandValueOutOfRange { .. }),
+        "expected DemandValueOutOfRange, got {err:?}"
+    );
+}
+
+#[test]
+fn demand_penalty_score_out_of_range_rejected() {
+    let json = scene_with_demand(&format!(
+        r#"[{{
+            "id": "d1", "type": "x",
+            "target": {{"type": "place", "id": "dashboard"}},
+            "requires": ["report"],
+            "spawn_schedule": {fixed},
+            "deadline_ticks": 10, "priority": "normal", "value": 1,
+            "penalty": {{"score": {worse}}}
+        }}]"#,
+        fixed = fixed_schedule_json(),
+        worse = i64::MIN
+    ));
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(err, Sl1LoadError::DemandPenaltyScoreOutOfRange { .. }),
+        "expected DemandPenaltyScoreOutOfRange, got {err:?}"
+    );
+}
+
+#[test]
+fn demand_schedule_unexpected_field_fixed_with_ticks_rejected() {
+    let json = scene_with_demand(
+        r#"[{
+            "id": "d1", "type": "x",
+            "target": {"type": "place", "id": "dashboard"},
+            "requires": ["report"],
+            "spawn_schedule": {"type": "fixed", "every_ticks": 5, "start_tick": 5, "ticks": [1, 2]},
+            "deadline_ticks": 10, "priority": "normal", "value": 1,
+            "penalty": {"score": -1}
+        }]"#,
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(
+            err,
+            Sl1LoadError::DemandScheduleUnexpectedField {
+                kind: "fixed",
+                field: "ticks",
+                ..
+            }
+        ),
+        "expected DemandScheduleUnexpectedField(fixed,ticks), got {err:?}"
+    );
+}
+
+#[test]
+fn demand_schedule_unexpected_field_scripted_with_every_ticks_rejected() {
+    let json = scene_with_demand(
+        r#"[{
+            "id": "d1", "type": "x",
+            "target": {"type": "place", "id": "dashboard"},
+            "requires": ["report"],
+            "spawn_schedule": {"type": "scripted", "ticks": [3], "every_ticks": 5},
+            "deadline_ticks": 10, "priority": "normal", "value": 1,
+            "penalty": {"score": -1}
+        }]"#,
+    );
+    let err = expect_sl1_err(json);
+    assert!(
+        matches!(
+            err,
+            Sl1LoadError::DemandScheduleUnexpectedField {
+                kind: "scripted",
+                field: "every_ticks",
+                ..
+            }
+        ),
+        "expected DemandScheduleUnexpectedField(scripted,every_ticks), got {err:?}"
+    );
+}
+
+#[test]
+fn demand_expired_pending_is_dropped_not_fulfilled_when_requires_arrive_late() {
+    // Regression for the spec rule "Dropped when deadline passes".
+    // A demand spawned at tick 1 with deadline_ticks=2 has
+    // deadline_tick=3. We make `report` arrive only at tick 5 by
+    // running a slow transform. The expired instance MUST be dropped
+    // and NOT fulfilled when the requirement finally shows up.
+    let places = r#"[
+        {
+            "id": "dashboard", "role": "consumer", "pos": [1.0, 0.0],
+            "capacity": {"queries": 1, "slots": 1},
+            "storage": {"report": {"capacity": 4, "initial": 0}},
+            "accepts": ["report"], "produces": ["report"]
+        }
+    ]"#;
+    let transforms = r#"[
+        {
+            "id": "slow_report",
+            "type": "report_refresh",
+            "runs_on": "dashboard",
+            "inputs": [],
+            "outputs": [{"thing": "report", "amount": 1}],
+            "cadence_ticks": 100,
+            "duration_ticks": 5,
+            "deadline_ticks": 100,
+            "capacity_cost": {"slots": 1},
+            "failure_policy": "retry_then_warn",
+            "max_attempts": 1
+        }
+    ]"#;
+    let demand = r#"[{
+        "id": "d1", "type": "x",
+        "target": {"type": "place", "id": "dashboard"},
+        "requires": ["report"],
+        "spawn_schedule": {"type": "fixed", "every_ticks": 100, "start_tick": 1},
+        "deadline_ticks": 2,
+        "priority": "normal", "value": 7,
+        "penalty": {"score": -3}
+    }]"#;
+    let json = scene_with(places, default_things(), transforms, demand);
+    let mut scene = load_scene_str(&json, 0).expect("load");
+    let mut world = std::mem::take(&mut scene.world);
+    let mut runner = TickRunner::new();
+    // Tick to 6 — transform completes at tick 6 (cadence start +
+    // duration 5); demand spawned at tick 1, deadline tick = 3, so
+    // by tick 4 it must drop before any fulfill attempt.
+    for _ in 0..6 {
+        runner.tick_once(&mut world);
+    }
+    let rt = world
+        .sl1_runtime
+        .as_ref()
+        .unwrap()
+        .demand
+        .get("d1")
+        .unwrap();
+    assert_eq!(
+        rt.dropped_count, 1,
+        "expired demand must drop, not fulfill, when requires arrive late"
+    );
+    assert_eq!(rt.fulfilled_count, 0, "no fulfillment expected");
+    assert_eq!(rt.pending.len(), 0, "no pending left");
+}
+
+#[test]
+fn demand_fulfillment_does_not_decrement_inventory() {
+    // Observation-only contract: present a report once, fulfill many.
+    let places = r#"[
+        {
+            "id": "dashboard", "role": "consumer", "pos": [0.0, 0.0],
+            "capacity": {"queries": 1},
+            "storage": {"report": {"capacity": 10, "initial": 3}},
+            "accepts": ["report"], "produces": []
+        }
+    ]"#;
+    let demand = r#"[{
+        "id": "d1", "type": "x",
+        "target": {"type": "place", "id": "dashboard"},
+        "requires": ["report"],
+        "spawn_schedule": {"type": "fixed", "every_ticks": 1, "start_tick": 1},
+        "deadline_ticks": 100,
+        "priority": "normal", "value": 1,
+        "penalty": {"score": -1}
+    }]"#;
+    let json = scene_with(places, default_things(), "[]", demand);
+    let mut scene = load_scene_str(&json, 0).expect("load");
+    let mut world = std::mem::take(&mut scene.world);
+    let mut runner = TickRunner::new();
+    for _ in 0..5 {
+        runner.tick_once(&mut world);
+    }
+    // After 5 ticks: 5 demands spawned (one per tick), all fulfilled
+    // observation-only. Inventory must still read 3.
+    let rt = world
+        .sl1_runtime
+        .as_ref()
+        .unwrap()
+        .demand
+        .get("d1")
+        .unwrap();
+    assert_eq!(rt.fulfilled_count, 5);
+    let inv = world
+        .sl1_runtime
+        .as_ref()
+        .unwrap()
+        .inventories
+        .get("dashboard")
+        .unwrap();
+    assert_eq!(inv.get("report").copied().unwrap_or(0), 3);
+}
+
 // -------------------------------------------------------------------
 // Fixture + deterministic hash baseline
 // -------------------------------------------------------------------
