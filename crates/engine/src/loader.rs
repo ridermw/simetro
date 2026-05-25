@@ -399,11 +399,12 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         }
         let rid = ResourceId(u32::try_from(i).unwrap_or(u32::MAX));
         id_map.resources_by_name.insert(r.id.clone(), rid);
-        id_map.resource_names.insert(rid, r.id);
+        id_map.resource_names.insert(rid, r.id.clone());
         resources.insert(
             rid,
             Resource {
                 id: rid,
+                name: r.id,
                 color: r.color,
             },
         );

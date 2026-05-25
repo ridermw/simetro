@@ -4,7 +4,10 @@
 
 use simetro_protocol::{Action, HighlightReason, SimEvent, WarningPayload};
 
-use crate::components::{MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId};
+use crate::components::{
+    Consumer, ConsumerId, MoverId, MoverState, Node, NodeId, NodeShape, Path, PathId, Producer,
+    ProducerId, Resource, ResourceId,
+};
 use crate::world::World;
 
 #[derive(Debug, PartialEq)]
@@ -69,6 +72,20 @@ pub fn apply_action(
         }
 
         Action::RemovePiece { id } => remove_piece(world, agent_id, NodeId(*id)),
+
+        // ---- Author tools (P2.A task 9) -----------------------------
+        Action::DefineResource { name, color } => define_resource(world, agent_id, name, *color),
+        Action::AddProducer {
+            resource,
+            amount,
+            interval_ticks,
+        } => add_producer(world, agent_id, resource, *amount, *interval_ticks),
+        Action::AddConsumer {
+            resource,
+            amount,
+            interval_ticks,
+        } => add_consumer(world, agent_id, resource, *amount, *interval_ticks),
+        Action::SetGoal { goal } => set_goal(world, agent_id, goal),
     }
 }
 
@@ -220,6 +237,192 @@ fn remove_piece(world: &mut World, agent_id: &str, id: NodeId) -> Outcome {
     }
     world.nodes.remove(&id);
     Outcome::Applied
+}
+
+// =====================================================================
+//  Author tools (P2.A task 9). All four mutate the world's resource /
+//  production graph via the deterministic action-application pipeline.
+//  Invalid requests surface as `Warning::InvalidAction`.
+// =====================================================================
+
+/// Max chars in a resource name. Matches the loader's id validator
+/// (see `validate_id` in `loader.rs`).
+const MAX_RESOURCE_NAME_LEN: usize = 64;
+
+/// Bound on author-supplied amounts. Mirrors the loader's
+/// `AMOUNT_MAX` so authoring and authoring-via-LLM share the same
+/// envelope.
+const AMOUNT_MAX: u64 = 1_000_000;
+
+/// Bound on interval ticks. Mirrors `INTERVAL_MAX` in the loader.
+const INTERVAL_MAX: u32 = 10_000;
+
+fn validate_resource_name(agent_id: &str, name: &str) -> Result<(), Outcome> {
+    if name.is_empty() {
+        return Err(invalid(agent_id, "resource name is empty"));
+    }
+    if name.chars().count() > MAX_RESOURCE_NAME_LEN {
+        return Err(invalid(
+            agent_id,
+            format!("resource name longer than {MAX_RESOURCE_NAME_LEN} chars"),
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(invalid(
+            agent_id,
+            format!("resource name `{name}` must match [A-Za-z0-9_-]+"),
+        ));
+    }
+    Ok(())
+}
+
+fn define_resource(world: &mut World, agent_id: &str, name: &str, color: u8) -> Outcome {
+    if let Err(o) = validate_resource_name(agent_id, name) {
+        return o;
+    }
+    if world.resources.values().any(|r| r.name == name) {
+        return invalid(agent_id, format!("resource `{name}` already exists"));
+    }
+    let Some(id) = next_resource_id(world) else {
+        return invalid(agent_id, "resource id space exhausted");
+    };
+    world.resources.insert(
+        id,
+        Resource {
+            id,
+            name: name.to_string(),
+            color,
+        },
+    );
+    world.inventory.insert(id, 0);
+    Outcome::Applied
+}
+
+fn add_producer(
+    world: &mut World,
+    agent_id: &str,
+    resource: &str,
+    amount: u64,
+    interval_ticks: u32,
+) -> Outcome {
+    let Some(rid) = world.resource_id_by_name(resource) else {
+        return invalid(agent_id, format!("unknown resource `{resource}`"));
+    };
+    if let Err(o) = validate_amount_and_interval(agent_id, amount, interval_ticks) {
+        return o;
+    }
+    let Some(id) = next_producer_id(world) else {
+        return invalid(agent_id, "producer id space exhausted");
+    };
+    world.producers.insert(
+        id,
+        Producer {
+            id,
+            resource: rid,
+            amount,
+            interval_ticks,
+        },
+    );
+    Outcome::Applied
+}
+
+fn add_consumer(
+    world: &mut World,
+    agent_id: &str,
+    resource: &str,
+    amount: u64,
+    interval_ticks: u32,
+) -> Outcome {
+    let Some(rid) = world.resource_id_by_name(resource) else {
+        return invalid(agent_id, format!("unknown resource `{resource}`"));
+    };
+    if let Err(o) = validate_amount_and_interval(agent_id, amount, interval_ticks) {
+        return o;
+    }
+    let Some(id) = next_consumer_id(world) else {
+        return invalid(agent_id, "consumer id space exhausted");
+    };
+    world.consumers.insert(
+        id,
+        Consumer {
+            id,
+            resource: rid,
+            amount,
+            interval_ticks,
+        },
+    );
+    Outcome::Applied
+}
+
+/// Set the scene's win/end condition. Today only `"loop_forever"` is
+/// recognized — any other string is rejected so a future spec
+/// extension that adds new goal kinds can keep the wire format stable.
+fn set_goal(world: &mut World, agent_id: &str, goal: &str) -> Outcome {
+    let normalized: String = goal
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c == '-' { '_' } else { c })
+        .collect();
+    match normalized.as_str() {
+        "loop_forever" => {
+            // World doesn't carry a goal field today (LoadedScene
+            // does, but it's loader-output not runtime-mutable).
+            // Accepting this as NoChange keeps the contract stable so
+            // a future PR that adds a runtime goal field works without
+            // changing the wire shape. Suppress the unused-var warning.
+            let _ = world;
+            Outcome::NoChange
+        }
+        other => invalid(agent_id, format!("unknown goal `{other}`")),
+    }
+}
+
+fn validate_amount_and_interval(
+    agent_id: &str,
+    amount: u64,
+    interval_ticks: u32,
+) -> Result<(), Outcome> {
+    if amount == 0 || amount > AMOUNT_MAX {
+        return Err(invalid(
+            agent_id,
+            format!("amount {amount} out of range (1..={AMOUNT_MAX})"),
+        ));
+    }
+    if interval_ticks == 0 || interval_ticks > INTERVAL_MAX {
+        return Err(invalid(
+            agent_id,
+            format!("interval_ticks {interval_ticks} out of range (1..={INTERVAL_MAX})"),
+        ));
+    }
+    Ok(())
+}
+
+fn next_resource_id(world: &World) -> Option<ResourceId> {
+    next_dense_u32(world.resources.keys().map(|r| r.0)).map(ResourceId)
+}
+
+fn next_producer_id(world: &World) -> Option<ProducerId> {
+    next_dense_u32(world.producers.keys().map(|p| p.0)).map(ProducerId)
+}
+
+fn next_consumer_id(world: &World) -> Option<ConsumerId> {
+    next_dense_u32(world.consumers.keys().map(|c| c.0)).map(ConsumerId)
+}
+
+fn next_dense_u32<I: Iterator<Item = u32>>(ids: I) -> Option<u32> {
+    let mut candidate = 0_u32;
+    for id in ids {
+        if id == candidate {
+            candidate = candidate.checked_add(1)?;
+        } else if id > candidate {
+            break;
+        }
+    }
+    Some(candidate)
 }
 
 fn node_shape_for_piece_kind(piece_kind: &str) -> Option<NodeShape> {
@@ -587,5 +790,252 @@ mod tests {
         assert!(w.nodes.contains_key(&NodeId(0)));
         assert!(w.paths.contains_key(&PathId(0)));
         assert!(ev.is_empty());
+    }
+
+    // ---- Author tools (P2.A task 9) ---------------------------------
+
+    #[test]
+    fn define_resource_adds_named_resource_and_zero_inventory() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::DefineResource {
+                name: "ore".into(),
+                color: 1,
+            },
+            &mut ev,
+        );
+        assert_eq!(out, Outcome::Applied);
+        assert_eq!(w.resources.len(), 1);
+        let rid = w.resource_id_by_name("ore").unwrap();
+        assert_eq!(w.resources[&rid].name, "ore");
+        assert_eq!(w.resources[&rid].color, 1);
+        assert_eq!(w.inventory[&rid], 0);
+    }
+
+    #[test]
+    fn define_resource_rejects_duplicate_name() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        apply_action(
+            &mut w,
+            "a",
+            &Action::DefineResource {
+                name: "ore".into(),
+                color: 1,
+            },
+            &mut ev,
+        );
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::DefineResource {
+                name: "ore".into(),
+                color: 2,
+            },
+            &mut ev,
+        );
+        match out {
+            Outcome::Rejected(WarningPayload::InvalidAction { reason, .. }) => {
+                assert!(reason.contains("already exists"));
+            }
+            other => panic!("expected rejection, got {other:?}"),
+        }
+        assert_eq!(w.resources.len(), 1);
+    }
+
+    #[test]
+    fn define_resource_rejects_empty_and_invalid_name() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        for bad in ["", "has space", "back\\slash"] {
+            let out = apply_action(
+                &mut w,
+                "a",
+                &Action::DefineResource {
+                    name: bad.into(),
+                    color: 1,
+                },
+                &mut ev,
+            );
+            assert!(matches!(
+                out,
+                Outcome::Rejected(WarningPayload::InvalidAction { .. })
+            ));
+        }
+        assert!(w.resources.is_empty());
+    }
+
+    #[test]
+    fn add_producer_attaches_to_existing_resource() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        apply_action(
+            &mut w,
+            "a",
+            &Action::DefineResource {
+                name: "ore".into(),
+                color: 1,
+            },
+            &mut ev,
+        );
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::AddProducer {
+                resource: "ore".into(),
+                amount: 5,
+                interval_ticks: 10,
+            },
+            &mut ev,
+        );
+        assert_eq!(out, Outcome::Applied);
+        assert_eq!(w.producers.len(), 1);
+        let p = w.producers.values().next().unwrap();
+        assert_eq!(p.amount, 5);
+        assert_eq!(p.interval_ticks, 10);
+        assert_eq!(p.resource, w.resource_id_by_name("ore").unwrap());
+    }
+
+    #[test]
+    fn add_producer_rejects_unknown_resource() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::AddProducer {
+                resource: "ghost".into(),
+                amount: 5,
+                interval_ticks: 10,
+            },
+            &mut ev,
+        );
+        match out {
+            Outcome::Rejected(WarningPayload::InvalidAction { reason, .. }) => {
+                assert!(reason.contains("unknown resource"));
+            }
+            other => panic!("expected rejection, got {other:?}"),
+        }
+        assert!(w.producers.is_empty());
+    }
+
+    #[test]
+    fn add_producer_rejects_oob_amount_and_interval() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        apply_action(
+            &mut w,
+            "a",
+            &Action::DefineResource {
+                name: "ore".into(),
+                color: 1,
+            },
+            &mut ev,
+        );
+        for (amount, interval) in [(0_u64, 10_u32), (5, 0), (5, 20_000), (2_000_000, 10)] {
+            let out = apply_action(
+                &mut w,
+                "a",
+                &Action::AddProducer {
+                    resource: "ore".into(),
+                    amount,
+                    interval_ticks: interval,
+                },
+                &mut ev,
+            );
+            assert!(
+                matches!(out, Outcome::Rejected(_)),
+                "expected rejection for amount={amount} interval={interval}"
+            );
+        }
+        assert!(w.producers.is_empty());
+    }
+
+    #[test]
+    fn add_consumer_attaches_to_existing_resource() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        apply_action(
+            &mut w,
+            "a",
+            &Action::DefineResource {
+                name: "widget".into(),
+                color: 2,
+            },
+            &mut ev,
+        );
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::AddConsumer {
+                resource: "widget".into(),
+                amount: 3,
+                interval_ticks: 60,
+            },
+            &mut ev,
+        );
+        assert_eq!(out, Outcome::Applied);
+        assert_eq!(w.consumers.len(), 1);
+        let c = w.consumers.values().next().unwrap();
+        assert_eq!(c.amount, 3);
+        assert_eq!(c.interval_ticks, 60);
+        assert_eq!(c.resource, w.resource_id_by_name("widget").unwrap());
+    }
+
+    #[test]
+    fn set_goal_loop_forever_is_nochange_other_rejected() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::SetGoal {
+                goal: "loop_forever".into(),
+            },
+            &mut ev,
+        );
+        assert_eq!(out, Outcome::NoChange);
+        // Hyphenated form normalizes too.
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::SetGoal {
+                goal: "loop-forever".into(),
+            },
+            &mut ev,
+        );
+        assert_eq!(out, Outcome::NoChange);
+        // Unknown goals rejected.
+        let out = apply_action(
+            &mut w,
+            "a",
+            &Action::SetGoal {
+                goal: "achieve_world_peace".into(),
+            },
+            &mut ev,
+        );
+        assert!(matches!(out, Outcome::Rejected(_)));
+    }
+
+    #[test]
+    fn next_resource_id_is_dense() {
+        let mut w = World::new(0);
+        let mut ev = Vec::new();
+        for name in ["a", "b", "c"] {
+            apply_action(
+                &mut w,
+                "a",
+                &Action::DefineResource {
+                    name: name.into(),
+                    color: 0,
+                },
+                &mut ev,
+            );
+        }
+        let ids: Vec<u32> = w.resources.keys().map(|r| r.0).collect();
+        assert_eq!(ids, vec![0, 1, 2]);
     }
 }

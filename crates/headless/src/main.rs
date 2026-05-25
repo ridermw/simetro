@@ -603,6 +603,10 @@ fn action_tag_name(tag: ActionTag) -> &'static str {
         ActionTag::PlacePiece => "place_piece",
         ActionTag::ConnectPieces => "connect_pieces",
         ActionTag::RemovePiece => "remove_piece",
+        ActionTag::DefineResource => "define_resource",
+        ActionTag::AddProducer => "add_producer",
+        ActionTag::AddConsumer => "add_consumer",
+        ActionTag::SetGoal => "set_goal",
     }
 }
 

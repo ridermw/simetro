@@ -147,6 +147,54 @@ pub fn parse_tool_call(tc: &ToolCall, agent_id: &str) -> Result<Action, LlmError
             let a: A = serde_json::from_str(&tc.arguments_json).map_err(malformed)?;
             Ok(Action::RemovePiece { id: a.id })
         }
+        names::DEFINE_RESOURCE => {
+            #[derive(serde::Deserialize)]
+            struct A {
+                name: String,
+                color: u8,
+            }
+            let a: A = serde_json::from_str(&tc.arguments_json).map_err(malformed)?;
+            Ok(Action::DefineResource {
+                name: a.name,
+                color: a.color,
+            })
+        }
+        names::ADD_PRODUCER => {
+            #[derive(serde::Deserialize)]
+            struct A {
+                resource: String,
+                amount: u64,
+                interval_ticks: u32,
+            }
+            let a: A = serde_json::from_str(&tc.arguments_json).map_err(malformed)?;
+            Ok(Action::AddProducer {
+                resource: a.resource,
+                amount: a.amount,
+                interval_ticks: a.interval_ticks,
+            })
+        }
+        names::ADD_CONSUMER => {
+            #[derive(serde::Deserialize)]
+            struct A {
+                resource: String,
+                amount: u64,
+                interval_ticks: u32,
+            }
+            let a: A = serde_json::from_str(&tc.arguments_json).map_err(malformed)?;
+            Ok(Action::AddConsumer {
+                resource: a.resource,
+                amount: a.amount,
+                interval_ticks: a.interval_ticks,
+            })
+        }
+        names::SET_GOAL => {
+            #[derive(serde::Deserialize)]
+            struct A {
+                goal: String,
+            }
+            let a: A = serde_json::from_str(&tc.arguments_json).map_err(malformed)?;
+            Ok(Action::SetGoal { goal: a.goal })
+        }
         _ => Err(LlmError::MalformedResponse {
             agent_id: agent_id.into(),
             raw: raw(),

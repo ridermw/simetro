@@ -54,6 +54,10 @@ fn expected_tool_name_for(tag: ActionTag) -> &'static str {
         ActionTag::PlacePiece => names::PLACE_PIECE,
         ActionTag::ConnectPieces => names::CONNECT_PIECES,
         ActionTag::RemovePiece => names::REMOVE_PIECE,
+        ActionTag::DefineResource => names::DEFINE_RESOURCE,
+        ActionTag::AddProducer => names::ADD_PRODUCER,
+        ActionTag::AddConsumer => names::ADD_CONSUMER,
+        ActionTag::SetGoal => names::SET_GOAL,
     }
 }
 
@@ -137,6 +141,35 @@ fn canonical_arguments_for(tag: ActionTag) -> (&'static str, Action) {
             Action::ConnectPieces { from: 1, to: 2 },
         ),
         ActionTag::RemovePiece => (r#"{"id": 1}"#, Action::RemovePiece { id: 1 }),
+        ActionTag::DefineResource => (
+            r#"{"name": "ore", "color": 2}"#,
+            Action::DefineResource {
+                name: "ore".to_string(),
+                color: 2,
+            },
+        ),
+        ActionTag::AddProducer => (
+            r#"{"resource": "ore", "amount": 1, "interval_ticks": 10}"#,
+            Action::AddProducer {
+                resource: "ore".to_string(),
+                amount: 1,
+                interval_ticks: 10,
+            },
+        ),
+        ActionTag::AddConsumer => (
+            r#"{"resource": "ore", "amount": 1, "interval_ticks": 10}"#,
+            Action::AddConsumer {
+                resource: "ore".to_string(),
+                amount: 1,
+                interval_ticks: 10,
+            },
+        ),
+        ActionTag::SetGoal => (
+            r#"{"goal": "loop_forever"}"#,
+            Action::SetGoal {
+                goal: "loop_forever".to_string(),
+            },
+        ),
     }
 }
 
@@ -315,7 +348,7 @@ fn remove_piece_schema_rejects_missing_id() {
 ///
 /// All three are non-trivial and visible in PR diff; missing any one
 /// breaks the build or the test suite.
-const ACTION_TAG_VARIANT_COUNT: usize = 5;
+const ACTION_TAG_VARIANT_COUNT: usize = 9;
 
 /// Catalogue of every `ActionTag` variant. Iterated by every test in
 /// this file. Hand-maintained because we don't want a derive macro
@@ -330,6 +363,10 @@ fn all_action_tags() -> Vec<ActionTag> {
         ActionTag::PlacePiece,
         ActionTag::ConnectPieces,
         ActionTag::RemovePiece,
+        ActionTag::DefineResource,
+        ActionTag::AddProducer,
+        ActionTag::AddConsumer,
+        ActionTag::SetGoal,
     ]
 }
 

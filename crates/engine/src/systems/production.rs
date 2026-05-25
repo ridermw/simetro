@@ -81,7 +81,14 @@ mod tests {
     fn world() -> World {
         let mut world = World::new(0);
         let ore = ResourceId(0);
-        world.resources.insert(ore, Resource { id: ore, color: 1 });
+        world.resources.insert(
+            ore,
+            Resource {
+                id: ore,
+                name: "ore".to_string(),
+                color: 1,
+            },
+        );
         world.inventory.insert(ore, 0);
         world.producers.insert(
             ProducerId(0),
