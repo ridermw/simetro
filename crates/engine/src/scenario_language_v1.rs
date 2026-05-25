@@ -1653,6 +1653,19 @@ pub struct Sl1RuntimeState {
     /// when a transform leaves the `Running` state.
     pub place_capacity_used:
         std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+    /// Per-`(place_id, thing_id)` in-flight output reservation. Each
+    /// currently-`Running` transform contributes `output.amount` here
+    /// for every entry in its `outputs[]` Vec. `try_start` consults
+    /// this map alongside the current inventory before reserving a
+    /// new instance — the headroom check is
+    /// `inventory + pending + amount <= storage_capacity`. Without
+    /// this, two transforms targeting the same `(place, thing)` can
+    /// both pass the single-transform capacity check at the same tick
+    /// and silently over-fill storage when both complete. Releases
+    /// occur at completion (output lands in inventory) and at all
+    /// `Running → not-Running` transitions where no output lands
+    /// (Late-deadline failure, Drop-policy failure at deadline).
+    pub pending_outputs: std::collections::BTreeMap<(String, String), u64>,
     /// Per-demand runtime state (PR 5). One entry per declared demand;
     /// the entry tracks the monotonic next instance sequence, the
     /// outstanding Pending instances in spawn order, aggregate
@@ -1811,6 +1824,7 @@ impl Sl1RuntimeState {
             freshness,
             transforms,
             place_capacity_used,
+            pending_outputs: std::collections::BTreeMap::new(),
             demand,
         }
     }
