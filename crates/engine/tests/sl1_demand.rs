@@ -1238,6 +1238,55 @@ fn demand_fulfillment_does_not_decrement_inventory() {
     assert_eq!(inv.get("report").copied().unwrap_or(0), 3);
 }
 
+#[test]
+fn demand_penalty_warning_tag_propagates_to_runtime_warning() {
+    // The author-supplied `penalty.warning` tag must surface on the
+    // runtime Dropped warning. PR 5 carries it opaquely; PR 8/9 will
+    // route severity from it.
+    let places = r#"[
+        {
+            "id": "dashboard", "role": "consumer", "pos": [0.0, 0.0],
+            "capacity": {"queries": 1},
+            "storage": {"report": {"capacity": 4, "initial": 0}},
+            "accepts": ["report"], "produces": []
+        }
+    ]"#;
+    let demand = r#"[{
+        "id": "d1", "type": "x",
+        "target": {"type": "place", "id": "dashboard"},
+        "requires": ["report"],
+        "spawn_schedule": {"type": "fixed", "every_ticks": 100, "start_tick": 1},
+        "deadline_ticks": 2,
+        "priority": "normal", "value": 5,
+        "penalty": {"score": -3, "warning": "freshness_slo_violated"}
+    }]"#;
+    let json = scene_with(places, default_things(), "[]", demand);
+    let messages = tick_n_collect_warnings(&json, 6);
+    let dropped: Vec<&SimMessage> = messages
+        .iter()
+        .filter(|m| {
+            matches!(
+                m,
+                SimMessage::Warning(WarningPayload::Sl1Demand {
+                    event: Sl1DemandWarningKind::Dropped,
+                    ..
+                })
+            )
+        })
+        .collect();
+    assert_eq!(dropped.len(), 1, "expected exactly one Dropped warning");
+    if let SimMessage::Warning(WarningPayload::Sl1Demand {
+        penalty_warning, ..
+    }) = dropped[0]
+    {
+        assert_eq!(
+            penalty_warning.as_deref(),
+            Some("freshness_slo_violated"),
+            "penalty.warning author tag must be carried through to runtime warning"
+        );
+    }
+}
+
 // -------------------------------------------------------------------
 // Fixture + deterministic hash baseline
 // -------------------------------------------------------------------

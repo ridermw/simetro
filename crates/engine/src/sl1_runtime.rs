@@ -662,6 +662,7 @@ fn run_demand(
                 sequence: None,
                 value: None,
                 penalty_score: None,
+                penalty_warning: None,
             }));
         }
 
@@ -669,20 +670,25 @@ fn run_demand(
         // Drains expired Pending instances FIRST so a tardy requirement
         // arriving in the same tick cannot silently fulfill an expired
         // instance. "Dropped when deadline passes" is the contract.
-        let mut dropped_events: Vec<(u64, u64, i64)> = Vec::new();
+        let mut dropped_events: Vec<(u64, u64, i64, Option<String>)> = Vec::new();
         if let Some(rt) = runtime.demand.get_mut(&def.id) {
             while let Some(front) = rt.pending.front() {
                 if now > front.deadline_tick {
                     if let Some(d) = rt.pending.pop_front() {
                         rt.dropped_count = rt.dropped_count.saturating_add(1);
-                        dropped_events.push((d.sequence, def.value, def.penalty.score));
+                        dropped_events.push((
+                            d.sequence,
+                            def.value,
+                            def.penalty.score,
+                            def.penalty.warning.clone(),
+                        ));
                     }
                 } else {
                     break;
                 }
             }
         }
-        for (sequence, value, penalty_score) in dropped_events {
+        for (sequence, value, penalty_score, penalty_warning) in dropped_events {
             messages.push(SimMessage::Warning(WarningPayload::Sl1Demand {
                 demand_id: def.id.clone(),
                 event: Sl1DemandWarningKind::Dropped,
@@ -690,6 +696,7 @@ fn run_demand(
                 sequence: Some(sequence),
                 value: Some(value),
                 penalty_score: Some(penalty_score),
+                penalty_warning,
             }));
         }
 

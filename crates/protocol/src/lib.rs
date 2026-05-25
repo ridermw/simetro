@@ -649,8 +649,10 @@ pub enum WarningPayload {
     },
     /// SL1 demand observability warning (PR 5). `sequence` identifies
     /// the Dropped instance; `BacklogOverflow` leaves it `None`.
-    /// `value` and `penalty_score` are surfaced on Dropped so PR 8 can
-    /// wire score arithmetic without protocol changes.
+    /// `value`, `penalty_score`, and `penalty_warning` are surfaced on
+    /// Dropped so PR 8 can wire score arithmetic and severity routing
+    /// without a protocol change. `penalty_warning` is the
+    /// author-supplied severity tag from `demand[].penalty.warning`.
     Sl1Demand {
         demand_id: String,
         event: Sl1DemandWarningKind,
@@ -661,6 +663,8 @@ pub enum WarningPayload {
         value: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         penalty_score: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        penalty_warning: Option<String>,
     },
 }
 

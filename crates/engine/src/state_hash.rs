@@ -753,6 +753,7 @@ fn feed_warning(h: &mut Sha256, w: &WarningPayload) {
             sequence,
             value,
             penalty_score,
+            penalty_warning,
         } => {
             h.update([0x35]);
             h.update((demand_id.len() as u64).to_le_bytes());
@@ -777,6 +778,14 @@ fn feed_warning(h: &mut Sha256, w: &WarningPayload) {
                 Some(p) => {
                     h.update([0x01]);
                     h.update(p.to_le_bytes());
+                }
+                None => h.update([0x00]),
+            }
+            match penalty_warning {
+                Some(w) => {
+                    h.update([0x01]);
+                    h.update((w.len() as u64).to_le_bytes());
+                    h.update(w.as_bytes());
                 }
                 None => h.update([0x00]),
             }
