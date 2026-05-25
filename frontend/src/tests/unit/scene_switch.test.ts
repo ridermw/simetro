@@ -48,6 +48,7 @@ function stateWithScene(currentScene: StaticPayload): SceneSwitchState {
     hover: { clear: vi.fn(), setScene: vi.fn() },
     fault: { hide: vi.fn(), show: vi.fn() },
     warnings: { clear: vi.fn() },
+    sl1: { reset: vi.fn() },
     lastSnapshotAt: 1234,
     moverScratch,
   };

@@ -57,7 +57,11 @@ export class AnimationEngine {
   spawn(event: SimEvent, nowMs: number): void {
     const kind: SimEventKind = event.kind;
     const spec = animations[kind];
-    if (spec.durationMs <= 0) return;
+    // Defensive: unknown event kinds (e.g. new Rust SimEvent variants
+    // not yet mirrored in the TS table) are ignored rather than
+    // crashing the render loop. Mirror coverage is enforced separately
+    // by the "every SimEvent kind has a spec" unit test.
+    if (spec === undefined || spec.durationMs <= 0) return;
 
     // Find a free slot starting from nextIndex; if none, overwrite
     // the oldest by sweeping.
