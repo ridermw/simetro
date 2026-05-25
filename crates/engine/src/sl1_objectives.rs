@@ -326,15 +326,19 @@ fn place_state_breached(
     match &op_state.predicate {
         Sl1OperatingPredicate::UsedPercentGte { metric, threshold } => {
             let cap = place.capacity.get(metric).copied().unwrap_or(0);
-            if cap == 0 {
-                return false;
-            }
-            let used = runtime
-                .place_capacity_used
-                .get(place_id)
-                .and_then(|m| m.get(metric).copied())
-                .unwrap_or(0);
-            let pct = used_percent(used, cap);
+            // Zero declared capacity → treat as 0% used (consistent
+            // with maintain_utilization's objective evaluator). A
+            // predicate `used_percent >= 0` then still fires.
+            let pct = if cap == 0 {
+                0u8
+            } else {
+                let used = runtime
+                    .place_capacity_used
+                    .get(place_id)
+                    .and_then(|m| m.get(metric).copied())
+                    .unwrap_or(0);
+                used_percent(used, cap)
+            };
             pct >= *threshold
         }
         // Schema rejects this combination at load time; defensive

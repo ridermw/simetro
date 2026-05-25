@@ -3172,8 +3172,17 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         things.iter().map(|t| t.id.as_str()).collect();
     let demand_ids: std::collections::BTreeSet<&str> =
         demand.iter().map(|d| d.id.as_str()).collect();
+    let transform_ids: std::collections::BTreeSet<&str> =
+        transforms.iter().map(|t| t.id.as_str()).collect();
     for raw_obj in raw.objectives {
-        let obj = validate_objective(raw_obj, &places, &thing_ids, &demand_ids)?;
+        let obj = validate_objective(
+            raw_obj,
+            &places,
+            &place_ids,
+            &thing_ids,
+            &transform_ids,
+            &demand_ids,
+        )?;
         if !seen_objective_ids.insert(obj.id.clone()) {
             return Err(Sl1LoadError::ObjectiveDuplicateId { id: obj.id });
         }
@@ -4794,7 +4803,9 @@ fn check_ticks_in_range(
 fn validate_objective(
     raw: RawSl1Objective,
     places: &[Sl1Place],
+    place_ids: &std::collections::BTreeSet<&str>,
     thing_ids: &std::collections::BTreeSet<&str>,
+    transform_ids: &std::collections::BTreeSet<&str>,
     demand_ids: &std::collections::BTreeSet<&str>,
 ) -> Result<Sl1Objective, Sl1LoadError> {
     if !is_valid_sl1_id(&raw.id) {
@@ -4978,6 +4989,25 @@ fn validate_objective(
                         field: "p95_max_ticks",
                         value: v,
                         max: MAX_OBJECTIVE_TICKS,
+                    });
+                }
+            }
+            // If `target` is supplied, require it to resolve to a
+            // currently declared id (place, thing, transform, or
+            // demand). The exact target-kind contract for each of
+            // these variants lands with their implementation PR
+            // (observability), but typos must fail load today so
+            // strict-schema posture is preserved.
+            if let Some(target) = raw.target.as_deref() {
+                if !place_ids.contains(target)
+                    && !thing_ids.contains(target)
+                    && !transform_ids.contains(target)
+                    && !demand_ids.contains(target)
+                {
+                    return Err(Sl1LoadError::ObjectiveUnknownTarget {
+                        id,
+                        expected: "place|thing|transform|demand",
+                        target: target.to_string(),
                     });
                 }
             }

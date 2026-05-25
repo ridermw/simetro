@@ -749,6 +749,80 @@ fn maintain_utilization_zero_cap_with_nonzero_min_is_breached() {
 }
 
 #[test]
+fn place_state_used_percent_gte_zero_fires_when_capacity_is_zero() {
+    // Regression test for Codex review P2: when the referenced capacity
+    // bucket is 0, `used_percent_gte` previously returned false (silent
+    // no-op), preventing valid FCs from breaching on zero-capacity
+    // scenes. Now we treat 0 capacity as 0% used so `>= 0` always fires.
+    let places = r#"[{
+        "id":"factory","role":"p","pos":[0,0],
+        "capacity":{"machine_hours":0},
+        "storage":{"report":{"capacity":10,"initial":0}},
+        "accepts":[],"produces":[],
+        "operating_states":{
+            "saturated":{"when":"machine_hours.used_percent >= 0"}
+        }
+    }]"#;
+    let json = scene_with_full(
+        places,
+        default_things(),
+        r#"[]"#,
+        r#"[]"#,
+        r#"[{"id":"f","type":"place_state","place":"factory","state":"saturated",
+             "grace_ticks":0}]"#,
+        r#"[]"#,
+    );
+    let mut scene = load_scene_str(&json, 0).expect("loads");
+    let mut world: World = std::mem::take(&mut scene.world);
+    let (events, _msgs) = run_ticks(&mut world, 3);
+    let fires = fc_fires(&events);
+    assert_eq!(
+        fires.len(),
+        1,
+        "FC must fire even though declared capacity is 0, got {fires:?}"
+    );
+    assert_eq!(fires[0].0, "f");
+}
+
+#[test]
+fn unsupported_objective_unknown_target_rejected_at_load() {
+    // Regression test for Codex review P2: `cost_budget` /
+    // `data_quality` / `query_latency` are unsupported in PR 8 but
+    // their `target` field, when supplied, must still resolve to a
+    // declared id so authoring typos fail load instead of slipping
+    // through to runtime warnings.
+    let json = scene_with(
+        r#"[{"id":"q","type":"query_latency","p95_max_ticks":100,"target":"no-such-id"}]"#,
+        r#"[]"#,
+        r#"[]"#,
+    );
+    let err = load_scene_str(&json, 0).expect_err("unknown target must reject");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("ObjectiveUnknownTarget") && msg.contains("no-such-id"),
+        "expected ObjectiveUnknownTarget for typo'd target, got: {msg}"
+    );
+}
+
+#[test]
+fn unsupported_objective_known_target_accepted_at_load() {
+    // Sibling test: when `target` resolves to a declared place id, the
+    // load must succeed (warning still fires at runtime since the
+    // variant is unsupported in PR 8).
+    let json = scene_with(
+        r#"[{"id":"q","type":"query_latency","p95_max_ticks":100,"target":"factory"}]"#,
+        r#"[]"#,
+        r#"[]"#,
+    );
+    let mut scene = load_scene_str(&json, 0).expect("known target must load");
+    let mut world: World = std::mem::take(&mut scene.world);
+    let (_events, msgs) = run_ticks(&mut world, 3);
+    let warns = unsupported_warnings(&msgs);
+    assert_eq!(warns.len(), 1);
+    assert_eq!(warns[0].0, "q");
+}
+
+#[test]
 fn objective_breach_count_fc_fires_after_n_breached_ticks() {
     // KeepFresh on a thing with no data → Breached every tick.
     // ObjectiveBreachCount max_count=3 → fires when breach_tick_count > 3
