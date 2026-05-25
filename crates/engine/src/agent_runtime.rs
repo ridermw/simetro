@@ -40,6 +40,7 @@ use crate::lifecycle::{
 };
 
 /// Outcome of [`AgentRuntime::enqueue_decision`].
+#[allow(clippy::large_enum_variant)] // see lifecycle.rs DrainOutcome note.
 #[derive(Debug, Clone)]
 pub enum EnqueueDecisionOutcome {
     /// Request was accepted and placed in the outbox. Carries the
@@ -55,6 +56,7 @@ pub enum EnqueueDecisionOutcome {
 }
 
 /// Outcome of [`AgentRuntime::process_reply`].
+#[allow(clippy::large_enum_variant)] // see lifecycle.rs DrainOutcome note.
 #[derive(Debug, Clone)]
 pub enum ProcessReplyOutcome {
     /// On-time apply. Caller should run `chosen` through the
@@ -75,6 +77,7 @@ pub enum ProcessReplyOutcome {
 
 /// Outcome of one expired pending request, paired with the runtime's
 /// re-issue or give-up decision.
+#[allow(clippy::large_enum_variant)] // see lifecycle.rs DrainOutcome note.
 #[derive(Debug, Clone)]
 pub enum ExpireOutcome {
     /// Lifecycle re-issued; runtime updated the timeline (status

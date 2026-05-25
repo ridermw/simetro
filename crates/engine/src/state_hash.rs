@@ -185,6 +185,64 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
             }
         }
     }
+
+    // Per-link fingerprint (PR 2). Links are already sorted by id at
+    // validation time. When `sl1.links` is empty (e.g. `sl1-empty.json`
+    // and `sl1-places.json` fixtures), the loop body runs zero times
+    // and no extra bytes are appended, so older baseline hashes stay
+    // stable across this PR.
+    for link in &sl1.links {
+        h.update(b"sl1.link.v1");
+        feed_str(h, &link.id);
+        feed_str(h, &link.link_type);
+        feed_str(h, &link.from);
+        feed_str(h, &link.to);
+        h.update([link_direction_tag(link.direction)]);
+
+        h.update((link.capacity.len() as u64).to_le_bytes());
+        for (k, v) in &link.capacity {
+            feed_str(h, k);
+            h.update(v.to_le_bytes());
+        }
+
+        h.update(link.travel_ticks.to_le_bytes());
+        feed_str_list(h, &link.compatibility);
+        h.update(link.queue_capacity.to_le_bytes());
+        h.update([link_backpressure_tag(link.backpressure)]);
+
+        match link.render.as_ref() {
+            Some(r) => {
+                h.update([1u8]);
+                feed_str(h, &r.style);
+                match r.color {
+                    Some(c) => {
+                        h.update([1u8]);
+                        h.update(c.to_le_bytes());
+                    }
+                    None => h.update([0u8]),
+                }
+            }
+            None => h.update([0u8]),
+        }
+    }
+}
+
+fn link_direction_tag(d: crate::scenario_language_v1::Sl1LinkDirection) -> u8 {
+    use crate::scenario_language_v1::Sl1LinkDirection;
+    match d {
+        Sl1LinkDirection::Forward => 0x01,
+        Sl1LinkDirection::Bidirectional => 0x02,
+    }
+}
+
+fn link_backpressure_tag(b: crate::scenario_language_v1::Sl1LinkBackpressure) -> u8 {
+    use crate::scenario_language_v1::Sl1LinkBackpressure;
+    match b {
+        Sl1LinkBackpressure::BlockUpstream => 0x01,
+        Sl1LinkBackpressure::DropLowPriority => 0x02,
+        Sl1LinkBackpressure::SpillToBuffer => 0x03,
+        Sl1LinkBackpressure::DegradeQuality => 0x04,
+    }
 }
 
 fn feed_str(h: &mut Sha256, s: &str) {

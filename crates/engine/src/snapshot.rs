@@ -17,13 +17,16 @@
 //! tick loop allocates nothing per frame (zero-allocation target).
 
 use simetro_protocol::{
-    MoverState as WireMover, NodeShapeTag, NodeView, PathView, Sl1OperatingPredicateView,
+    MoverState as WireMover, NodeShapeTag, NodeView, PathView, Sl1LinkBackpressureView,
+    Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView, Sl1OperatingPredicateView,
     Sl1OperatingStateView, Sl1PlaceView, Sl1StorageSlotView, SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
-use crate::scenario_language_v1::{Sl1OperatingPredicate, Sl1Place};
+use crate::scenario_language_v1::{
+    Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1OperatingPredicate, Sl1Place,
+};
 use crate::world::World;
 
 /// Build the connect-time [`StaticPayload`] from a loaded scene.
@@ -91,6 +94,11 @@ pub fn encode_static_parts(
             .as_ref()
             .map(|sl1| sl1.places.iter().map(place_to_view).collect())
             .unwrap_or_default(),
+        sl1_links: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.links.iter().map(link_to_view).collect())
+            .unwrap_or_default(),
     }
 }
 
@@ -141,6 +149,33 @@ fn place_to_view(place: &Sl1Place) -> Sl1PlaceView {
                 )
             })
             .collect(),
+    }
+}
+
+fn link_to_view(link: &Sl1Link) -> Sl1LinkView {
+    Sl1LinkView {
+        id: link.id.clone(),
+        link_type: link.link_type.clone(),
+        from: link.from.clone(),
+        to: link.to.clone(),
+        direction: match link.direction {
+            Sl1LinkDirection::Forward => Sl1LinkDirectionView::Forward,
+            Sl1LinkDirection::Bidirectional => Sl1LinkDirectionView::Bidirectional,
+        },
+        capacity: link.capacity.clone(),
+        travel_ticks: link.travel_ticks,
+        compatibility: link.compatibility.clone(),
+        queue_capacity: link.queue_capacity,
+        backpressure: match link.backpressure {
+            Sl1LinkBackpressure::BlockUpstream => Sl1LinkBackpressureView::BlockUpstream,
+            Sl1LinkBackpressure::DropLowPriority => Sl1LinkBackpressureView::DropLowPriority,
+            Sl1LinkBackpressure::SpillToBuffer => Sl1LinkBackpressureView::SpillToBuffer,
+            Sl1LinkBackpressure::DegradeQuality => Sl1LinkBackpressureView::DegradeQuality,
+        },
+        render: link.render.as_ref().map(|r| Sl1LinkRenderHintView {
+            style: r.style.clone(),
+            color: r.color,
+        }),
     }
 }
 
