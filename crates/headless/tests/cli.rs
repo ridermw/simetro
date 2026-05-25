@@ -112,6 +112,75 @@ fn export_session_writes_expected_layout() {
 }
 
 #[test]
+fn export_session_bundle_flag_produces_tarball() {
+    let tmp_dir = std::env::temp_dir().join(format!("simetro-bundle-tar-{}", std::process::id()));
+    let tar_path = tmp_dir.with_extension("tar");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let _ = std::fs::remove_file(&tar_path);
+
+    let scene = scene_path();
+    let scene_str = scene.to_string_lossy();
+    let dir_str = tmp_dir.to_string_lossy();
+
+    let out = Command::new(bin())
+        .args([
+            "export-session",
+            "--scene",
+            &scene_str,
+            "--ticks",
+            "5",
+            "--seed",
+            "42",
+            "--out",
+            &dir_str,
+            "--bundle",
+        ])
+        .output()
+        .expect("export-session --bundle");
+
+    assert!(
+        out.status.success(),
+        "export-session --bundle failed: stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        tar_path.exists(),
+        "expected tarball at {}",
+        tar_path.display()
+    );
+    assert!(
+        tmp_dir.exists(),
+        "bundle directory must still exist alongside tarball for backward-compat"
+    );
+
+    // Sanity: tarball reproduces the bundle layout under <basename>/
+    let f = std::fs::File::open(&tar_path).expect("open tar");
+    let mut archive = tar::Archive::new(f);
+    let names: Vec<String> = archive
+        .entries()
+        .expect("entries")
+        .filter_map(Result::ok)
+        .map(|e| e.path().expect("path").to_string_lossy().into_owned())
+        .collect();
+    let prefix = tmp_dir
+        .file_name()
+        .expect("basename")
+        .to_string_lossy()
+        .into_owned();
+    for required in &["scene.json", "manifest.json", "baseline.hash"] {
+        let full = format!("{prefix}/{required}");
+        assert!(
+            names.contains(&full),
+            "tar missing required entry {full:?}; have {names:?}"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let _ = std::fs::remove_file(&tar_path);
+}
+
+#[test]
 fn unknown_scene_exits_nonzero() {
     let out = Command::new(bin())
         .args([

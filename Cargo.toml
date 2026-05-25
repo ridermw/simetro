@@ -37,6 +37,7 @@ hecs = "0.10"
 dhat = "0.3"
 sha2 = "0.10"
 regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-perl"] }
+tar = { version = "0.4", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
