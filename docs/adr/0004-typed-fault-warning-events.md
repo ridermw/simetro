@@ -38,7 +38,7 @@ enum EngineWarning {
 ```
 
 The frontend has a `FaultOverlay` (full-bleed, blocking) and a
-`WarningStrip` (pill list, auto-expiring, see PLAN §13 #1). Every
+`WarningStrip` (pill list, auto-expiring, see stale-channel detection). Every
 variant has a dedicated formatter in
 `frontend/src/ui/overlays.ts`. The runbook
 (`docs/runbook.md`) prescribes the operational response per

@@ -1,15 +1,15 @@
 # TODOs
 
-The post-Phase-1 backlog has been promoted into the canonical roadmap
-spec at:
+Do not use this file as a standalone backlog.
 
-**[`docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`](docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md)**
+The active roadmap and implementation backlog live in:
 
-The historical TODOs file (P1.5 follow-ups + the original post-Phase-1
-backlog with completion status) is preserved at
-[`docs/historical/TODOS-post-phase1.md`](docs/historical/TODOS-post-phase1.md).
+**[`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md)**
 
-New follow-ups should be added to the spec's relevant phase section, or
-opened as GitHub issues if they don't fit any existing phase. Do not
-re-create this file as a standalone backlog — the spec is the source of
-truth.
+For new work:
+
+- Add roadmap-level follow-ups to the `scenario_language_v1` spec.
+- Open GitHub issues for independent tasks that should be tracked outside
+  the roadmap document.
+- Keep PR bodies focused on the current change and list only immediate
+  follow-ups that block or clarify that PR.

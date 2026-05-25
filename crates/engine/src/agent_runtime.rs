@@ -1,12 +1,12 @@
-//! # AgentRuntime (P2.A task 8 — engine half of "LlmAgent wrapper")
+//! # AgentRuntime
 //!
 //! Orchestrates the engine-side request/reply machinery for LLM-backed
 //! agents. Owns the two state machines that must stay in sync:
 //!
-//! - [`RequestLifecycle`] — the spec §10.2.1 outbox/inbox state
-//!   machine (pending / completed / expired / re-issue / give-up).
+//! - [`RequestLifecycle`] — the outbox/inbox state machine
+//!   (pending / completed / expired / re-issue / give-up).
 //! - [`DecisionTimeline`] — the user-facing, addressable, version-
-//!   pinned ledger of every decision (spec §3 task 7 + §10).
+//!   pinned ledger of every decision.
 //!
 //! The runtime is the single place that both writes to the lifecycle
 //! AND records the corresponding DecisionTimeline transition, so
@@ -17,21 +17,16 @@
 //! ```text
 //!   ┌──────────┐   enqueue/drain/expire   ┌─────────────────┐
 //!   │ TickRunner│ ────────────────────────▶│  AgentRuntime  │
-//!   │   (P2.A   │                          │                 │
-//!   │   task 10)│ ◀──── outbox / reply ────│  • Lifecycle    │
+//!   │           │ ◀──── outbox / reply ────│  • Lifecycle    │
 //!   └──────────┘                           │  • Timeline     │
 //!                                          └─────────────────┘
 //! ```
 //!
-//! This PR delivers the runtime + its public API; wiring it into
-//! `TickRunner::run_agents` is a follow-up PR (task 10 scene wiring).
-//!
 //! ## Why a separate orchestrator module
 //!
-//! The driver.rs taste guard from spec §3 task 8 forbids growing
-//! `src-tauri/src/driver.rs`. The orchestration belongs in the engine
-//! (it's pure data-flow over deterministic state). New code goes in
-//! its own module so `driver.rs` stays a thin shim.
+//! The orchestration belongs in the engine: it is pure data-flow over
+//! deterministic state. Keeping it in its own module preserves the
+//! process boundary and keeps drivers as thin shims.
 
 use std::collections::VecDeque;
 

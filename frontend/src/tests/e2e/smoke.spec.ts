@@ -1,6 +1,6 @@
 // frontend/src/tests/e2e/smoke.spec.ts
 //
-// PLAN §17.2 / §20 DoD #18 — end-to-end smoke. Boots the production
+// end-to-end smoke coverage — end-to-end smoke. Boots the production
 // bundle (vite preview) and verifies the renderer, controls, and
 // inspector materialize on screen.
 

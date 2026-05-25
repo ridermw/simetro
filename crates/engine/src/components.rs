@@ -8,7 +8,7 @@
 //!
 //! Renamed from `ecs.rs` per plan Issue 8A. Numeric IDs are owned by the
 //! loader, which interns string IDs from JSON to `u32` at parse time
-//! (PLAN §5.2). The engine never carries string IDs in hot paths.
+//! (identifier interning contract). The engine never carries string IDs in hot paths.
 
 use serde::{Deserialize, Serialize};
 

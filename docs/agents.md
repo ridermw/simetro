@@ -39,12 +39,13 @@ raw text (`"refuse"`, `"can't help"`, `"won't help"`, `"cannot help"`,
 
 ## Backends
 
-| Backend            | Status     | Use                                      |
-| ------------------ | ---------- | ---------------------------------------- |
-| `MockBackend`      | P1 (live)  | Scripted responses for tests + replay.   |
-| `CopilotBackend`   | P1 (stub)  | Returns `NotAuthenticated`; wiring in P2.|
-| Claude API         | P2         | Drop-in `Backend` implementor.           |
-| Codex / OpenAI     | P2         | Drop-in `Backend` implementor.           |
+| Backend | Status | Use |
+| --- | --- | --- |
+| `MockBackend` | Active | Scripted responses for deterministic tests, replay, and simulated agents. |
+| `CopilotBackend` | Stubbed | Returns `NotAuthenticated` until live provider wiring is explicitly promoted. |
+
+`scenario_language_v1` is simulation-first. Additional live providers are not active
+roadmap work unless a later spec explicitly promotes them.
 
 ## External-language agents over WebSocket
 
@@ -54,7 +55,7 @@ Copilot/provider backend work: `simetro-protocol::websocket` only
 encodes and decodes one JSON `Envelope` per WebSocket text message,
 advertises subprotocol `simetro.v1`, and rejects schema mismatches.
 
-Expected P2/P3 flow:
+Expected future flow:
 
 1. External agent connects with `AgentMessage::Connect` and capabilities
    `external-agent`, `actions-v1`.
@@ -122,19 +123,13 @@ The plugin host must catch traps the same way `AgentHost` catches panics:
 one bad guest can produce a typed fault or warning, but it must not unwind
 through the engine tick or bypass deterministic scheduling.
 
-## Running with a live LLM (P2.A)
+## Running with a live LLM
 
-> **Status (end of P2.A autonomous week).** The engine-side
-> machinery is in place: request/reply lifecycle (PR #12),
-> addressable DecisionTimeline (PR #13), `AgentRuntime` orchestrator
-> (PR #14), AgentLog v2 schema + secret-pattern redactor
-> (PR #8 + #15), system prompt + `LlmError` mapping
-> (PR #10 + #11), and tool-spec round-trip tests (PR #9). The
-> remaining pieces are the engine-side `LlmAgent` Agent-trait
-> wrapper, loader support for `kind: "llm"`, scene wiring, the real
-> `copilot --acp` bridge subprocess (gated on a captured
-> happy-path fixture; see spec §2.5), and the recorded-fixture test
-> suite. Bracket your expectations accordingly.
+> **Status.** The engine-side request/reply lifecycle,
+> DecisionTimeline, AgentRuntime, AgentLog v2, system prompt,
+> `LlmError` mapping, and tool-spec round-trip tests exist. Live
+> provider wiring remains feature-gated/default-off while `scenario_language_v1`
+> focuses on simulated game-language behavior.
 
 ### Conceptual model
 
@@ -159,21 +154,22 @@ async behind a deterministic outbox/inbox boundary:
          id order)                                  row
 ```
 
-Spec §10 has the full architecture diagram; the request-lifecycle
-formalism is in §10.2.1.
+The request lifecycle is modeled as an explicit state machine so
+replies, retries, stale responses, and duplicate responses stay
+deterministic.
 
 ### Engine-side state machines
 
 Two cooperating types own the deterministic part of the boundary:
 
-- [`simetro_engine::lifecycle::RequestLifecycle`] — the spec §10.2.1
-  state machine: `pending` / `completed` / `expired` keyed by full
+- [`simetro_engine::lifecycle::RequestLifecycle`] — the
+  `pending` / `completed` / `expired` state machine keyed by full
   `RequestId { timeline_id, agent_id, source_tick, attempt }`. Drain
   rules in order: duplicate → stale → on-time apply → unknown-id.
   Re-issue with `attempt += 1` if `attempt < MAX_ATTEMPTS` (default
   2; total attempts allowed = 3); else `GiveUp`.
 - [`simetro_protocol::DecisionTimeline`] — first-class, addressable,
-  version-pinned ledger of every decision (spec §3 task 7). Each
+  version-pinned ledger of every decision. Each
   entry carries `(TimelineId, source_tick, agent_id, status,
   attempts, response?, last_warning?, last_expired_tick?)`. Sliding
   window (default 4096 entries); `TimelineId` is monotonic and never
@@ -218,10 +214,10 @@ for outcome in rt.expire_overdue(current_tick) {
 backend is a stub (`CopilotBackend` returns
 `LlmError::NotAuthenticated`); the real ACP subprocess wiring is
 gated on capturing a known-good happy-path frame trace from
-`copilot --acp` (see spec §2.5 and the "Gated on captured fixture"
-bullet in `docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`
-§14). The `MockBackend` produces scripted responses for unit tests
-and recorded-fixture replay.
+`copilot --acp`. The `MockBackend` produces scripted responses for
+unit tests and recorded-fixture replay. Live provider work remains
+feature-gated/default-off while `scenario_language_v1` focuses on simulated
+game-language behavior.
 
 When the real subprocess wiring lands, the bridge will be its own
 binary spawned by either the Tauri shell or `simetro-headless`. The
@@ -230,7 +226,7 @@ types already used by the WebSocket transport, plus per-message
 `schema_version: u32` so a version mismatch fails fast (see
 `crates/protocol/src/lib.rs`).
 
-### Security controls (spec §5 + §7)
+### Security controls
 
 Every `raw_response` is fed through
 [`simetro_engine::redactor::redact_secrets`] BEFORE being capped /
@@ -239,19 +235,15 @@ keys, GitHub fine-grained PAT, GitHub modern tokens, GitHub legacy
 OAuth, AWS access keys, Google API keys, Azure OpenAI, JWT shape,
 PEM private-key blocks. The pattern list is the single source of
 truth in `crates/engine/src/redactor.rs::PATTERN_DEFINITIONS`; the
-drift-detection test
-`redactor::tests::drift_check_against_security_threat_model_5_3`
-fails CI if the list moves out of sync with
-`docs/superpowers/analysis/p2a-security-threat-model.md` §5.3 or
-`docs/superpowers/analysis/p2a-error-map.md` §4. Adding/removing a
-pattern requires updating all three locations in one PR with a
-spec §2.7.4 security-review pass.
+drift-detection test in that module fails CI if the list moves out of
+sync with the expected pattern names. Adding/removing a pattern requires
+updating the test in the same PR with security-focused review.
 
 XPIA framing: the bridge wraps every observation in
 `<OBS-${nonce}>...</OBS-${nonce}>` with a per-request nonce. The
 system prompt (`crates/agent-bridge/prompts/system.md`) declares
 this contract and instructs the model to ignore any text outside
-the OBS block. See spec §7.1.
+the OBS block.
 
 ### Determinism invariants
 
@@ -281,10 +273,10 @@ removal deletes a safe node plus any unused incident paths. Invalid
 requests are rejected with `Warning::InvalidAction`, which shows up in
 the `WarningStrip` for transparency.
 
-## AgentLog (PLAN §10.4 / Step 12; v2 per spec §3.0 P2.A0.5)
+## AgentLog (AgentLog v2)
 
 Every agent decision writes an append-only JSONL line to the
-AgentLog. As of P2.A0.5 the schema is **v2** (additive on v1; v1
+AgentLog. As of AgentLog v2 work the schema is **v2** (additive on v1; v1
 rows are still loaded by the v2 deserializer for replay).
 
 ```jsonc
@@ -323,7 +315,7 @@ which asserts:
 - v2 fixture rows decode as `schema_version: 2` with provenance populated.
 - v1 rows round-trip through serialize/deserialize stably.
 
-### Security controls (PR #4 sec Finding 4 + P2.A0.4 §5)
+### Security controls
 
 The v2 writer enforces:
 
@@ -331,9 +323,9 @@ The v2 writer enforces:
 | --- | --- |
 | `raw_response` size cap | 64 KiB (`RAW_RESPONSE_MAX_BYTES`); excess bytes are dropped at a UTF-8 boundary and `truncated_bytes` records the original length. |
 | Schema validation before persist | `validate_entry` runs before `serde_json::to_string`; invalid rows are dropped + emit `WarningPayload::AgentLogSlow` once per run. |
-| File mode 0o600 on Unix | `AgentLog::open_for_scene` uses `OpenOptions::mode(0o600)`. Windows ACL hardening deferred to spec §13. |
+| File mode 0o600 on Unix | `AgentLog::open_for_scene` uses `OpenOptions::mode(0o600)`. Windows ACL hardening remains a future hardening item. |
 | Path traversal prevention | `AgentLog::open_for_scene(scene_id)` validates `scene_id` against `^[A-Za-z0-9_-]{1,64}$` (`validate_scene_id`). Path is `data_dir()/simetro/<scene_id>/decisions-<ts>.jsonl`. Scene JSON name is NEVER used in the path. |
-| Secret-pattern redaction | Deferred to a tight follow-up PR; the cap above ensures unbounded secret leak via raw_response is not possible today (and bridge code that emits raw_response does not exist yet). See `docs/superpowers/analysis/p2a-security-threat-model.md` §5.3 for the required minimum 10-pattern set. |
+| Secret-pattern redaction | `raw_response` is redacted before persistence using the authoritative pattern list in `crates/engine/src/redactor.rs`. |
 
 ### Path / data dir
 
@@ -357,8 +349,9 @@ would be sent to a backend; tests use it to assert the
 
 Agents are deterministic by design:
 - Observation is built from world state at a known tick boundary.
-- Backends are either local (Mock) or, in P2, called with
-  `temperature=0` and a logged seed.
+- Backends are either local (Mock) or, when live providers are enabled,
+  configured for deterministic/replayable behavior as much as the
+  provider permits.
 - The bridge never `await`s on a long network call inside the tick
   hot path; it returns a deferred decision that lands on the next
   agent boundary.

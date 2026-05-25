@@ -1,4 +1,4 @@
-//! P2.A task 1: Tool-spec round-trip & exhaustiveness tests.
+//! live-LLM foundation task 1: Tool-spec round-trip & exhaustiveness tests.
 //!
 //! Acceptance criterion from spec §3 task 1:
 //!

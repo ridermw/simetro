@@ -13,11 +13,11 @@
 //   │                                                            │
 //   └────────────────────────────────────────────────────────────┘
 //
-// PLAN §4. Step 17 adds:
+// frontend shell contract. frontend integration adds:
 //   * a real Renderer (Path2D batching, pre-allocated buckets)
 //   * a SnapshotBuffer with two-snapshot mover interpolation
 //   * a requestAnimationFrame loop (paused while tab is hidden,
-//     PLAN §13 #5: jump-cut on refocus)
+//     tab-refocus invariant: jump-cut on refocus)
 //
 // Steps 18-21 plug animations, audio, inspector, and UI shell into
 // the slots already present in this wiring.
@@ -71,7 +71,7 @@ interface AppState {
   rafHandle: number | null;
 }
 
-const TARGET_SNAPSHOT_HZ = 20; // PLAN §6 — snapshots at 20Hz
+const TARGET_SNAPSHOT_HZ = 20; // wire-protocol contract — snapshots at 20Hz
 
 function createAppState(): AppState {
   return {
@@ -371,7 +371,7 @@ function boot(): void {
 
   window.addEventListener("resize", () => resize(canvas));
 
-  // PLAN §13 #5: when tab regains focus, jump-cut to latest snapshot.
+  // tab-refocus invariant: when tab regains focus, jump-cut to latest snapshot.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       if (state.rafHandle !== null) {

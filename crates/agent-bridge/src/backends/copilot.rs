@@ -1,17 +1,15 @@
 //! Copilot CLI SDK backend.
 //!
-//! Phase-1 stub: returns `LlmError::NotAuthenticated` from every
-//! invocation. Phase-2 will wire the `github-copilot-sdk` JSON-RPC
-//! `Session` client; until then this exists to:
-//!   - keep the Backend trait honest (Mock isn't the only impl),
-//!   - reserve the configuration surface so P2 wiring is a delta only.
+//! Stub backend: returns `LlmError::NotAuthenticated` from every
+//! invocation. This keeps the Backend trait honest without making live
+//! provider calls part of the deterministic `scenario_language_v1` work.
 
 use crate::backend::{Backend, BackendRequest, BackendResponse};
 use crate::error::LlmError;
 use async_trait::async_trait;
 
-/// Configuration for the Copilot backend. All fields are optional in
-/// P1 because we never actually authenticate.
+/// Configuration for the Copilot backend. All fields are optional while
+/// live provider wiring remains feature-gated/default-off.
 #[derive(Debug, Clone, Default)]
 pub struct CopilotConfig {
     /// Model id (e.g. "gpt-4o", "claude-opus-4"). None → backend
@@ -59,7 +57,8 @@ impl Backend for CopilotBackend {
     }
 
     async fn invoke(&self, _req: BackendRequest) -> Result<BackendResponse, LlmError> {
-        // P1: explicitly unimplemented; P2 wires up github-copilot-sdk.
+        // Explicitly unimplemented until live provider wiring is promoted
+        // by the active roadmap. scenario_language_v1 uses simulated agents by default.
         Err(LlmError::NotAuthenticated)
     }
 }
@@ -71,7 +70,7 @@ mod tests {
     use crate::backend::ToolSpec;
 
     #[tokio::test]
-    async fn p1_stub_returns_not_authenticated() {
+    async fn stub_returns_not_authenticated() {
         let b = CopilotBackend::new();
         let err = b
             .invoke(BackendRequest {

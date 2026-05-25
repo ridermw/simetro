@@ -16,7 +16,7 @@ Tauri.
   layer and no double JSON-encoding to the engine.
 - The binary is < 20 MB vs Electron's ~150 MB, which matters for
   a single-engineer side project.
-- Default-deny allowlist (PLAN §12) makes the security posture
+- Default-deny allowlist (Tauri allowlist posture) makes the security posture
   explicit: every native capability the frontend can call is
   enumerated in `tauri.conf.json`.
 - Tauri 2's IPC is a typed pub/sub channel that maps cleanly onto

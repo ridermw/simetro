@@ -1,11 +1,10 @@
-//! AgentLog — append-only JSONL log of agent decisions (PLAN §15).
+//! AgentLog — append-only JSONL log of agent decisions (AgentLog contract).
 //!
 //! Each agent action produces one line. The log lives on disk under
 //! `~/.local/share/simetro/logs/` or a path the embedder picks. When
 //! the sink fails (disk full, permission denied) the log falls back
 //! to an in-memory ring buffer so the simulation never blocks; the
-//! engine surfaces this via `Warning::AgentLogSlow` (PLAN §13 chaos
-//! test 3, §17.3).
+//! engine surfaces this via `Warning::AgentLogSlow`.
 //!
 //! ```text
 //!   tick → observation → agent.act() → AgentReport
@@ -22,11 +21,11 @@
 //!                                   └──────────────┘
 //! ```
 //!
-//! Replay (P2) reads the log back: re-emit the parsed action without
+//! Replay (future) reads the log back: re-emit the parsed action without
 //! re-invoking the LLM. Captured `observation_hash` validates that the
-//! engine reached the same point on the same seed (PLAN §16).
+//! engine reached the same point on the same seed (determinism contract).
 //!
-//! ## Schema version v1 → v2 (P2.A0.5)
+//! ## Schema version v1 → v2 (AgentLog v2 work)
 //!
 //! Schema v2 is additive: every new field is `Option<T>` with serde
 //! defaults, so v1 jsonl rows still load through the v2 deserializer
@@ -37,15 +36,13 @@
 //! New v2 fields cover live-LLM provenance: `backend`, `model`,
 //! `latency_ms`, `prompt_tokens`, `completion_tokens`. `raw_response`
 //! existed in v1 but is now subject to a hard 64 KiB cap with a
-//! `truncated_bytes` marker on the row when capping fires (per the
-//! P2.A0.4 security threat model §5.6). The secret-pattern redactor
-//! lands in a follow-up PR; today the cap and the migration shim
-//! are in place so a future live backend cannot accidentally land
-//! arbitrarily large unredacted rows.
+//! `truncated_bytes` marker on the row when capping fires. The
+//! secret-pattern redactor runs before persistence so a future live
+//! backend cannot accidentally land arbitrarily large unredacted rows.
 //!
 //! Path derivation for file-backed logs uses `dirs::data_dir() /
 //! "simetro" / <validated-scene-id> / decisions-<timestamp>.jsonl`
-//! with file mode `0o600` on Unix (P2.A0.4 §5.1 + §5.2).
+//! with file mode `0o600` on Unix.
 
 use std::collections::VecDeque;
 use std::io::Write;
@@ -59,13 +56,13 @@ use crate::components::MoverState;
 
 const DEFAULT_RING_CAP: usize = 4096;
 
-/// Current AgentLog schema version. v2 was introduced by P2.A0.5.
+/// Current AgentLog schema version. v2 was introduced by AgentLog v2 work.
 pub const SCHEMA_VERSION: u32 = 2;
 
 /// Hard cap on the size of the `raw_response` field, in bytes. Larger
 /// LLM replies are truncated and the entry records the original size
 /// in `truncated_bytes` so downstream tooling can detect the truncation.
-/// Per P2.A0.4 §5.6 (64 KiB ceiling).
+/// 64 KiB ceiling.
 pub const RAW_RESPONSE_MAX_BYTES: usize = 64 * 1024;
 
 /// Maximum length of an `agent_id` accepted in an entry. Defends
@@ -197,7 +194,7 @@ impl AgentLogEntry {
         raw_response: Option<String>,
         provenance: LlmProvenance,
     ) -> Self {
-        // Spec §5.3 secret-pattern redaction MUST happen BEFORE
+        // Secret-pattern redaction MUST happen BEFORE
         // truncation, so a secret straddling the cap boundary doesn't
         // leave half its bytes intact on disk.
         let raw_response = raw_response.map(|s| crate::redactor::redact_string(&s));
@@ -244,10 +241,8 @@ fn cap_raw_response(s: Option<String>) -> (Option<String>, Option<usize>) {
 }
 
 /// Schema validation: reject rows whose fields are obviously
-/// malformed before they reach the disk. This is the
-/// PR #4 sec Finding 4 control 3 ("validate before persist") and
-/// the P2.A0.4 §5.4 fence. Returns `Ok(())` for valid entries; a
-/// typed `Err(SchemaError)` for the rest.
+/// malformed before they reach the disk. Returns `Ok(())` for valid
+/// entries and a typed `Err(SchemaError)` for the rest.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum SchemaError {
     #[error("schema_version {0} not supported (max {SCHEMA_VERSION})")]
@@ -343,7 +338,7 @@ pub fn validate_entry(entry: &AgentLogEntry) -> Result<(), SchemaError> {
 /// Mirrors the registry's contract (`^[A-Za-z0-9_-]{1,64}$`) so the
 /// log writer can construct paths without re-validating the scene
 /// registry's invariants — but the writer enforces this anyway for
-/// defense in depth (P2.A0.4 §5.1).
+/// defense in depth.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum SceneIdError {
     #[error("scene_id is empty")]
@@ -433,9 +428,8 @@ struct FileMode {
 
 impl FileMode {
     /// Owner read/write only. Used by `open_for_scene` to satisfy
-    /// P2.A0.4 §5.2 (file mode 0o600). On Windows the value is
-    /// ignored; ACL hardening is deferred to a follow-up PR per
-    /// spec §13.
+    /// File mode 0o600. On Windows the value is ignored; ACL hardening
+    /// is a future hardening item.
     const fn owner_only() -> Self {
         Self { unix_mode: 0o600 }
     }
@@ -459,7 +453,7 @@ impl Default for FileMode {
 
 /// Deterministic 64-bit hash of an observation. FNV-1a (no random
 /// seed) so two runs of the same scene + seed produce identical
-/// hashes (PLAN §16).
+/// hashes (determinism contract).
 #[must_use]
 pub fn observation_hash(obs: &Observation) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -534,7 +528,7 @@ impl AgentLog {
     /// On Unix the file is created with mode `0o600`.
     /// The `scene_id` MUST satisfy `validate_scene_id`; this is
     /// defense in depth against path traversal even if the upstream
-    /// registry was bypassed (P2.A0.4 §5.1).
+    /// registry was bypassed.
     ///
     /// # Errors
     /// Returns `io::ErrorKind::InvalidInput` wrapping `SceneIdError`
@@ -566,7 +560,7 @@ impl AgentLog {
     }
 
     /// Force the log into degraded (ring) mode. Used by chaos tests
-    /// (PLAN §17.3 slow_agent_log_disk).
+    /// (slow-agent-log-disk test).
     pub fn force_degrade(&mut self) {
         self.degraded = true;
     }
@@ -602,7 +596,7 @@ impl AgentLog {
     /// treated as a degradation event: the row is dropped (NEVER
     /// written to disk), a counter increments, and the first failure
     /// emits `WarningPayload::AgentLogSlow` (same single-warning
-    /// semantics as sink failures). This is the P2.A0.4 §5.4 control.
+    /// semantics as sink failures).
     pub fn append(&mut self, entry: &AgentLogEntry) -> Option<WarningPayload> {
         if let Err(e) = validate_entry(entry) {
             tracing::warn!(
@@ -827,7 +821,7 @@ mod tests {
     }
 
     // ============================================================
-    //  v2 schema tests (P2.A0.5)
+    //  v2 schema tests (AgentLog v2 work)
     // ============================================================
 
     #[test]
@@ -895,7 +889,7 @@ mod tests {
     /// schema_version field, no v2-only fields) MUST deserialize
     /// cleanly through the v2 struct and produce an entry whose
     /// schema_version is 1 (so replay tooling can tell). This is the
-    /// P2.A0.5 acceptance criterion: replay works against both v1 and
+    /// AgentLog v2 work acceptance criterion: replay works against both v1 and
     /// v2 fixtures bit-for-bit deterministic.
     #[test]
     fn v1_jsonl_row_deserializes_as_schema_version_1() {
@@ -923,7 +917,7 @@ mod tests {
         assert_eq!(entry.raw_response, None);
     }
 
-    // ---- raw_response cap (P2.A0.4 §5.6) ----------------------
+    // ---- raw_response cap ----------------------------------------------
 
     #[test]
     fn raw_response_capped_at_64kib_with_truncation_marker() {
@@ -961,7 +955,7 @@ mod tests {
         assert_eq!(entry.truncated_bytes, Some(s.len()));
     }
 
-    // ---- schema validation (P2.A0.4 §5.4) ---------------------
+    // ---- schema validation ---------------------------------------------
 
     #[test]
     fn validate_entry_accepts_well_formed_row() {
@@ -1079,7 +1073,7 @@ mod tests {
         );
     }
 
-    // ---- AgentLog.append() drops invalid rows (P2.A0.4 §5.4) ---
+    // ---- AgentLog.append() drops invalid rows --------------------------
 
     #[test]
     fn append_drops_invalid_row_and_warns_once() {
@@ -1107,7 +1101,7 @@ mod tests {
         assert_eq!(log.dropped(), 2);
     }
 
-    // ---- scene_id validation (P2.A0.4 §5.1) -------------------
+    // ---- scene_id validation -------------------------------------------
 
     #[test]
     fn validate_scene_id_accepts_alphanumeric_underscore_dash() {
@@ -1168,7 +1162,7 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
-    // ---- File mode 0o600 (P2.A0.4 §5.2) — Unix only -----------
+    // ---- File mode 0o600 — Unix only -----------------------------------
 
     #[cfg(unix)]
     #[test]

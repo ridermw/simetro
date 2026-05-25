@@ -1,16 +1,14 @@
 // frontend/src/ui/controls.ts
 //
-// PLAN §4 / §20 DoD #7 / §11.1 — sim controls bar.
+// simulation controls UI — sim controls bar.
 //
 //   ┌───────────────────────────────────────────────────────────┐
 //   │  ▶/⏸   ⏭ step   ↻ reload   speed: 0.5×  1×  2×  4×        │
 //   └───────────────────────────────────────────────────────────┘
 //
-// Controls do NOT mutate sim state directly — they emit intents over
-// a callback so the transport layer can decide whether to send them
-// over the wire (Tauri P1) or to a local mock (browser dev). This
-// keeps the UI decoupled from PLAN §6's typed control commands which
-// don't ship until P2.
+// Controls do NOT mutate sim state directly; they emit intents over a
+// callback so the transport layer can decide whether to send them over
+// the wire (Tauri) or to a local mock (browser dev).
 
 export type ControlIntent =
   | { kind: "TogglePause" }

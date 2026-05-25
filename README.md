@@ -1,10 +1,14 @@
 # simetro
 
-A personal-use, JSON-driven, top-down simulation platform with the visual
-sensibility of Mini Metro and the systemic clarity of Shapez. A human watches;
-AI agents author and play.
+A personal-use, JSON-driven, deterministic systems-game platform. A human
+watches; AI agents operate, author, and improve gameplay policies inside
+simulated worlds with visible stakes.
 
-> **Status:** Phase 1.5 complete. Engine, protocol, headless CLI, agent-bridge, TypeScript frontend with Canvas2D renderer, animation engine, audio, inspector, UI shell, faults/warnings overlays, and Playwright E2E suite. The Tauri desktop shell now spawns the engine driver, streams snapshots at 20 Hz, handles control intents (pause/resume/speed/reload), and the animated MockTransport keeps the browser-only dev flow working. See [`docs/`](./docs/) for architecture, schema, protocol, agents, testing, runbook, and ADRs.
+> **Current roadmap:** [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](./docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md).
+> The active direction is **scenario_language_v1**: move beyond kinetic dioramas toward
+> winnable/losable AI-operated scenarios using one JSON grammar: places, links,
+> typed things, transforms, demand, pressure, outcomes, agency, observability,
+> and milestones.
 
 ## Quick start
 
@@ -60,6 +64,7 @@ tests/baselines/     # determinism hashes + visual diff PNGs
 
 ## Docs
 
+- [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](./docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md) — active roadmap and design plan
 - [`docs/tauri-bridge.md`](./docs/tauri-bridge.md) — Tauri engine driver architecture + message flow
 - [`docs/architecture.md`](./docs/architecture.md) — system tour, crate map, determinism contract
 - [`docs/schema.md`](./docs/schema.md) — JSON scene schema
@@ -72,9 +77,8 @@ tests/baselines/     # determinism hashes + visual diff PNGs
 
 ## Plan
 
-See [`PLAN.md`](./PLAN.md) for the full Phase 1 plan (post mega-review),
-including architecture, schema, observability, deployment, and the 22-step
-implementation sequence.
+See [`PLAN.md`](./PLAN.md) for the active roadmap pointer and implementation
+guardrails.
 
 ## License
 

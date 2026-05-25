@@ -1,6 +1,6 @@
 // frontend/src/renderer/canvas.ts
 //
-// PLAN §9 / §14 — single Canvas2D context; Path2D batching by color;
+// renderer batching and allocation target — single Canvas2D context; Path2D batching by color;
 // **zero per-frame allocations** after warm-up. The renderer owns
 // long-lived scratch buffers (Path2D per palette color, mover lerp
 // array) and never `new`s during draw().

@@ -1,5 +1,5 @@
 //! Mappings from engine error types into wire `FaultPayload` and
-//! `WarningPayload` variants (PLAN §11.2).
+//! `WarningPayload` variants (fault/warning mapping contract).
 //!
 //! Every fallible code path in the engine is responsible for surfacing
 //! a typed message — never a silent log. The conversions live here so
@@ -31,7 +31,7 @@ pub fn load_error_to_fault(err: &LoadError) -> FaultPayload {
 /// Convert an [`AgentError`] into either a `Fault` (panic — sim pauses)
 /// or a `Warning` (invalid action or timeout — sim continues).
 ///
-/// PLAN §11.2 specifies AgentError::Panicked → Fault::AgentCrashed,
+/// fault/warning mapping contract specifies AgentError::Panicked → Fault::AgentCrashed,
 /// AgentError::InvalidAction / Timeout → Warning::InvalidAction.
 #[must_use]
 pub fn agent_error_to_message(err: &AgentError) -> SimMessage {

@@ -1,9 +1,8 @@
 # Agent instructions for simetro
 
 > **Authoritative roadmap:** see
-> [`docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`](docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md).
-> That spec defines the current active scope (Phase 2.A → 2.C this week),
-> autonomous-execution policy, PR workflow, and stop conditions.
+> [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md).
+> That spec supersedes previous roadmap drafts and archived plans.
 
 ## Work style
 
@@ -19,31 +18,36 @@
   tick boundaries). The deterministic non-LLM world must never block
   on an LLM call.
 
+## Current product direction
+
+The active product direction is **scenario_language_v1**:
+
+- Move from kinetic scenes to winnable/losable AI-operated simulations.
+- Use one JSON grammar: places, links, typed things, transforms, demand,
+  pressure, outcomes, agency, observability, and milestones.
+- First vertical slice: **GPU Launch Week**, a simulated HPC/data-ops
+  scenario with visible dashboard freshness, job scheduling, storage,
+  quota/cost, telemetry quality, and multi-agent policy pressure.
+- Autoresearch-style loops are in scope as simulated policy search over
+  a fixed scenario: one heuristic change per trial, same seed/pressure,
+  trusted evaluator, keep/discard based on outcome.
+
 ## Live Copilot/provider direction
 
-Live Copilot CLI SDK integration is the current marquee work
-(Phase 2.A in the spec). It supersedes the previous "intentionally
-deferred" stance.
+Live Copilot integration remains supported by the existing bridge
+direction, but it is not the product marquee for `scenario_language_v1`. Do not let
+live-provider work distract from the simulated game-language slice.
 
-- The Copilot backend uses `copilot --acp` (Agent Client Protocol)
-  spawned as a subprocess from the `simetro-bridge` binary. No HTTP
-  client, no API keys — `gh auth status` is the only credential.
-- The bridge is a **separate process** from the engine (per
-  [`docs/historical/PLAN-v4-phase1.md`](docs/historical/PLAN-v4-phase1.md)
-  §3.4 and the post-PR-#3 spec §10). The engine speaks the versioned
-  wire protocol to it.
+- The bridge remains a separate process from the engine.
+- No live cloud/provider calls run in CI.
+- Live LLM scenes stay feature-gated/default-off.
 - Every `LlmError` variant maps to a typed `Fault` or `Warning`. No
   silent failures.
 
-## Other backends (OpenAI, Anthropic, Codex, Ollama)
-
-Out of active scope. Stay shelved unless the spec explicitly enables
-them. The `Backend` trait keeps the door open.
-
 ## WebSocket external agents and WASM plugin agents
 
-Out of active scope. The protocol foundation exists; do not extend it
-into live wiring during the current working week.
+Out of active scope for `scenario_language_v1` implementation unless the roadmap
+explicitly promotes them.
 
 ## Safety rules
 
@@ -62,6 +66,12 @@ into live wiring during the current working week.
   not silent no-ops.
 - Live LLM scenes must be feature-gated; CI never invokes the real
   Copilot provider.
+- For v3/stakes scenes, unknown behavior-bearing schema fields must fail
+  load. Only `catalog`/metadata may remain permissive.
+- Use typed predicates and bounded declarative policies. Do not add an
+  expression language or script-like scene behavior.
+- Keep Azure/Kusto/Fabric/Power BI/HPC/autoresearch concepts simulated
+  unless a later spec explicitly authorizes a live integration.
 
 ## Review workflow
 
@@ -94,5 +104,5 @@ Update nearby docs when changing:
 - Protocol or agent surfaces: `docs/protocol.md`, `docs/agents.md`.
 - Tauri scene switching or file watching: `docs/tauri-bridge.md`,
   `docs/runbook.md`.
-- LLM/agent runtime behavior, autonomous-execution policy, and PR
-  workflow: the canonical spec.
+- `scenario_language_v1` roadmap, schema decisions, policy search, and PR workflow:
+  the canonical spec.

@@ -1,4 +1,4 @@
-//! # DecisionTimeline (P2.A task 7)
+//! # DecisionTimeline (live-LLM foundation task 7)
 //!
 //! Promotes per-agent decision history from an ad-hoc engine field to
 //! a **first-class, addressable, version-pinned object** that replay,

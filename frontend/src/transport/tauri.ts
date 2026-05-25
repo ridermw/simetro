@@ -1,6 +1,6 @@
 // frontend/src/transport/tauri.ts
 //
-// P1.5 Step 3 — Real transport that receives SimMessages from the Rust
+// real transport — Real transport that receives SimMessages from the Rust
 // engine driver via Tauri events. Used when the app is running inside
 // the Tauri desktop shell (detected by __TAURI_INTERNALS__ on window).
 //

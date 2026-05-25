@@ -1,6 +1,6 @@
 // frontend/src/inspector/hover.ts
 //
-// PLAN §4 / §20 DoD #6 — hover-to-explain. Tracks the cursor over
+// inspector UI — hover-to-explain. Tracks the cursor over
 // the canvas, hit-tests against the current static scene + snapshot,
 // and surfaces a tooltip with the piece's human-readable JSON id
 // (from Static.node_names / mover_names) plus a one-line summary.

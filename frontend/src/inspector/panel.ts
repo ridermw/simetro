@@ -1,12 +1,12 @@
 // frontend/src/inspector/panel.ts
 //
-// PLAN §4 / §20 DoD #6 — Inspector panel. Shows the most recent
+// inspector UI — Inspector panel. Shows the most recent
 // AgentReport: agent id (string in the protocol mirror), considered
 // actions with confidence, chosen action, free-text rationale, plus
 // a tiny scrolling timeline of recent decisions.
 //
 // All text rendering goes through textContent — never innerHTML —
-// per PLAN §5.1 / §12 (eslint-plugin-no-unsanitized enforces this).
+// per safe text-rendering policy (eslint-plugin-no-unsanitized enforces this).
 //
 //   ┌──────────────────────────────────────────────────┐
 //   │  AGENT speed_tuner_0   tick 142   conf 0.83      │

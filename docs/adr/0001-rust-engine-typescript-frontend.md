@@ -30,7 +30,7 @@ Split at the protocol boundary:
 - (+) Engine determinism is enforceable via cargo benchmarks +
   baseline hash without any frontend involvement.
 - (+) The same engine binary serves the desktop app, headless CI,
-  and (P2) any other surface that speaks the protocol.
+  and (future) any other surface that speaks the protocol.
 - (+) Frontend can be iterated against a `MockTransport` with no
   Rust toolchain in the loop.
 - (-) Two build systems, two test runners, two lint configs. We

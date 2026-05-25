@@ -11,12 +11,12 @@
 //!                                  └──────────────┘     rationale, confidence
 //!
 //!   The `AgentHost` wraps `agent.act()` in `std::panic::catch_unwind`
-//!   so a panicking agent never takes down the engine (PLAN §11.4).
+//!   so a panicking agent never takes down the engine (agent isolation contract).
 //!   Panics surface as `AgentError::Panicked`, which Step 11 will turn
 //!   into a typed `SimMessage::Fault::AgentCrashed` event.
 //! ```
 //!
-//! Built-in agents implement [`Agent`] directly. LLM-backed agents (P2)
+//! Built-in agents implement [`Agent`] directly. LLM-backed agents (future)
 //! will be a thin wrapper that forwards observations to the bridge.
 
 mod observation;
@@ -33,10 +33,10 @@ use crate::error::AgentError;
 use crate::world::World;
 
 /// Hard cap on how many alternatives an agent may include in
-/// `AgentReport.considered` (PLAN §7A / §13 edge case 4).
+/// `AgentReport.considered` (agent-report cap).
 pub const MAX_CONSIDERED: usize = 1000;
 
-/// Hard cap on `AgentReport.rationale` length in characters (PLAN §8).
+/// Hard cap on `AgentReport.rationale` length in characters (agent observation contract).
 pub const MAX_RATIONALE_CHARS: usize = 512;
 
 /// Behavior contract for an in-process agent.
@@ -66,7 +66,7 @@ pub trait Agent: Send {
 /// - Calls `observe` then `act` once per scheduled invocation.
 /// - Catches panics and converts them to `AgentError::Panicked`.
 /// - Trims oversized `considered` lists and rationale strings to the
-///   plan-mandated caps (PLAN §8, §13).
+///   plan-mandated caps (agent observation contract, §13).
 pub struct AgentHost {
     agent: Box<dyn Agent>,
 }

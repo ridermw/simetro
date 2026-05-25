@@ -6,12 +6,11 @@
 //! `Reply` (or `LlmError`-mapped warning) back to stdout. Exits
 //! cleanly on `Shutdown` or EOF.
 //!
-//! Backend selection (P2.A task 6 ships only the `mock` backend
-//! wired into the loop; `copilot` arrives with task 2-real gated on
-//! the captured ACP fixture):
+//! Backend selection:
 //!
 //! - `SIMETRO_BRIDGE_BACKEND=mock` (default) → [`MockBackend`]
-//! - any other value → logs and exits with code 2
+//! - any other value → logs and exits with code 2 until live provider
+//!   wiring is explicitly enabled
 //!
 //! ## Determinism
 //!
@@ -45,7 +44,7 @@ fn main() -> std::process::ExitCode {
         other => {
             eprintln!(
                 "simetro-bridge: unknown backend `{other}` (only `mock` is wired today; \
-                 `copilot` ships with task 2-real, gated on captured ACP fixture)"
+                 live providers remain feature-gated/default-off)"
             );
             return std::process::ExitCode::from(2);
         }

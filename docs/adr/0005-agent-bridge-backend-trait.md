@@ -4,10 +4,9 @@
 
 ## Context
 
-simetro's interesting bit is watching LLM-driven agents make
-decisions. The user wants the LLM connection itself to be
-**plug-n-play**: today Copilot CLI SDK, tomorrow Claude API, then
-Codex, then a local model.
+simetro's interesting bit is watching agents make decisions. The LLM
+connection itself should remain swappable without contaminating the
+deterministic engine.
 
 If the engine imports any LLM SDK directly, swapping providers is
 invasive and the engine takes on async runtimes, HTTP clients,
@@ -20,8 +19,8 @@ A separate `crates/agent-bridge` crate that:
 
 1. Defines a `Backend` trait: `async fn complete(&self, prompt,
    tools) -> Result<BackendResponse, LlmError>`.
-2. Ships `MockBackend` (queue of canned responses, P1) and a
-   `CopilotBackend` stub (P1 surface, P2 live).
+2. Ships `MockBackend` (queue of canned responses) and a
+   `CopilotBackend` stub.
 3. Owns tool specs (5 JSON Schemas in `tools.rs`).
 4. Parses tool calls into typed engine `Action`s and reports
    `LlmError::Refused` / `LlmError::MalformedResponse` for the
@@ -35,8 +34,8 @@ protocol.
 
 ## Consequences
 
-- (+) Backends are interchangeable. Adding Claude or Codex is a
-  new `impl Backend` and nothing else.
+- (+) Backends are interchangeable when a future roadmap explicitly
+  promotes additional live providers.
 - (+) The engine stays pure — no `tokio`, no `reqwest`, no API
   keys in its dependency tree.
 - (+) Determinism gate is unaffected by LLM choice: the test bench

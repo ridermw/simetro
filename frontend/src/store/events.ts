@@ -1,9 +1,9 @@
 // frontend/src/store/events.ts
 //
-// PLAN §4 — event queue. SimEvents arrive in bursts (one Events
+// frontend shell contract — event queue. SimEvents arrive in bursts (one Events
 // message can carry many) but are consumed by the animation engine
 // frame-by-frame. We use a tiny FIFO that pre-allocates capacity to
-// avoid per-tick churn (PLAN §14 zero-alloc invariant on the frontend
+// avoid per-tick churn (zero-allocation invariant on the frontend
 // side).
 //
 //   transport ──▶ enqueue(events) ──▶ ring ──▶ drainInto(buffer)
@@ -12,7 +12,7 @@
 //                                animation engine, audio engine
 //
 // Capacity 1024 covers the worst case for a 1000-mover stress scene
-// emitting one event per mover per tick at 30Hz (PLAN §14 stretch).
+// emitting one event per mover per tick at 30Hz (event-queue stress target).
 
 import type { SimEvent } from "../protocol/messages";
 

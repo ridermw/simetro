@@ -1,4 +1,4 @@
-//! System prompt for live LLM backends (P2.A task 3).
+//! System prompt for live LLM backends.
 //!
 //! The prompt is stored as a separate Markdown file at
 //! `crates/agent-bridge/prompts/system.md` and embedded into the
@@ -8,17 +8,9 @@
 //!
 //! The prompt is **read-only data**. No runtime; no template
 //! substitution at this layer. The per-request nonce sentinel
-//! framing for `Observation` data (per P2.A0.4 §7.1) is added by
-//! the bridge's request-builder when an actual ACP turn is sent;
-//! the prompt only DESCRIBES the framing contract that the
-//! request-builder will use.
-//!
-//! Acceptance criteria from spec §3 task 3:
-//! - The prompt explains all tools currently in `action_tool_specs()`.
-//! - The prompt explains the `Observation` shape.
-//! - The prompt explains the `AgentReport` contract.
-//! - The prompt is loaded via `include_str!` so it ships with the
-//!   binary; there is no runtime file-IO to load it.
+//! framing for `Observation` data is added by the bridge's request-builder
+//! when an actual ACP turn is sent; the prompt only describes the framing
+//! contract that the request-builder will use.
 
 /// The system prompt sent to live LLM backends. Embedded at compile
 /// time from `prompts/system.md` so it ships with the binary and
@@ -40,8 +32,8 @@ pub const REQUIRED_PROMPT_SUBSTRINGS: &[&str] = &[
     // Output contract.
     "rationale",
     "confidence",
-    // Observation shape (must mention the per-request nonce framing
-    // per PR #7 §7.1).
+    // Observation shape must mention the per-request nonce framing used
+    // for prompt-injection isolation.
     "OBS-",
     "untrusted observation data",
     // Refusal classifier vocabulary the prompt warns about.

@@ -6,7 +6,7 @@
 //!    and paths with positions baked, plus reverse id maps for the
 //!    Inspector. Paths are emitted in their original color so the
 //!    renderer can group by `color` and draw one `Path2D` per color
-//!    instead of one per path (PLAN §9 / §14 — ~6 draw calls per scene
+//!    instead of one per path (renderer batching and allocation target — ~6 draw calls per scene
 //!    instead of ~1000).
 //! 2. [`encode_snapshot`] — periodically (target 20Hz): only the
 //!    moving bits. Mover positions are interpolated from the path the
@@ -14,7 +14,7 @@
 //!    Empty movers are skipped.
 //!
 //! Both functions write into caller-supplied buffers so the renderer
-//! tick loop allocates nothing per frame (PLAN §14).
+//! tick loop allocates nothing per frame (zero-allocation target).
 
 use simetro_protocol::{
     MoverState as WireMover, NodeShapeTag, NodeView, PathView, SnapshotPayload, StaticPayload,
@@ -91,7 +91,7 @@ pub fn encode_static_parts(
 /// `Path2D` per color and re-uses it across frames.
 ///
 /// Returns a Vec of `(color, indices_into_paths)`. Sorted by color so
-/// output is deterministic across runs (PLAN §16).
+/// output is deterministic across runs (determinism contract).
 #[must_use]
 pub fn color_batches(paths: &[PathView]) -> Vec<(u8, Vec<u32>)> {
     use std::collections::BTreeMap;

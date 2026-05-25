@@ -1,6 +1,6 @@
 //! Throughput smoke test for the demo scene.
 //!
-//! PLAN §14 target: ≥ 50,000 tps on a 3-mover demo. This test runs
+//! throughput target: ≥ 50,000 tps on a 3-mover demo. This test runs
 //! 10,000 ticks and asserts a conservative floor (10,000 tps) to keep
 //! the gate green on slow CI runners. The real benchmark lands as a
 //! criterion suite in Step 7+; this is the sanity check.
@@ -39,7 +39,7 @@ fn demo_paths_meets_minimum_tps_floor() {
     );
 
     // Conservative floor for debug builds on shared CI. Release builds
-    // should comfortably exceed 50k tps (PLAN §14 target).
+    // should comfortably exceed 50k tps (throughput target).
     assert!(
         tps >= 5_000.0,
         "tps below floor: {tps:.0} (expected >= 5000 in debug; release target is 50000)"

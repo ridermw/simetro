@@ -10,10 +10,10 @@
 //! Each `tick_once` runs the system pipeline in fixed order:
 //!     lifecycle → movement → interaction
 //! and finally emits a `SimEvent::Tick` so subscribers can synchronize
-//! frame markers (PLAN §16 — deterministic, ordered system execution).
+//! frame markers (determinism contract — deterministic, ordered system execution).
 //!
 //! `TickRunner` owns all per-tick scratch buffers so steady-state ticks
-//! make zero heap allocations (PLAN §14 target; gated by the dhat test
+//! make zero heap allocations (throughput target; gated by the dhat test
 //! in `tests/zero_alloc.rs`).
 
 use simetro_protocol::{ActionTag, SimEvent, SimMessage};
@@ -49,7 +49,7 @@ pub struct TickRunner {
     production_scratch: production::ProductionScratch,
     /// Built-in / in-process agents driven by the engine.
     hosts: Vec<AgentHost>,
-    /// Optional append-only log of agent decisions (PLAN §15). When
+    /// Optional append-only log of agent decisions (AgentLog contract). When
     /// present, every successful agent action is written here.
     agent_log: Option<AgentLog>,
     last_arrivals: u32,
@@ -158,7 +158,7 @@ impl TickRunner {
     /// Advance the world by exactly one fixed timestep. Returns the
     /// number of mover arrivals this tick.
     ///
-    /// **Early return when world is not runnable** (PLAN §13 / review):
+    /// **Early return when world is not runnable** (run-state safety review):
     /// if a prior tick or agent step left `world.state` in
     /// [`RunState::Paused`] or [`RunState::Faulted`], the systems
     /// pipeline is skipped and the tick counter is NOT advanced. This
@@ -364,7 +364,7 @@ mod tests {
         assert!((acc - 0.0).abs() < 1e-6);
     }
 
-    // ---- Step 11: agent integration ------------------------------------
+    // ---- Agent integration ---------------------------------------------
 
     struct PanickingAgent;
     impl Agent for PanickingAgent {
@@ -583,7 +583,7 @@ mod tests {
         assert!(runner.messages().is_empty());
     }
 
-    // ---- Step 12: AgentLog wiring --------------------------------------
+    // ---- AgentLog wiring -----------------------------------------------
 
     #[test]
     fn agent_log_records_decisions_when_attached() {

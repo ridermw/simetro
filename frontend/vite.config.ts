@@ -1,9 +1,9 @@
 import { defineConfig } from "vite";
 
-// PLAN §3.1 / §14: frontend served at dev port 5173 in browser-only
+// frontend dev-server contract: frontend served at dev port 5173 in browser-only
 // mode, then re-served by Tauri inside the desktop shell. Aggressive
-// HMR is essential — Step 18 measures animations.ts hot-reload at
-// <300ms (PLAN §14, §20 DoD item 5).
+// HMR is essential: animation tuning should hot-reload quickly without
+// losing simulation state.
 export default defineConfig({
   root: ".",
   publicDir: "public",

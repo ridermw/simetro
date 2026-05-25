@@ -9,7 +9,7 @@
 //! ```
 //!
 //! Loader is split in two halves: deserialization (serde) and validation
-//! (this file). Validation enforces every row in PLAN §5.1. Each field's
+//! (this file). Validation enforces every row in scene loader contract. Each field's
 //! violation maps to a specific [`LoadError`] variant so the canvas
 //! overlay can point at the source location.
 
@@ -50,7 +50,8 @@ pub struct AgentSpec {
     pub deadline_ticks: u32,
 }
 
-/// Win/end condition for the scene. Only `LoopForever` is defined in P1.
+/// Win/end condition for legacy scenes. Schema v3 will add explicit
+/// objectives, failure conditions, and `GameOutcome`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Goal {
     LoopForever,

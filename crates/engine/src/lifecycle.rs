@@ -1,7 +1,4 @@
-//! P2.A task 5: outbox/inbox boundary with formal request lifecycle.
-//!
-//! Spec source of truth: `docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`
-//! §10.2.1 "Request lifecycle (formal model)".
+//! Outbox/inbox boundary with formal request lifecycle.
 //!
 //! ## What this module does
 //!
@@ -23,17 +20,17 @@
 //! ## What this module does NOT do
 //!
 //! - **No wire protocol.** [`AgentRequest`]/[`AgentReply`] are
-//!   in-process types. P2.A task 6 (bridge process split) serializes
-//!   them over framed JSON.
-//! - **No `LlmAgent`.** P2.A task 8 wires the `LlmAgent` engine wrapper
-//!   that PRODUCES `AgentRequest` via this lifecycle and CONSUMES
-//!   replies. This module's tests use a `MockReplyChannel` instead.
+//!   in-process types. Bridge process code serializes them over framed
+//!   JSON when live provider wiring is enabled.
+//! - **No agent wrapper.** Agent wrappers produce `AgentRequest`s via
+//!   this lifecycle and consume replies. This module's tests use mock
+//!   replies instead.
 //! - **No `Action` apply.** The lifecycle reports what should happen
 //!   (apply / drop with warning / fault) via the [`DrainOutcome`]
 //!   return type; the caller is responsible for actually applying
 //!   the `Action` via the engine's deterministic action pipeline.
 //!
-//! ## Determinism invariants (spec §10.2.1)
+//! ## Determinism invariants
 //!
 //! - All state transitions are keyed to ENGINE TICKS and stable
 //!   AGENT IDs, never to wall-clock arrival order. Two runs of the
@@ -49,7 +46,7 @@ use std::collections::{HashMap, VecDeque};
 
 use simetro_protocol::{Action, FaultPayload, SimMessage, WarningPayload};
 
-/// Unique identifier for one decision attempt. Per spec §10.2.1.
+/// Unique identifier for one decision attempt.
 ///
 /// The four fields together pin a request to a specific
 /// (decision, agent, tick, attempt) tuple. A re-issued request bumps
@@ -57,8 +54,7 @@ use simetro_protocol::{Action, FaultPayload, SimMessage, WarningPayload};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct RequestId {
     /// Monotonic-per-engine-run identifier from the DecisionTimeline
-    /// (P2.A task 7 will produce these). Distinguishes one logical
-    /// decision from another. Never reused.
+    /// Distinguishes one logical decision from another. Never reused.
     pub timeline_id: u64,
     /// Stable agent identifier (matches `AgentHost::id()`).
     pub agent_id: String,
@@ -131,9 +127,8 @@ pub struct AgentReply {
 /// Maximum re-issues per decision. Total attempts allowed =
 /// `MAX_ATTEMPTS + 1` (the original `attempt=0` plus `MAX_ATTEMPTS`
 /// re-issues). With `MAX_ATTEMPTS = 2` the lifecycle accepts
-/// attempts `0, 1, 2` before giving up. This matches spec §10.2.1's
-/// formula `if attempt < MAX_ATTEMPTS, enqueue a new outbox entry
-/// with attempt += 1`.
+/// attempts `0, 1, 2` before giving up. If `attempt < MAX_ATTEMPTS`,
+/// the lifecycle enqueues a new outbox entry with `attempt += 1`.
 ///
 /// Hard-coded for now; can be made configurable per scene in a later
 /// PR.
@@ -169,9 +164,8 @@ pub enum DrainOutcome {
     /// Stale post-expiry reply. Caller emits the [`SimMessage`] and
     /// drops the reply (does not mutate world).
     Stale { message: SimMessage },
-    /// Reply for a request ID the lifecycle has never seen. Spec
-    /// §10.2.1 calls this an engine fault — should never happen under
-    /// a correct bridge.
+    /// Reply for a request ID the lifecycle has never seen. This
+    /// should never happen under a correct bridge.
     UnknownId { message: SimMessage },
 }
 
@@ -205,8 +199,8 @@ pub enum EnqueueOutcome {
     BackpressureDropped { message: SimMessage },
 }
 
-/// Per-engine-run state machine implementing the spec §10.2.1
-/// drain-time rules. Holds three sets of request IDs:
+/// Per-engine-run state machine implementing deterministic drain-time
+/// rules. Holds three sets of request IDs:
 ///
 /// - `pending` — emitted to outbox; not yet drained from inbox; not
 ///   yet expired. Keyed by full `RequestId` so re-issues coexist
@@ -217,7 +211,7 @@ pub enum EnqueueOutcome {
 ///   re-issued or given up on. Bounded ring.
 ///
 /// The lifecycle is intentionally INDEPENDENT of `TickRunner` and
-/// `AgentHost` so it can be tested with a mock reply channel. P2.A
+/// `AgentHost` so it can be tested with a mock reply channel. live-LLM foundation
 /// task 8 will wire it into `TickRunner`.
 #[derive(Debug, Default)]
 pub struct RequestLifecycle {
@@ -273,8 +267,7 @@ impl RequestLifecycle {
     }
 
     /// Try to enqueue a new request. If another request for the same
-    /// agent is already `pending`, returns [`EnqueueOutcome::BackpressureDropped`]
-    /// per spec §10.2.1 ("one-outstanding-per-agent backpressure").
+    /// agent is already `pending`, returns [`EnqueueOutcome::BackpressureDropped`].
     ///
     /// **Deadline semantics.** `deadline_abs` is computed from
     /// `current_tick + deadline_ticks`, NOT `source_tick + deadline_ticks`.
@@ -282,9 +275,8 @@ impl RequestLifecycle {
     /// [`expire_overdue`](Self::expire_overdue)): a re-issue preserves
     /// `source_tick` for stable identity, but the deadline rebases to
     /// the re-issue tick so the bridge gets a real chance to respond.
-    /// Spec §10.2.1 wording is "tick N + k where k is the configured
-    /// deadline" — N is the issue tick (which equals `current_tick`),
-    /// not the original `source_tick`.
+    /// The deadline is based on the issue tick (`current_tick`), not
+    /// the original `source_tick`.
     pub fn try_enqueue(&mut self, request: AgentRequest, current_tick: u64) -> EnqueueOutcome {
         if self.has_pending_for_agent(&request.id.agent_id) {
             return EnqueueOutcome::BackpressureDropped {
@@ -311,8 +303,8 @@ impl RequestLifecycle {
     /// Returns the [`DrainOutcome`] describing what the caller
     /// should do with the reply.
     ///
-    /// **Deadline enforcement.** Per spec §10.2.1, the on-time apply
-    /// rule requires BOTH `reply.id ∈ pending` AND
+    /// **Deadline enforcement.** The on-time apply rule requires BOTH
+    /// `reply.id ∈ pending` AND
     /// `current_tick ≤ deadline`. If a reply arrives for a request
     /// whose deadline has passed but `expire_overdue` has not yet
     /// been called this tick, this function still rejects the apply
@@ -321,7 +313,7 @@ impl RequestLifecycle {
     pub fn drain_reply(&mut self, reply: AgentReply, current_tick: u64) -> DrainOutcome {
         let agent_id = reply.id.agent_id.clone();
 
-        // Order matters per spec §10.2.1:
+        // Order matters:
         // 1. Duplicate?
         if self.completed.contains(&reply.id) {
             return DrainOutcome::Duplicate {

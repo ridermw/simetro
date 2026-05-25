@@ -1,4 +1,4 @@
-# Stakes v1 world model plan
+# scenario_language_v1 world model plan
 
 ## Final review scope
 
@@ -179,7 +179,7 @@ Current implementation facts:
 
 ## Proposed approach
 
-Build a small, vertical "stakes v1" world model before expanding more worlds. The goal is to make one showcase scene feel like an AI is playing a game under pressure, then generalize the JSON schema once the loop is fun.
+Build a small, vertical "scenario_language_v1" world model before expanding more worlds. The goal is to make one showcase scene feel like an AI is playing a game under pressure, then generalize the JSON schema once the loop is fun.
 
 ### Core design
 
@@ -2237,7 +2237,7 @@ After the single-run spectator version works, add **autoresearch policy-search m
 
 1. Audit and document current semantics for nodes, paths, movers, goals, and resource chains.
 2. Design a shared game-language grammar for places, links, things, transforms, pressure, outcomes, and agency.
-3. Design `stakes_v1` JSON schema additions for node roles/capacity, path capacity/cost, demand, objectives, and failure conditions.
+3. Design `scenario_language_v1` JSON schema additions for node roles/capacity, path capacity/cost, demand, objectives, and failure conditions.
 4. Implement engine state for node queues, path occupancy, demand units, scoring, and run outcome.
 5. Add deterministic systems for demand spawn, loading/unloading, path-capacity admission, scoring, and failure detection.
 6. Extend protocol snapshots/events for score, objective progress, node load, path occupancy, and failure-risk overlays.

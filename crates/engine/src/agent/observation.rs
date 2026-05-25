@@ -1,9 +1,9 @@
 //! Observation type. What an agent sees on a single tick.
 //!
-//! PLAN §8 requires that `observe()` is read-only — it produces a
+//! agent observation contract requires that `observe()` is read-only — it produces a
 //! flattened, allocation-light snapshot of just the bits an agent
-//! needs to decide. We intentionally keep this minimal in P1; LLM
-//! backends will need richer context (P2).
+//! needs to decide. The `scenario_language_v1` roadmap will add richer, role-scoped
+//! observations for game-bearing scenes.
 
 use crate::components::{MoverId, MoverState, PathId};
 use crate::world::World;

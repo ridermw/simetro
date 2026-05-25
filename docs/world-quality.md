@@ -1,7 +1,8 @@
 # World quality checklist
 
-Use this checklist before calling a `games/*.json` world polished for v1.
-It is an authoring gate, not a schema v2: worlds must keep
+Use this checklist before calling a current `games/*.json` gallery world
+polished. It is an authoring gate for legacy visual scenes, not a
+`scenario_language_v1` schema: worlds must keep
 `"schema_version": 1`, and the engine still treats `catalog` as
 non-simulation metadata.
 

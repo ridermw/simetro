@@ -1,9 +1,8 @@
 # Copilot instructions for simetro
 
 > **Authoritative roadmap:** see
-> [`docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md`](../docs/superpowers/specs/2026-05-24-post-pr3-roadmap-design.md).
-> That spec defines the current active scope, autonomous-execution
-> policy, PR workflow, and stop conditions.
+> [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](../docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md).
+> That spec supersedes previous roadmap drafts and archived plans.
 
 ## Project shape
 
@@ -14,31 +13,30 @@ lives in the separate `simetro-bridge` process, not in the engine.
 
 ## Current product direction
 
-Phase 1 (engine, protocol, Tauri shell, frontend, audio, inspector,
-overlays, Playwright E2E) shipped. Phase 1.5 (animated MockTransport,
-Tauri driver, live transport, reload) shipped. PR #3 (world gallery,
-author actions, resources/production, headless replay, file watcher,
-scene registry) shipped.
+The deterministic engine, protocol, Tauri shell, frontend, gallery,
+author actions, global resources/production, replay foundations, file
+watcher, and scene registry are already shipped.
 
-The **active marquee** is live Copilot CLI SDK integration end-to-end
-(post-PR-#3 spec, Phase 2.A). The earlier "live Copilot/provider work
-is deferred" stance is **lifted** for this working week.
+The **active marquee** is now `scenario_language_v1`: make simetro a
+view-only, AI-operated systems-game platform with visible objectives,
+pressure, win/loss, observability, and policy search.
 
-In-scope tracks for the active week (per spec §1):
+In-scope tracks:
 
-- Live LLM agent via Copilot SDK (`copilot --acp`).
-- LLM-as-author (extended tool surface).
-- DecisionTimeline as a first-class object.
-- Replay UI scrubber.
-- Renderer/theme/audio v2 (P2.C juice).
+- Unified v3 grammar: places, links, typed things, transforms, demand,
+  pressure, outcomes, agency, observability, and milestones.
+- GPU Launch Week as the first vertical slice.
+- Strict v3 behavior schema, typed predicates, explicit v3
+  LoadError/Warning/Fault/GameOutcome taxonomy, metric states, and
+  scoped agent actions.
+- Simulated autoresearch-style policy search over fixed scenarios.
 
-Out of active scope (shelved):
+Out of active scope unless a later spec explicitly promotes it:
 
-- OpenAI / Anthropic / Codex / Ollama backends.
-- WebSocket external agents (foundation only).
-- WASM plugin agents.
-- Visual editor (P3.A, later).
-- WebGL renderer migration (P2.D evaluation only).
+- Live Azure/Kusto/Fabric/Power BI/HPC integrations.
+- Arbitrary expression languages in scene JSON.
+- Live LLM calls in CI.
+- WebSocket/WASM/live-provider expansion not needed for `scenario_language_v1`.
 
 ## Review priorities
 
@@ -77,6 +75,18 @@ When reviewing PRs, focus on:
     Copilot Code Review by commenting `@copilot review`. This is a
     repo-wide policy, not a per-task preference.
 
+For `scenario_language_v1` reviews, also require:
+
+11. **Visible stakes.** A new v3 scene must be winnable/losable and must
+    show what the AI is trying to save, what is going wrong, and whether
+    the latest action helped within 30 seconds.
+12. **Strict v3 schema.** Unknown behavior-bearing fields fail load.
+    Typed predicates only; no string expression evaluator.
+13. **No silent game failures.** Backpressure, starvation, stale
+    dashboards, invalid policies, data-quality violations, objective
+    breaches, and terminal losses must surface as typed warnings,
+    faults, outcomes, metrics, or milestones.
+
 ## Validation expectations
 
 Use the smallest relevant validation for the change, then widen when
@@ -105,5 +115,5 @@ the live smoke target in CI.
 - No live Copilot calls from CI. Ever.
 - No silent fallbacks: invalid input or failed loading should be
   visible and test-covered.
-- No live OpenAI/Anthropic/Codex/Ollama backends during the active
-  week. Only Copilot SDK is live.
+- No additional live provider backends during `scenario_language_v1` unless the
+  roadmap explicitly promotes them.

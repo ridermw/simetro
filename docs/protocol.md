@@ -1,7 +1,7 @@
 # Wire protocol (v1)
 
 simetro's engine, frontend, headless CLI, and agent-bridge all
-exchange messages over a single versioned protocol (PLAN §6). The
+exchange messages over a single versioned protocol. The
 canonical definition lives in
 [`crates/protocol/src/lib.rs`](../crates/protocol/src/lib.rs); the TS
 mirror is [`frontend/src/protocol/messages.ts`](../frontend/src/protocol/messages.ts).
@@ -65,7 +65,7 @@ draw the scene's immutable structure:
 * `nodes[i].shape` is one of `circle | square | triangle | diamond | hexagon`.
 * `paths[i]` carries **baked endpoint positions** (not node refs) so
   the renderer can group all paths of one color into a single `Path2D`
-  in one pass (PLAN §9).
+  in one pass (renderer batching target).
 * `*_names` are reverse maps from runtime numeric id to original
   JSON id, used by the Inspector and hover tooltip.
 
@@ -124,7 +124,7 @@ actions ship via `AgentReport.chosen`).
 ```
 
 `chosen` is nullable (an agent may decline to act). `considered` is
-capped at 1000 entries per report (PLAN §7).
+capped at 1000 entries per report.
 
 ### `Observation`
 
@@ -209,8 +209,8 @@ Same tagging convention as `SimMessage` (`kind` + `payload`):
 { "kind": "disconnect", "payload": { "reason": "client closed" } }
 ```
 
-P1 scaffolds the message types; P2 wires them end-to-end through
-`agent-bridge` (see [agents.md](agents.md)).
+The message types are shared by engine, bridge, frontend, and replay
+surfaces (see [agents.md](agents.md)).
 
 ## Versioning rules
 
@@ -230,13 +230,13 @@ P1 scaffolds the message types; P2 wires them end-to-end through
 ## Transports
 
 The same versioned protocol flows over multiple transports
-(PLAN §3.3):
+(protocol boundary):
 
 * **Tauri events** — primary frontend transport. Each `SimMessage`
   is emitted on a named event channel.
 * **stdio** — used by `simetro-headless replay` and by the
   agent-bridge subprocess.
-* **WebSocket** — foundation in place for P2/P3 external-language
+* **WebSocket** — foundation in place for future external-language
   agents and remote inspector clients.
 
 All three transports speak the identical envelope shape; no

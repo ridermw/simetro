@@ -1,6 +1,6 @@
 // frontend/src/audio/mappings.ts
 //
-// PLAN §21 delight #7 — tone per shape on arrival. Each node shape
+// audio mapping — tone per shape on arrival. Each node shape
 // is associated with a distinct musical interval; nodes with the
 // same shape sing in unison, different shapes harmonize.
 //

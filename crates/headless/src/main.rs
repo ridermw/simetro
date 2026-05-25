@@ -1,6 +1,6 @@
 //! `simetro-headless` binary.
 //!
-//! Subcommands per PLAN §19 step 13:
+//! Subcommands per headless CLI contract:
 //!
 //! ```text
 //!   simetro-headless run            --scene PATH --ticks N --seed S
@@ -627,13 +627,13 @@ fn cmd_export_session(
     out: &std::path::Path,
     bundle: bool,
 ) -> i32 {
-    // Layout per PLAN §15:
+    // Layout per AgentLog contract:
     //  out/
     //    scene.json
     //    baseline.hash
     //    manifest.json
-    //    agent-log.jsonl  (empty in P1; populated when an agent is registered)
-    //    tracing.jsonl    (empty in P1; populated when tracing subscriber is wired)
+    //    agent-log.jsonl  (empty unless an agent is registered)
+    //    tracing.jsonl    (empty unless a tracing subscriber is wired)
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("error: failed to create {}: {e}", out.display());
         return 3;

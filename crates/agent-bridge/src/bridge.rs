@@ -4,7 +4,7 @@
 //! ```text
 //!     engine                bridge                  Backend
 //!       │                     │                        │
-//!       │  AgentMessage(P2)   │                        │
+//!       │  AgentMessage(future)   │                        │
 //!       ├────────────────────▶│                        │
 //!       │                     │  BackendRequest        │
 //!       │                     ├───────────────────────▶│
@@ -14,10 +14,10 @@
 //!       │◀────────────────────│                        │
 //! ```
 //!
-//! P1 implements only the *parse* half of the loop — `Bridge` doesn't
-//! own a transport yet, but `parse_tool_call` converts a backend
-//! `ToolCall` into a typed `Action` (or a typed `LlmError`). P2 will
-//! wire the protocol I/O loop on top.
+//! The current bridge owns the invoke/parse path. `parse_tool_call`
+//! converts a backend `ToolCall` into a typed `Action` (or a typed
+//! `LlmError`); protocol I/O can be layered around it when live
+//! provider wiring is enabled.
 
 use std::sync::Arc;
 

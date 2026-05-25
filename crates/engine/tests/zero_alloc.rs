@@ -1,4 +1,4 @@
-//! Zero-allocation invariant for the steady-state tick loop (PLAN §14).
+//! Zero-allocation invariant for the steady-state tick loop (zero-allocation target).
 //!
 //! After a warmup phase (during which `TickRunner` grows its scratch
 //! buffers), subsequent ticks must allocate **zero** blocks. This test
@@ -47,6 +47,6 @@ fn tick_makes_no_allocations_after_warmup() {
     assert_eq!(
         block_delta, 0,
         "tick loop allocated {block_delta} blocks ({byte_delta} bytes) after warmup; \
-         PLAN §14 requires zero per-tick allocations"
+         zero-allocation target requires zero per-tick allocations"
     );
 }

@@ -1,6 +1,6 @@
 //! Seeded random source for the simulation.
 //!
-//! Determinism (PLAN §16) requires a fixed PRNG with no global state.
+//! Determinism (determinism contract) requires a fixed PRNG with no global state.
 //! `Pcg64Mcg` is small, fast, and deterministic across platforms.
 
 use rand::{Rng, SeedableRng};

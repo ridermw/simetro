@@ -6,7 +6,7 @@
 
 use thiserror::Error;
 
-/// Errors produced by the JSON scene loader. PLAN §5.1 + §11.1.
+/// Errors produced by the JSON scene loader. scene loader contract + §11.1.
 ///
 /// Every variant has a typed field-path or section/id so the renderer
 /// can place the error in the canvas overlay at the right spot.
