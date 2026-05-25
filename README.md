@@ -25,6 +25,10 @@ cargo run -p simetro-headless -- hash games/demo-paths.json
 # Agent bridge stub
 cargo run -p simetro-agent-bridge --bin simetro-bridge
 
+# Project-specific helpers (xtask convention)
+cargo xtask help
+cargo xtask copilot-smoke   # human-run; requires `copilot` CLI on PATH
+
 # Frontend (Vite dev server + Playwright)
 cd frontend
 npm ci

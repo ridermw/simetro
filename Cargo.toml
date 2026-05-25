@@ -6,6 +6,7 @@ members = [
     "crates/agent-bridge",
     "crates/headless",
     "crates/tauri-app",
+    "xtask",
 ]
 exclude = ["src-tauri"]
 

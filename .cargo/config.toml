@@ -1,0 +1,4 @@
+[alias]
+# Standard Rust convention: `cargo xtask <cmd>` invokes the xtask
+# workspace member. See xtask/src/main.rs for available subcommands.
+xtask = "run --quiet --package xtask --"
