@@ -331,11 +331,12 @@ fn chosen_kind_name(action: &Option<Action>) -> &'static str {
 /// is added — preventing silent "we never tested that error mode".
 #[test]
 fn every_llm_error_variant_has_a_fixture() {
-    // Hand-maintained catalogue of every LlmError variant. Bump as
-    // new variants are added to `crates/agent-bridge/src/error.rs`.
-    // The exhaustive match below catches drift at compile time: add
-    // a variant without an arm and the build fails.
-    let expected_variants: Vec<&str> = LlmError::ALL_VARIANTS.to_vec();
+    // Hand-maintained catalogue derived from the EXHAUSTIVE match in
+    // `LlmError::variant_name` — see crates/agent-bridge/src/error.rs.
+    // Adding a new LlmError variant fails to compile until the arm is
+    // added; adding the arm without updating `one_of_each` fails the
+    // `variant_name_is_unique_per_variant` unit test there.
+    let expected_variants = LlmError::all_variants();
 
     let fixtures = list_fixtures();
     let labels: Vec<String> = fixtures.iter().map(|(_, f)| f.label.clone()).collect();
