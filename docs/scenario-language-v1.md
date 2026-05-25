@@ -60,10 +60,12 @@ Unknown fields are a typed load error rather than a silent no-op. The
 only permissive section is `catalog`, which holds free-form
 author-facing metadata (titles, palette notes, etc.).
 
-Today the only behavior-bearing rule is `schema_version`. Each later
-PR adds per-primitive validation, and any field a future PR has not
-yet wired in causes the loader to fail with
-`LoadError::Sl1(Sl1LoadError::UnknownField { … })` (or a
+Today the only behavior-bearing rule is `schema_version`: PR 0 accepts
+only empty primitive arrays, accepts an omitted/empty `observability`
+block, and rejects placeholder entries like `"places": [{}]` as
+reserved for later PRs. Each later PR adds per-primitive validation,
+and any field a future PR has not yet wired in causes the loader to
+fail with `LoadError::Sl1(Sl1LoadError::UnknownField { … })` (or a
 `LoadError::Parse` carrying the unknown-field message from serde).
 
 ## Taxonomy

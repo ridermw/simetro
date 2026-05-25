@@ -31,6 +31,7 @@ use thiserror::Error;
 /// surrounding scene's `schema_version`, so legacy v1/v2 scenes can
 /// adopt SL1 incrementally without bumping their top-level version.
 pub const SL1_SCHEMA_VERSION: u32 = 1;
+const MAX_SL1_ITEMS_PER_SECTION: usize = 100_000;
 
 // ---------------------------------------------------------------------------
 // Raw (post-serde, pre-validation) SL1 scene block.
@@ -249,6 +250,13 @@ pub enum Sl1LoadError {
          the matching PR has not landed"
     )]
     PrimitiveNotImplemented { section: &'static str },
+
+    #[error("scenario_language_v1.{section}: found {count} items, maximum {max}")]
+    TooManyItems {
+        section: &'static str,
+        count: usize,
+        max: usize,
+    },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -337,6 +345,17 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         });
     }
 
+    check_section_cap("places", raw.places.len())?;
+    check_section_cap("links", raw.links.len())?;
+    check_section_cap("things", raw.things.len())?;
+    check_section_cap("transforms", raw.transforms.len())?;
+    check_section_cap("demand", raw.demand.len())?;
+    check_section_cap("pressure", raw.pressure.len())?;
+    check_section_cap("objectives", raw.objectives.len())?;
+    check_section_cap("failure_conditions", raw.failure_conditions.len())?;
+    check_section_cap("agents", raw.agents.len())?;
+    check_section_cap("milestones", raw.milestones.len())?;
+
     // PR 0 has no behavior for any primitive. Reject non-empty sections
     // so a proto-SL1 scene can't silently no-op while developers wait
     // for PRs 1–11.
@@ -372,6 +391,17 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         observability: raw.observability.map(|_| Sl1Observability),
         milestones: Vec::new(),
     })
+}
+
+fn check_section_cap(section: &'static str, count: usize) -> Result<(), Sl1LoadError> {
+    if count > MAX_SL1_ITEMS_PER_SECTION {
+        return Err(Sl1LoadError::TooManyItems {
+            section,
+            count,
+            max: MAX_SL1_ITEMS_PER_SECTION,
+        });
+    }
+    Ok(())
 }
 
 /// Parse + validate a standalone SL1 block from a `serde_json::Value`.
@@ -511,6 +541,26 @@ mod tests {
                 other => panic!("expected PrimitiveNotImplemented for {json}, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn section_caps_are_checked_before_placeholder_rejection() {
+        let raw = RawSl1Scene {
+            schema_version: SL1_SCHEMA_VERSION,
+            places: (0..=MAX_SL1_ITEMS_PER_SECTION)
+                .map(|_| RawSl1Place {})
+                .collect(),
+            ..RawSl1Scene::default()
+        };
+        let err = validate(raw).unwrap_err();
+        assert_eq!(
+            err,
+            Sl1LoadError::TooManyItems {
+                section: "places",
+                count: MAX_SL1_ITEMS_PER_SECTION + 1,
+                max: MAX_SL1_ITEMS_PER_SECTION,
+            }
+        );
     }
 
     #[test]
