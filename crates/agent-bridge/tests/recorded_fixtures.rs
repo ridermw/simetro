@@ -205,14 +205,14 @@ async fn dispatch(backend: &dyn Backend, req: &AgentRequest) -> AgentReply {
             None => AgentReply {
                 id: req.id.clone(),
                 chosen: Some(Action::NoOp),
-                rationale: resp.raw.clone(),
+                rationale: truncate(&resp.raw, 512),
                 confidence: 1.0,
             },
             Some(tc) => match parse_tool_call(tc, &req.id.agent_id) {
                 Ok(action) => AgentReply {
                     id: req.id.clone(),
                     chosen: Some(action),
-                    rationale: resp.raw.clone(),
+                    rationale: truncate(&resp.raw, 512),
                     confidence: 1.0,
                 },
                 Err(parse_err) => {
@@ -243,6 +243,20 @@ fn rationale_for(msg: &SimMessage) -> String {
         SimMessage::Warning(w) => format!("bridge warning: {w:?}"),
         SimMessage::Fault(f) => format!("bridge fault: {f:?}"),
         other => format!("bridge: {other:?}"),
+    }
+}
+
+/// Mirror of `main.rs::truncate`. The test must apply the same cap
+/// so a fixture that exercises an over-cap `raw` payload sees the
+/// same rationale shape the production binary would emit. Critical
+/// for security-gate fixtures (e.g. `malformed_response`) where the
+/// secret in `raw` could otherwise slip past assertions that look
+/// only at the truncated tail.
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        s.chars().take(max_chars).collect()
     }
 }
 
