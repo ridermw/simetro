@@ -13,10 +13,11 @@
 
 use std::collections::BTreeMap;
 
-use simetro_protocol::{SimMessage, Sl1TransformWarningKind, WarningPayload};
+use simetro_protocol::{SimMessage, Sl1DemandWarningKind, Sl1TransformWarningKind, WarningPayload};
 
 use crate::scenario_language_v1::{
-    FreshnessState, Sl1FailurePolicy, Sl1Scene, Sl1Transform, Sl1TransformState,
+    FreshnessState, Sl1Demand, Sl1DemandInstance, Sl1DemandSchedule, Sl1DemandTarget,
+    Sl1FailurePolicy, Sl1Scene, Sl1Transform, Sl1TransformState, MAX_DEMAND_OUTSTANDING,
 };
 use crate::world::World;
 
@@ -24,6 +25,8 @@ use crate::world::World;
 ///
 /// Warnings produced by transform state-machine transitions are
 /// appended to `messages` as `SimMessage::Warning(WarningPayload::Sl1Transform { .. })`.
+/// Demand-driven warnings (PR 5) — `Dropped`, `BacklogOverflow` —
+/// are appended as `WarningPayload::Sl1Demand { .. }`.
 pub fn run(world: &mut World, messages: &mut Vec<SimMessage>) {
     let Some(scene) = world.sl1.as_ref() else {
         return;
@@ -35,10 +38,14 @@ pub fn run(world: &mut World, messages: &mut Vec<SimMessage>) {
 
     age_freshness(scene, runtime, now);
 
-    if scene.transforms.is_empty() {
-        return;
+    if !scene.transforms.is_empty() {
+        run_transforms(scene, runtime, now, messages);
     }
-    run_transforms(scene, runtime, now, messages);
+    // Demand runs AFTER transforms so same-tick produced outputs are
+    // visible to fulfillment on the same tick.
+    if !scene.demand.is_empty() {
+        run_demand(scene, runtime, now, messages);
+    }
 }
 
 fn age_freshness(
@@ -587,4 +594,199 @@ fn emit_warning(
         tick,
         attempt,
     }));
+}
+
+// =====================================================================
+// Demand (PR 5).
+// =====================================================================
+//
+// Per-tick demand pipeline, runs AFTER transforms so same-tick produced
+// outputs are visible to fulfillment:
+//
+//   for each declared demand (stable id order):
+//     1. spawn:    schedule fires → enqueue one Pending instance
+//                  (or DemandBacklogOverflow if outstanding >= cap)
+//     2. fulfill:  oldest Pending whose `requires` are all present at
+//                  the target place transitions to Fulfilled and is
+//                  removed; fulfilled_count++
+//     3. drop:     any Pending past its deadline (now > spawned_at +
+//                  deadline_ticks) transitions to Dropped, emits
+//                  DemandDropped warning, and is removed; dropped_count++
+//
+// Fulfillment is "observation-only" in PR 5 — presence checked, no
+// inventory decremented. PR 8 may add a consuming variant.
+//
+// Backlog overflow is edge-triggered: a single warning fires on the
+// transition into `pending.len() >= cap`; the flag clears once pending
+// drops below cap so re-entry rearms the warning.
+
+fn run_demand(
+    scene: &Sl1Scene,
+    runtime: &mut crate::scenario_language_v1::Sl1RuntimeState,
+    now: u64,
+    messages: &mut Vec<SimMessage>,
+) {
+    for def in &scene.demand {
+        // ---------------- spawn ----------------
+        let spawn_decision = {
+            let Some(rt) = runtime.demand.get_mut(&def.id) else {
+                continue;
+            };
+            if should_spawn(def, rt, now) {
+                if rt.pending.len() >= MAX_DEMAND_OUTSTANDING {
+                    if !rt.overflow {
+                        rt.overflow = true;
+                        Some(SpawnOutcome::Overflowed)
+                    } else {
+                        Some(SpawnOutcome::OverflowSuppressed)
+                    }
+                } else {
+                    let seq = rt.next_sequence;
+                    rt.next_sequence = rt.next_sequence.saturating_add(1);
+                    rt.pending.push_back(Sl1DemandInstance {
+                        sequence: seq,
+                        spawned_at: now,
+                        deadline_tick: now.saturating_add(def.deadline_ticks),
+                    });
+                    Some(SpawnOutcome::Spawned)
+                }
+            } else {
+                None
+            }
+        };
+        if matches!(spawn_decision, Some(SpawnOutcome::Overflowed)) {
+            messages.push(SimMessage::Warning(WarningPayload::Sl1Demand {
+                demand_id: def.id.clone(),
+                event: Sl1DemandWarningKind::BacklogOverflow,
+                tick: now,
+                sequence: None,
+                value: None,
+                penalty_score: None,
+                penalty_warning: None,
+            }));
+        }
+
+        // ---------------- drop past-deadline ----------------
+        // Drains expired Pending instances FIRST so a tardy requirement
+        // arriving in the same tick cannot silently fulfill an expired
+        // instance. "Dropped when deadline passes" is the contract.
+        let mut dropped_events: Vec<(u64, u64, i64, Option<String>)> = Vec::new();
+        if let Some(rt) = runtime.demand.get_mut(&def.id) {
+            while let Some(front) = rt.pending.front() {
+                if now > front.deadline_tick {
+                    if let Some(d) = rt.pending.pop_front() {
+                        rt.dropped_count = rt.dropped_count.saturating_add(1);
+                        dropped_events.push((
+                            d.sequence,
+                            def.value,
+                            def.penalty.score,
+                            def.penalty.warning.clone(),
+                        ));
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        for (sequence, value, penalty_score, penalty_warning) in dropped_events {
+            messages.push(SimMessage::Warning(WarningPayload::Sl1Demand {
+                demand_id: def.id.clone(),
+                event: Sl1DemandWarningKind::Dropped,
+                tick: now,
+                sequence: Some(sequence),
+                value: Some(value),
+                penalty_score: Some(penalty_score),
+                penalty_warning,
+            }));
+        }
+
+        // ---------------- fulfill ----------------
+        // Observation-only: presence of every required thing at the
+        // target place. No inventory decrement. Only non-expired
+        // instances reach this point (drops above already evicted them).
+        let met = demand_requirements_met(def, runtime);
+        if met {
+            if let Some(rt) = runtime.demand.get_mut(&def.id) {
+                if rt.pending.pop_front().is_some() {
+                    rt.fulfilled_count = rt.fulfilled_count.saturating_add(1);
+                }
+            }
+        }
+
+        // ---------------- reset overflow rearm ----------------
+        if let Some(rt) = runtime.demand.get_mut(&def.id) {
+            if rt.overflow && rt.pending.len() < MAX_DEMAND_OUTSTANDING {
+                rt.overflow = false;
+            }
+        }
+    }
+}
+
+enum SpawnOutcome {
+    Spawned,
+    Overflowed,
+    OverflowSuppressed,
+}
+
+fn should_spawn(
+    def: &Sl1Demand,
+    rt: &mut crate::scenario_language_v1::Sl1DemandRuntime,
+    now: u64,
+) -> bool {
+    if now == 0 {
+        // Tick 0 is the pre-tick world; schedules begin at tick 1.
+        return false;
+    }
+    match &def.spawn_schedule {
+        Sl1DemandSchedule::Fixed {
+            every_ticks,
+            start_tick,
+        } => now >= *start_tick && (now - *start_tick) % *every_ticks == 0,
+        Sl1DemandSchedule::Scripted { ticks } => {
+            // The cursor is the index of the next tick we still expect.
+            // Advance past any ticks <= now so the cursor never lags.
+            // Returns true if `now` was an expected spawn tick.
+            let mut fired = false;
+            while rt.scripted_cursor < ticks.len() {
+                let candidate = ticks[rt.scripted_cursor];
+                if candidate == now {
+                    fired = true;
+                    rt.scripted_cursor += 1;
+                    break;
+                } else if candidate < now {
+                    // Missed a tick — should not happen since we
+                    // call run_demand every tick, but keep the
+                    // cursor monotonic.
+                    rt.scripted_cursor += 1;
+                } else {
+                    break;
+                }
+            }
+            fired
+        }
+    }
+}
+
+fn demand_requirements_met(
+    def: &Sl1Demand,
+    runtime: &crate::scenario_language_v1::Sl1RuntimeState,
+) -> bool {
+    let Sl1DemandTarget::Place(place_id) = &def.target;
+    let Some(inv) = runtime.inventories.get(place_id) else {
+        return false;
+    };
+    // Must have at least one Pending instance to fulfill.
+    let Some(rt) = runtime.demand.get(&def.id) else {
+        return false;
+    };
+    if rt.pending.is_empty() {
+        return false;
+    }
+    for thing_id in &def.requires {
+        let count = inv.get(thing_id).copied().unwrap_or(0);
+        if count == 0 {
+            return false;
+        }
+    }
+    true
 }

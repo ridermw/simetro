@@ -18,11 +18,13 @@
 
 use simetro_protocol::{
     FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView,
-    Sl1FailurePolicyView, Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView,
-    Sl1LinkView, Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView,
-    Sl1PlaceView, Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView,
-    Sl1ThingView, Sl1TransformIoView, Sl1TransformRuntimeView, Sl1TransformStateView,
-    Sl1TransformView, SnapshotPayload, StaticPayload,
+    Sl1DemandPenaltyView, Sl1DemandPriorityView, Sl1DemandRuntimeView, Sl1DemandScheduleView,
+    Sl1DemandTargetView, Sl1DemandView, Sl1FailurePolicyView, Sl1LinkBackpressureView,
+    Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView, Sl1OperatingPredicateView,
+    Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView, Sl1StorageSlotView,
+    Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView, Sl1TransformIoView,
+    Sl1TransformRuntimeView, Sl1TransformStateView, Sl1TransformView, SnapshotPayload,
+    StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
@@ -112,6 +114,11 @@ pub fn encode_static_parts(
             .sl1
             .as_ref()
             .map(|sl1| sl1.transforms.iter().map(transform_to_view).collect())
+            .unwrap_or_default(),
+        sl1_demand: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.demand.iter().map(demand_to_view).collect())
             .unwrap_or_default(),
     }
 }
@@ -304,6 +311,45 @@ fn transform_state_to_view(
     }
 }
 
+fn demand_to_view(d: &crate::scenario_language_v1::Sl1Demand) -> Sl1DemandView {
+    use crate::scenario_language_v1::{Sl1DemandPriority, Sl1DemandSchedule, Sl1DemandTarget};
+    let target = match &d.target {
+        Sl1DemandTarget::Place(id) => Sl1DemandTargetView::Place { id: id.clone() },
+    };
+    let spawn_schedule = match &d.spawn_schedule {
+        Sl1DemandSchedule::Fixed {
+            every_ticks,
+            start_tick,
+        } => Sl1DemandScheduleView::Fixed {
+            every_ticks: *every_ticks,
+            start_tick: *start_tick,
+        },
+        Sl1DemandSchedule::Scripted { ticks } => Sl1DemandScheduleView::Scripted {
+            ticks: ticks.clone(),
+        },
+    };
+    let priority = match d.priority {
+        Sl1DemandPriority::Low => Sl1DemandPriorityView::Low,
+        Sl1DemandPriority::Normal => Sl1DemandPriorityView::Normal,
+        Sl1DemandPriority::High => Sl1DemandPriorityView::High,
+        Sl1DemandPriority::Critical => Sl1DemandPriorityView::Critical,
+    };
+    Sl1DemandView {
+        id: d.id.clone(),
+        kind: d.kind.clone(),
+        target,
+        requires: d.requires.clone(),
+        spawn_schedule,
+        deadline_ticks: d.deadline_ticks,
+        priority,
+        value: d.value,
+        penalty: Sl1DemandPenaltyView {
+            score: d.penalty.score,
+            warning: d.penalty.warning.clone(),
+        },
+    }
+}
+
 /// Compute group-by-color batches over path views. Renderer caches one
 /// `Path2D` per color and re-uses it across frames.
 ///
@@ -328,6 +374,7 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
     out.movers.clear();
     out.sl1_place_inventories.clear();
     out.sl1_transform_states.clear();
+    out.sl1_demand_states.clear();
 
     for m in world.movers.values() {
         let (pos, on_path) = match m.state() {
@@ -379,6 +426,19 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
             out.sl1_transform_states.push(Sl1TransformRuntimeView {
                 transform_id: transform_id.clone(),
                 state: transform_state_to_view(state),
+            });
+        }
+        for (demand_id, dr) in runtime.demand.iter() {
+            out.sl1_demand_states.push(Sl1DemandRuntimeView {
+                demand_id: demand_id.clone(),
+                // The bounded outstanding cap (MAX_DEMAND_OUTSTANDING)
+                // fits comfortably in u32. Saturating cast keeps the
+                // wire type compact without panicking on a future cap
+                // increase.
+                outstanding: u32::try_from(dr.pending.len()).unwrap_or(u32::MAX),
+                fulfilled_count: dr.fulfilled_count,
+                dropped_count: dr.dropped_count,
+                next_sequence: dr.next_sequence,
             });
         }
     }

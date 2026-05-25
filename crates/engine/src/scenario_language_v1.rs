@@ -88,6 +88,26 @@ pub const MAX_TRANSFORM_MAX_ATTEMPTS: u32 = 1_000;
 /// Upper bound for `Sl1ThingQualityContract.max_late_ticks`.
 pub const MAX_THING_LATE_TICKS: u64 = 1_000_000_000;
 
+/// Upper bound for `Sl1Demand.deadline_ticks` and the Fixed schedule's
+/// `every_ticks` / `start_tick` and Scripted schedule ticks. Same
+/// human-meaningful range as the other SL1 bounds.
+pub const MAX_DEMAND_TICKS: u64 = 1_000_000_000;
+/// Upper bound for `Sl1Demand.value`. Same rationale.
+pub const MAX_DEMAND_VALUE: u64 = 1_000_000_000;
+/// Upper bound for the absolute value of `Sl1DemandPenalty.score`.
+/// Penalties are stored as signed but bounded to keep the future score
+/// arithmetic in PR 8 inside `i64` without overflow.
+pub const MAX_DEMAND_PENALTY_SCORE: i64 = 1_000_000_000;
+/// Maximum number of entries in a Scripted spawn schedule.
+pub const MAX_DEMAND_SCRIPTED_TICKS: usize = 100_000;
+/// Maximum size of `Sl1Demand.requires`. Authors should keep demands
+/// focused; long requires lists almost certainly indicate a modelling
+/// mistake (mixing many unrelated facts into one demand).
+pub const MAX_DEMAND_REQUIRES: usize = 64;
+/// Maximum number of in-flight (Pending) demand instances per demand
+/// before spawning is paused. See [`Sl1Warning::DemandBacklogOverflow`].
+pub const MAX_DEMAND_OUTSTANDING: usize = 10_000;
+
 // ---------------------------------------------------------------------------
 // Raw (post-serde, pre-validation) SL1 scene block.
 // ---------------------------------------------------------------------------
@@ -116,7 +136,7 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub transforms: Vec<RawSl1Transform>,
     #[serde(default)]
-    pub demand: Vec<serde_json::Value>,
+    pub demand: Vec<RawSl1Demand>,
     #[serde(default)]
     pub pressure: Vec<serde_json::Value>,
     #[serde(default)]
@@ -589,9 +609,143 @@ pub struct Sl1Transform {
     pub max_attempts: u32,
 }
 
-/// Placeholder loaded `demand`. Populated in PR 5.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Demand;
+/// Raw `demand[]` entry (PR 5). Strict-schema:
+/// `#[serde(deny_unknown_fields)]` ensures nested typos do not silently
+/// no-op even though top-level SL1 typos are also blocked.
+///
+/// The `spawn_schedule` is intentionally loosely typed at deserialize
+/// time and dispatched in demand validation so that unsupported
+/// schedule types (e.g. `"wave"` until PR 8) can return a typed
+/// [`Sl1LoadError::DemandScheduleNotImplemented`] instead of serde's
+/// generic "unknown variant" message. The inner
+/// `#[serde(deny_unknown_fields)]` on the raw schedule still catches
+/// typos like `"every-ticks"`.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Demand {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub target: RawSl1DemandTarget,
+    #[serde(default)]
+    pub requires: Vec<String>,
+    pub spawn_schedule: RawSl1DemandSchedule,
+    pub deadline_ticks: u64,
+    pub priority: String,
+    pub value: u64,
+    pub penalty: RawSl1DemandPenalty,
+}
+
+/// Raw demand target. Explicit `type` discriminator (vs. catalog
+/// inference) so future PRs (8/9) can add `dashboard`, `virtual_sink`,
+/// etc. without ambiguity or schema migration.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1DemandTarget {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub id: String,
+}
+
+/// Raw demand spawn schedule. Each variant is checked + populated in
+/// demand validation. The `kind` discriminator stays a free string
+/// so unknown values can be reported with a typed
+/// [`Sl1LoadError::DemandUnknownScheduleType`] instead of a generic
+/// serde "unknown variant" message.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1DemandSchedule {
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Required for `fixed`.
+    #[serde(default)]
+    pub every_ticks: Option<u64>,
+    /// Required for `fixed`.
+    #[serde(default)]
+    pub start_tick: Option<u64>,
+    /// Required for `scripted`. Must be strictly increasing,
+    /// all > 0, length capped by [`MAX_DEMAND_SCRIPTED_TICKS`].
+    #[serde(default)]
+    pub ticks: Option<Vec<u64>>,
+}
+
+/// Raw demand penalty. Score is signed but bounded to
+/// `-MAX_DEMAND_PENALTY_SCORE ..= 0` to make late/dropped demands
+/// expensive without enabling pathological score arithmetic.
+/// `warning` is an optional author-supplied severity tag carried
+/// opaquely in the runtime warning payload; PR 5 does not interpret
+/// it. PR 8/9 will map authored tags to a typed severity enum.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1DemandPenalty {
+    pub score: i64,
+    #[serde(default)]
+    pub warning: Option<String>,
+}
+
+/// Validated demand target (PR 5). Only [`Self::Place`] is honored at
+/// runtime; other declared kinds (`transform`, `dashboard`,
+/// `virtual_sink`) are accepted by the discriminator vocabulary but
+/// rejected at load with
+/// [`Sl1LoadError::DemandTargetKindNotImplemented`] until PR 8/9.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1DemandTarget {
+    Place(String),
+}
+
+/// Validated demand spawn schedule (PR 5). Wave is rejected at load
+/// with [`Sl1LoadError::DemandScheduleNotImplemented`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Sl1DemandSchedule {
+    /// Spawn at `tick == start_tick` and every `every_ticks` thereafter.
+    Fixed { every_ticks: u64, start_tick: u64 },
+    /// Spawn exactly at each listed tick. Ticks are pre-sorted +
+    /// strictly increasing (validator rejects duplicates and out-of-
+    /// order entries) so the runtime can use a deterministic cursor.
+    Scripted { ticks: Vec<u64> },
+}
+
+/// Validated demand priority (PR 5). Closed enum; unknown strings are
+/// load errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1DemandPriority {
+    Low,
+    Normal,
+    High,
+    Critical,
+}
+
+/// Validated demand penalty (PR 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1DemandPenalty {
+    pub score: i64,
+    pub warning: Option<String>,
+}
+
+/// Validated `demand` primitive (PR 5). Deterministic spawn rule with
+/// typed target, requires list, schedule, deadline, priority, value,
+/// and penalty. Fulfillment semantics in PR 5 are **observation only**:
+/// when all `requires` thing ids are present (count ≥ 1) at the target
+/// place's inventory, the oldest Pending instance transitions to
+/// Fulfilled (no inventory is decremented). This matches the spec's
+/// `report_refresh` example where dashboards observe facts; future
+/// PRs may introduce a consuming variant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Demand {
+    pub id: String,
+    pub kind: String,
+    pub target: Sl1DemandTarget,
+    /// Sorted + deduplicated so hash/protocol are declaration-order
+    /// independent.
+    pub requires: Vec<String>,
+    pub spawn_schedule: Sl1DemandSchedule,
+    pub deadline_ticks: u64,
+    pub priority: Sl1DemandPriority,
+    pub value: u64,
+    pub penalty: Sl1DemandPenalty,
+}
 
 /// Placeholder loaded `pressure`. Populated in PR 7.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1141,6 +1295,219 @@ pub enum Sl1LoadError {
          {value} exceeds maximum {max}"
     )]
     TransformMaxAttemptsOutOfRange { id: String, value: u32, max: u32 },
+
+    // ---- Demand (PR 5) ----------------------------------------------
+    /// `demand[].id` does not satisfy `is_valid_sl1_id`.
+    #[error("scenario_language_v1.demand[{id:?}].id: invalid identifier")]
+    DemandInvalidId { id: String },
+
+    /// `demand[].id` collides with another demand.
+    #[error("scenario_language_v1.demand: duplicate id {id:?}")]
+    DemandDuplicateId { id: String },
+
+    /// `demand[].type` is empty after trimming. Free-form but must be
+    /// non-empty for observability + protocol output.
+    #[error("scenario_language_v1.demand[{id:?}].type: must be non-empty")]
+    DemandEmptyType { id: String },
+
+    /// `demand[].target.type` is not a recognized vocabulary entry.
+    /// PR 5 recognizes `place | transform | dashboard | virtual_sink`;
+    /// only `place` is implemented (see
+    /// [`Self::DemandTargetKindNotImplemented`]). Any other value here
+    /// is treated as a typo.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].target.type: \
+         {kind:?} is not a recognized target kind"
+    )]
+    DemandUnknownTargetKind { id: String, kind: String },
+
+    /// `demand[].target.type` is recognized but not yet implemented.
+    /// PR 5 implements `place` only; `transform`, `dashboard`, and
+    /// `virtual_sink` land with PR 8/9.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].target.type: \
+         {kind:?} is not implemented in PR 5 (place only)"
+    )]
+    DemandTargetKindNotImplemented { id: String, kind: &'static str },
+
+    /// `demand[].target.id` does not match any declared place id.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].target.id: \
+         {target:?} is not a declared place"
+    )]
+    DemandUnknownTarget { id: String, target: String },
+
+    /// `demand[].requires` is empty. An always-fulfilled-at-spawn
+    /// demand is almost certainly a modelling mistake.
+    #[error("scenario_language_v1.demand[{id:?}].requires: must declare at least one thing")]
+    DemandRequiresEmpty { id: String },
+
+    /// `demand[].requires` exceeds [`MAX_DEMAND_REQUIRES`].
+    #[error(
+        "scenario_language_v1.demand[{id:?}].requires: \
+         {count} entries exceeds maximum {max}"
+    )]
+    DemandRequiresTooMany {
+        id: String,
+        count: usize,
+        max: usize,
+    },
+
+    /// A `demand[].requires` entry references neither a declared
+    /// thing id. Tags are NOT accepted because fulfillment is keyed
+    /// by exact id.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].requires: \
+         {value:?} is not a declared thing id"
+    )]
+    DemandUnknownRequires { id: String, value: String },
+
+    /// Two `demand[].requires` entries name the same thing.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].requires: \
+         duplicate entry {value:?}"
+    )]
+    DemandDuplicateRequires { id: String, value: String },
+
+    /// `demand[].spawn_schedule.type` is recognized in the spec
+    /// vocabulary but not yet implemented. PR 5 ships
+    /// `fixed | scripted`; `wave` lands with PR 8.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule.type: \
+         {kind:?} is not implemented in PR 5 (fixed | scripted only)"
+    )]
+    DemandScheduleNotImplemented { id: String, kind: &'static str },
+
+    /// `demand[].spawn_schedule.type` is not a recognized vocabulary
+    /// entry. Typos like `"feixed"` land here instead of silently
+    /// becoming a no-op.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule.type: \
+         {kind:?} is not a recognized schedule kind"
+    )]
+    DemandUnknownScheduleType { id: String, kind: String },
+
+    /// Required schedule field is missing for the declared type.
+    /// E.g. `type: "fixed"` requires `every_ticks` and `start_tick`.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule: \
+         {field:?} is required for schedule type {kind:?}"
+    )]
+    DemandScheduleMissingField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// Schedule numeric field is zero where positive is required
+    /// (`every_ticks`, `start_tick`).
+    #[error("scenario_language_v1.demand[{id:?}].spawn_schedule.{field}: must be > 0")]
+    DemandScheduleFieldZero { id: String, field: &'static str },
+
+    /// Schedule numeric field exceeds [`MAX_DEMAND_TICKS`].
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule.{field}: \
+         {value} exceeds maximum {max}"
+    )]
+    DemandScheduleFieldOutOfRange {
+        id: String,
+        field: &'static str,
+        value: u64,
+        max: u64,
+    },
+
+    /// `spawn_schedule.ticks` (Scripted) is empty.
+    #[error("scenario_language_v1.demand[{id:?}].spawn_schedule.ticks: must be non-empty")]
+    DemandScheduleScriptedEmpty { id: String },
+
+    /// `spawn_schedule.ticks` is not strictly increasing (a duplicate
+    /// or out-of-order entry was found). Coalescing would silently
+    /// change spawn counts so this is a hard error.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule.ticks: \
+         entries must be strictly increasing (offending tick {tick})"
+    )]
+    DemandScheduleScriptedNotIncreasing { id: String, tick: u64 },
+
+    /// `spawn_schedule.ticks` length exceeds
+    /// [`MAX_DEMAND_SCRIPTED_TICKS`].
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule.ticks: \
+         {count} entries exceeds maximum {max}"
+    )]
+    DemandScheduleScriptedTooMany {
+        id: String,
+        count: usize,
+        max: usize,
+    },
+
+    /// `spawn_schedule.ticks` contains a 0 entry. Tick 0 is reserved
+    /// for the pre-tick world and would never fire.
+    #[error("scenario_language_v1.demand[{id:?}].spawn_schedule.ticks: tick 0 is reserved")]
+    DemandScheduleScriptedTickZero { id: String },
+
+    /// A schedule field was provided that does not apply to the
+    /// declared schedule type (e.g. `ticks` on a `fixed` schedule, or
+    /// `every_ticks` on a `scripted` schedule). Silently ignoring the
+    /// field would let typos look like behavior changes.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].spawn_schedule: \
+         field {field:?} is not valid for schedule type {kind:?}"
+    )]
+    DemandScheduleUnexpectedField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// `deadline_ticks` is zero. Use ≥ 1.
+    #[error("scenario_language_v1.demand[{id:?}].deadline_ticks: must be > 0")]
+    DemandDeadlineZero { id: String },
+
+    /// `deadline_ticks` exceeds [`MAX_DEMAND_TICKS`].
+    #[error(
+        "scenario_language_v1.demand[{id:?}].deadline_ticks: \
+         {value} exceeds maximum {max}"
+    )]
+    DemandDeadlineOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `priority` is not one of `low | normal | high | critical`.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].priority: \
+         {priority:?} is not a recognized priority \
+         (expected one of: low, normal, high, critical)"
+    )]
+    DemandInvalidPriority { id: String, priority: String },
+
+    /// `value` exceeds [`MAX_DEMAND_VALUE`].
+    #[error(
+        "scenario_language_v1.demand[{id:?}].value: \
+         {value} exceeds maximum {max}"
+    )]
+    DemandValueOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `penalty.score` is positive. Penalty must be ≤ 0 — positive
+    /// scores belong on `value` (the reward for fulfillment).
+    #[error(
+        "scenario_language_v1.demand[{id:?}].penalty.score: \
+         {score} must be <= 0 (use `value` for rewards)"
+    )]
+    DemandPenaltyScorePositive { id: String, score: i64 },
+
+    /// `penalty.score` exceeds [`MAX_DEMAND_PENALTY_SCORE`] in
+    /// absolute value.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].penalty.score: \
+         absolute value {abs} exceeds maximum {max}"
+    )]
+    DemandPenaltyScoreOutOfRange { id: String, abs: i64, max: i64 },
+
+    /// `penalty.warning` is present but empty after trimming.
+    #[error(
+        "scenario_language_v1.demand[{id:?}].penalty.warning: \
+         must be non-empty when present"
+    )]
+    DemandPenaltyWarningEmpty { id: String },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -1194,6 +1561,30 @@ pub enum Sl1Warning {
     /// Emitted once per skipped slot.
     #[error("transform {transform_id:?} missed cadence slot at tick {tick}")]
     TransformSlotMissed { transform_id: String, tick: u64 },
+
+    /// A demand instance was not fulfilled before its deadline and has
+    /// been dropped. PR 5 collapses Late and Dropped into a single
+    /// terminal `Dropped` state; PR 8 may split them when the
+    /// score/penalty model lands. `value` and `penalty_score` are
+    /// surfaced as warning payload so PR 8 can wire score arithmetic
+    /// without protocol changes. `sequence` is the per-demand
+    /// monotonic instance counter so distinct dropped instances are
+    /// distinguishable in event logs.
+    #[error("demand {demand_id:?} instance {sequence} dropped at tick {tick}")]
+    DemandDropped {
+        demand_id: String,
+        sequence: u64,
+        tick: u64,
+        value: u64,
+        penalty_score: i64,
+    },
+
+    /// A demand reached [`MAX_DEMAND_OUTSTANDING`] Pending instances
+    /// and a new spawn slot was suppressed. Emitted once per
+    /// transition into overflow; cleared (and re-emittable on later
+    /// re-entry) when outstanding drops below the cap.
+    #[error("demand {demand_id:?} backlog overflow at tick {tick}")]
+    DemandBacklogOverflow { demand_id: String, tick: u64 },
 }
 
 /// Fatal SL1 engine faults. Populated in later PRs. PR 0 emits none.
@@ -1262,6 +1653,50 @@ pub struct Sl1RuntimeState {
     /// when a transform leaves the `Running` state.
     pub place_capacity_used:
         std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+    /// Per-demand runtime state (PR 5). One entry per declared demand;
+    /// the entry tracks the monotonic next instance sequence, the
+    /// outstanding Pending instances in spawn order, aggregate
+    /// fulfilled/dropped counters for observability and protocol
+    /// snapshots, the next Scripted-schedule cursor (binary-search
+    /// optimization), and a one-shot overflow flag so backlog
+    /// warnings are not re-emitted every tick.
+    pub demand: std::collections::BTreeMap<String, Sl1DemandRuntime>,
+}
+
+/// Per-demand live state (PR 5).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Sl1DemandRuntime {
+    /// Next instance sequence number to assign. Monotonically
+    /// increasing per demand for the lifetime of the run.
+    pub next_sequence: u64,
+    /// Outstanding (Pending) instances in spawn order. Fulfilled and
+    /// Dropped instances are removed immediately after the terminal
+    /// transition emits its event so the deque only carries
+    /// in-flight work and `len()` is exactly the backlog.
+    pub pending: std::collections::VecDeque<Sl1DemandInstance>,
+    /// Cumulative fulfilled count for protocol/observability use.
+    pub fulfilled_count: u64,
+    /// Cumulative dropped count for protocol/observability use.
+    pub dropped_count: u64,
+    /// Cursor into the Scripted schedule (index of next tick to
+    /// match). Unused for Fixed schedules. Cached because
+    /// `ticks.contains(&now)` per tick is O(n) and a strictly
+    /// increasing cursor is O(1) amortized.
+    pub scripted_cursor: usize,
+    /// True when the demand is currently in backlog overflow (Pending
+    /// count ≥ [`MAX_DEMAND_OUTSTANDING`]). Edge-triggered: a single
+    /// [`Sl1Warning::DemandBacklogOverflow`] fires on entry; the flag
+    /// clears when Pending drops below the cap, enabling re-arm on
+    /// later re-entry.
+    pub overflow: bool,
+}
+
+/// One spawned demand instance (PR 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sl1DemandInstance {
+    pub sequence: u64,
+    pub spawned_at: u64,
+    pub deadline_tick: u64,
 }
 
 /// Per-transform live state machine driven by `sl1_runtime::run`.
@@ -1366,11 +1801,17 @@ impl Sl1RuntimeState {
             }
             place_capacity_used.insert(place.id.clone(), buckets);
         }
+        let mut demand: std::collections::BTreeMap<String, Sl1DemandRuntime> =
+            std::collections::BTreeMap::new();
+        for d in &scene.demand {
+            demand.insert(d.id.clone(), Sl1DemandRuntime::default());
+        }
         Self {
             inventories,
             freshness,
             transforms,
             place_capacity_used,
+            demand,
         }
     }
 }
@@ -1477,7 +1918,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.demand, "demand");
     reject_non_empty!(raw.pressure, "pressure");
     reject_non_empty!(raw.objectives, "objectives");
     reject_non_empty!(raw.failure_conditions, "failure_conditions");
@@ -1598,6 +2038,22 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     }
     transforms.sort_by(|a, b| a.id.cmp(&b.id));
 
+    // Validate demand (PR 5). Cross-validates targets against place
+    // ids and requires against thing ids. Tags are NOT accepted in
+    // requires because fulfillment is keyed by exact id.
+    let place_ids: std::collections::BTreeSet<String> =
+        places.iter().map(|p| p.id.clone()).collect();
+    let mut demand: Vec<Sl1Demand> = Vec::with_capacity(raw.demand.len());
+    let mut seen_demand_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_demand in raw.demand {
+        let d = validate_demand(raw_demand, &place_ids, &thing_ids)?;
+        if !seen_demand_ids.insert(d.id.clone()) {
+            return Err(Sl1LoadError::DemandDuplicateId { id: d.id });
+        }
+        demand.push(d);
+    }
+    demand.sort_by(|a, b| a.id.cmp(&b.id));
+
     // The optional observability block must be an empty object until
     // PR 9 implements its schema.
     let observability = if let Some(value) = raw.observability {
@@ -1627,7 +2083,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         links,
         things,
         transforms,
-        demand: Vec::new(),
+        demand,
         pressure: Vec::new(),
         objectives: Vec::new(),
         failure_conditions: Vec::new(),
@@ -2392,6 +2848,314 @@ fn validate_transform_io(
 }
 
 // ---------------------------------------------------------------------------
+// Demand validation helpers (PR 5).
+// ---------------------------------------------------------------------------
+
+fn validate_demand(
+    raw: RawSl1Demand,
+    place_ids: &std::collections::BTreeSet<String>,
+    thing_ids: &std::collections::BTreeSet<String>,
+) -> Result<Sl1Demand, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::DemandInvalidId { id: raw.id });
+    }
+    if raw.kind.trim().is_empty() {
+        return Err(Sl1LoadError::DemandEmptyType { id: raw.id });
+    }
+
+    let target = validate_demand_target(&raw.id, raw.target, place_ids)?;
+    let requires = validate_demand_requires(&raw.id, raw.requires, thing_ids)?;
+    let spawn_schedule = validate_demand_schedule(&raw.id, raw.spawn_schedule)?;
+
+    if raw.deadline_ticks == 0 {
+        return Err(Sl1LoadError::DemandDeadlineZero { id: raw.id });
+    }
+    if raw.deadline_ticks > MAX_DEMAND_TICKS {
+        return Err(Sl1LoadError::DemandDeadlineOutOfRange {
+            id: raw.id,
+            value: raw.deadline_ticks,
+            max: MAX_DEMAND_TICKS,
+        });
+    }
+
+    let priority = match raw.priority.as_str() {
+        "low" => Sl1DemandPriority::Low,
+        "normal" => Sl1DemandPriority::Normal,
+        "high" => Sl1DemandPriority::High,
+        "critical" => Sl1DemandPriority::Critical,
+        _ => {
+            return Err(Sl1LoadError::DemandInvalidPriority {
+                id: raw.id,
+                priority: raw.priority,
+            });
+        }
+    };
+
+    if raw.value > MAX_DEMAND_VALUE {
+        return Err(Sl1LoadError::DemandValueOutOfRange {
+            id: raw.id,
+            value: raw.value,
+            max: MAX_DEMAND_VALUE,
+        });
+    }
+
+    let penalty = validate_demand_penalty(&raw.id, raw.penalty)?;
+
+    Ok(Sl1Demand {
+        id: raw.id,
+        kind: raw.kind,
+        target,
+        requires,
+        spawn_schedule,
+        deadline_ticks: raw.deadline_ticks,
+        priority,
+        value: raw.value,
+        penalty,
+    })
+}
+
+fn validate_demand_target(
+    demand_id: &str,
+    raw: RawSl1DemandTarget,
+    place_ids: &std::collections::BTreeSet<String>,
+) -> Result<Sl1DemandTarget, Sl1LoadError> {
+    match raw.kind.as_str() {
+        "place" => {
+            if !place_ids.contains(&raw.id) {
+                return Err(Sl1LoadError::DemandUnknownTarget {
+                    id: demand_id.to_string(),
+                    target: raw.id,
+                });
+            }
+            Ok(Sl1DemandTarget::Place(raw.id))
+        }
+        "transform" => Err(Sl1LoadError::DemandTargetKindNotImplemented {
+            id: demand_id.to_string(),
+            kind: "transform",
+        }),
+        "dashboard" => Err(Sl1LoadError::DemandTargetKindNotImplemented {
+            id: demand_id.to_string(),
+            kind: "dashboard",
+        }),
+        "virtual_sink" => Err(Sl1LoadError::DemandTargetKindNotImplemented {
+            id: demand_id.to_string(),
+            kind: "virtual_sink",
+        }),
+        _ => Err(Sl1LoadError::DemandUnknownTargetKind {
+            id: demand_id.to_string(),
+            kind: raw.kind,
+        }),
+    }
+}
+
+fn validate_demand_requires(
+    demand_id: &str,
+    raw: Vec<String>,
+    thing_ids: &std::collections::BTreeSet<String>,
+) -> Result<Vec<String>, Sl1LoadError> {
+    if raw.is_empty() {
+        return Err(Sl1LoadError::DemandRequiresEmpty {
+            id: demand_id.to_string(),
+        });
+    }
+    if raw.len() > MAX_DEMAND_REQUIRES {
+        return Err(Sl1LoadError::DemandRequiresTooMany {
+            id: demand_id.to_string(),
+            count: raw.len(),
+            max: MAX_DEMAND_REQUIRES,
+        });
+    }
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut out: Vec<String> = Vec::with_capacity(raw.len());
+    for value in raw {
+        if !thing_ids.contains(&value) {
+            return Err(Sl1LoadError::DemandUnknownRequires {
+                id: demand_id.to_string(),
+                value,
+            });
+        }
+        if !seen.insert(value.clone()) {
+            return Err(Sl1LoadError::DemandDuplicateRequires {
+                id: demand_id.to_string(),
+                value,
+            });
+        }
+        out.push(value);
+    }
+    // Canonicalize so hash + protocol output are declaration-order
+    // independent.
+    out.sort();
+    Ok(out)
+}
+
+fn validate_demand_schedule(
+    demand_id: &str,
+    raw: RawSl1DemandSchedule,
+) -> Result<Sl1DemandSchedule, Sl1LoadError> {
+    match raw.kind.as_str() {
+        "fixed" => {
+            if raw.ticks.is_some() {
+                return Err(Sl1LoadError::DemandScheduleUnexpectedField {
+                    id: demand_id.to_string(),
+                    kind: "fixed",
+                    field: "ticks",
+                });
+            }
+            let every_ticks =
+                raw.every_ticks
+                    .ok_or_else(|| Sl1LoadError::DemandScheduleMissingField {
+                        id: demand_id.to_string(),
+                        kind: "fixed",
+                        field: "every_ticks",
+                    })?;
+            let start_tick =
+                raw.start_tick
+                    .ok_or_else(|| Sl1LoadError::DemandScheduleMissingField {
+                        id: demand_id.to_string(),
+                        kind: "fixed",
+                        field: "start_tick",
+                    })?;
+            if every_ticks == 0 {
+                return Err(Sl1LoadError::DemandScheduleFieldZero {
+                    id: demand_id.to_string(),
+                    field: "every_ticks",
+                });
+            }
+            if start_tick == 0 {
+                return Err(Sl1LoadError::DemandScheduleFieldZero {
+                    id: demand_id.to_string(),
+                    field: "start_tick",
+                });
+            }
+            if every_ticks > MAX_DEMAND_TICKS {
+                return Err(Sl1LoadError::DemandScheduleFieldOutOfRange {
+                    id: demand_id.to_string(),
+                    field: "every_ticks",
+                    value: every_ticks,
+                    max: MAX_DEMAND_TICKS,
+                });
+            }
+            if start_tick > MAX_DEMAND_TICKS {
+                return Err(Sl1LoadError::DemandScheduleFieldOutOfRange {
+                    id: demand_id.to_string(),
+                    field: "start_tick",
+                    value: start_tick,
+                    max: MAX_DEMAND_TICKS,
+                });
+            }
+            Ok(Sl1DemandSchedule::Fixed {
+                every_ticks,
+                start_tick,
+            })
+        }
+        "scripted" => {
+            if raw.every_ticks.is_some() {
+                return Err(Sl1LoadError::DemandScheduleUnexpectedField {
+                    id: demand_id.to_string(),
+                    kind: "scripted",
+                    field: "every_ticks",
+                });
+            }
+            if raw.start_tick.is_some() {
+                return Err(Sl1LoadError::DemandScheduleUnexpectedField {
+                    id: demand_id.to_string(),
+                    kind: "scripted",
+                    field: "start_tick",
+                });
+            }
+            let ticks = raw
+                .ticks
+                .ok_or_else(|| Sl1LoadError::DemandScheduleMissingField {
+                    id: demand_id.to_string(),
+                    kind: "scripted",
+                    field: "ticks",
+                })?;
+            if ticks.is_empty() {
+                return Err(Sl1LoadError::DemandScheduleScriptedEmpty {
+                    id: demand_id.to_string(),
+                });
+            }
+            if ticks.len() > MAX_DEMAND_SCRIPTED_TICKS {
+                return Err(Sl1LoadError::DemandScheduleScriptedTooMany {
+                    id: demand_id.to_string(),
+                    count: ticks.len(),
+                    max: MAX_DEMAND_SCRIPTED_TICKS,
+                });
+            }
+            let mut prev: Option<u64> = None;
+            for &tick in &ticks {
+                if tick == 0 {
+                    return Err(Sl1LoadError::DemandScheduleScriptedTickZero {
+                        id: demand_id.to_string(),
+                    });
+                }
+                if tick > MAX_DEMAND_TICKS {
+                    return Err(Sl1LoadError::DemandScheduleFieldOutOfRange {
+                        id: demand_id.to_string(),
+                        field: "ticks",
+                        value: tick,
+                        max: MAX_DEMAND_TICKS,
+                    });
+                }
+                if let Some(p) = prev {
+                    if tick <= p {
+                        return Err(Sl1LoadError::DemandScheduleScriptedNotIncreasing {
+                            id: demand_id.to_string(),
+                            tick,
+                        });
+                    }
+                }
+                prev = Some(tick);
+            }
+            Ok(Sl1DemandSchedule::Scripted { ticks })
+        }
+        "wave" => Err(Sl1LoadError::DemandScheduleNotImplemented {
+            id: demand_id.to_string(),
+            kind: "wave",
+        }),
+        _ => Err(Sl1LoadError::DemandUnknownScheduleType {
+            id: demand_id.to_string(),
+            kind: raw.kind,
+        }),
+    }
+}
+
+fn validate_demand_penalty(
+    demand_id: &str,
+    raw: RawSl1DemandPenalty,
+) -> Result<Sl1DemandPenalty, Sl1LoadError> {
+    if raw.score > 0 {
+        return Err(Sl1LoadError::DemandPenaltyScorePositive {
+            id: demand_id.to_string(),
+            score: raw.score,
+        });
+    }
+    let abs = raw.score.saturating_abs();
+    if abs > MAX_DEMAND_PENALTY_SCORE {
+        return Err(Sl1LoadError::DemandPenaltyScoreOutOfRange {
+            id: demand_id.to_string(),
+            abs,
+            max: MAX_DEMAND_PENALTY_SCORE,
+        });
+    }
+    let warning = if let Some(w) = raw.warning {
+        let trimmed = w.trim();
+        if trimmed.is_empty() {
+            return Err(Sl1LoadError::DemandPenaltyWarningEmpty {
+                id: demand_id.to_string(),
+            });
+        }
+        Some(w)
+    } else {
+        None
+    };
+    Ok(Sl1DemandPenalty {
+        score: raw.score,
+        warning,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests.
 // ---------------------------------------------------------------------------
 
@@ -2494,14 +3258,13 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 5-11 have no behavior for their primitive — even a
+        // PRs 7-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
         // proto-SL1 scene would silently no-op. PR 1 removed `places`,
-        // PR 2 removed `links`, PR 3 removed `things`, and PR 4 removed
-        // `transforms` from this guard because all four are now typed
-        // and validated.
+        // PR 2 removed `links`, PR 3 removed `things`, PR 4 removed
+        // `transforms`, and PR 5 removed `demand` from this guard
+        // because all five are now typed and validated.
         for (json, expected_section) in [
-            (r#"{"demand": [{}]}"#, "demand"),
             (r#"{"pressure": [{}]}"#, "pressure"),
             (r#"{"objectives": [{}]}"#, "objectives"),
             (r#"{"failure_conditions": [{}]}"#, "failure_conditions"),
@@ -2584,7 +3347,7 @@ mod tests {
         // typo at the top level is surfaced even if the author also
         // populated a primitive that would have hit
         // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "demand": [{}]}"#).unwrap_err();
+        let err = load_str(r#"{"mystery": 1, "agents": [{}]}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),
