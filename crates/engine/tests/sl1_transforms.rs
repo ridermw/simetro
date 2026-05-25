@@ -948,6 +948,72 @@ fn transform_slot_missed_emitted_once_per_overlapping_cadence_tick() {
 }
 
 #[test]
+fn transform_late_started_does_not_complete_past_deadline() {
+    // Codex review (PR #31): a delayed start can overshoot its
+    // deadline when completion_tick lands on a tick where
+    // `now > deadline_tick`. With contention, transform "b" gets
+    // Blocked at tick 1000, starts at tick 1008 once "a" releases
+    // capacity → completion_tick=1011, deadline_tick=1010. Without
+    // the deadline-first reorder, OLD code completes at tick 1011
+    // (since `now >= 1011` evaluates before `now > 1010`).
+    // After the fix this must produce zero widgets for `b` and at
+    // least one Late warning.
+    let json = scene_with(
+        r#"[{
+            "id": "p", "role": "x", "pos": [0,0],
+            "capacity": {"m": 2},
+            "storage": {
+                "raw": {"capacity": 200, "initial": 100},
+                "widget": {"capacity": 100, "initial": 0}
+            },
+            "accepts": ["raw"], "produces": ["widget"]
+        }]"#,
+        r#"[
+            {"id": "raw", "kind": "i", "tags": []},
+            {"id": "widget", "kind": "o", "tags": []}
+        ]"#,
+        r#"[
+            {
+                "id": "a", "type": "x", "runs_on": "p",
+                "inputs": [{"thing": "raw", "amount": 1}],
+                "outputs": [{"thing": "widget", "amount": 1}],
+                "cadence_ticks": 1000, "duration_ticks": 8, "deadline_ticks": 8,
+                "capacity_cost": {"m": 2},
+                "failure_policy": "drop"
+            },
+            {
+                "id": "b", "type": "x", "runs_on": "p",
+                "inputs": [{"thing": "raw", "amount": 1}],
+                "outputs": [{"thing": "widget", "amount": 1}],
+                "cadence_ticks": 1000, "duration_ticks": 3, "deadline_ticks": 10,
+                "capacity_cost": {"m": 2},
+                "failure_policy": "drop"
+            }
+        ]"#,
+    );
+    let (_, world, messages) = load_and_tick(&json, 1020);
+    let late_b = count_warnings(&messages, "b", Sl1TransformWarningKind::Late);
+    assert!(
+        late_b >= 1,
+        "expected ≥1 Late warning for `b` after deadline overshoot, got {late_b}"
+    );
+    let runtime = world.sl1_runtime.as_ref().expect("runtime present");
+    // Only `a` should have produced. `b` started at tick 1008 with
+    // completion=1013 > deadline=1010, so the deadline-first check
+    // must fail it instead of producing a widget.
+    let widget = runtime
+        .inventories
+        .get("p")
+        .and_then(|inv| inv.get("widget"))
+        .copied()
+        .unwrap_or(0);
+    assert_eq!(
+        widget, 1,
+        "only `a` should produce; got widget={widget} (deadline-vs-completion ordering bug returned?)"
+    );
+}
+
+#[test]
 fn transform_cadence_ticks_out_of_range_rejected() {
     let json = scene_with(
         default_places(),

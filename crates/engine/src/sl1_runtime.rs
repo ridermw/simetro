@@ -230,6 +230,23 @@ fn advance_running(
     let completion_tick = started_at.saturating_add(def.duration_ticks);
     let deadline_tick = scheduled_at.saturating_add(def.deadline_ticks);
 
+    // Check deadline FIRST. Otherwise a late-started transform whose
+    // completion_tick happens to equal a tick where `now > deadline_tick`
+    // would still produce outputs (e.g. scheduled=10, deadline_ticks=10,
+    // duration=5, but started=16 due to recovery from Starved → at tick
+    // 21 the completion check would fire before the deadline check).
+    if now > deadline_tick {
+        release_capacity(def, runtime);
+        emit_warning(
+            messages,
+            id,
+            Sl1TransformWarningKind::Late,
+            now,
+            Some(attempt),
+        );
+        return handle_failure_policy(def, id, scheduled_at, attempt, now, messages);
+    }
+
     if now >= completion_tick {
         // Produce outputs, update freshness, release capacity, → Idle.
         let place_id = def.runs_on.clone();
@@ -244,19 +261,6 @@ fn advance_running(
         }
         release_capacity(def, runtime);
         return Sl1TransformState::Idle;
-    }
-
-    if now > deadline_tick {
-        // Running past deadline — failure.
-        release_capacity(def, runtime);
-        emit_warning(
-            messages,
-            id,
-            Sl1TransformWarningKind::Late,
-            now,
-            Some(attempt),
-        );
-        return handle_failure_policy(def, id, scheduled_at, attempt, now, messages);
     }
 
     Sl1TransformState::Running {
