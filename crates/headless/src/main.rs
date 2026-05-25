@@ -973,16 +973,25 @@ mod tests {
         let _ = std::fs::remove_file(&tar_path);
     }
 
-    /// Per Codex PR #24 R1 P1 + R2: building the same directory
-    /// contents twice MUST produce identical tar bytes. With the
-    /// default `HeaderMode::Complete` this fails (mtime/uid differ).
-    /// With `HeaderMode::Deterministic` the headers are zeroed.
+    /// Per Codex PR #24 R1 P1 + R2 + R3 + R4: building the same
+    /// directory contents twice MUST produce identical tar bytes.
     ///
-    /// R2 caught that an earlier version of this test was
-    /// tautological: tar-ing the same on-disk files twice reads
-    /// identical mtimes. We now RECREATE the files between runs
-    /// (with a sleep to force a different on-disk mtime), so the
-    /// assertion genuinely fails under `HeaderMode::Complete`.
+    /// **What this test actually checks**: that the END STATE of the
+    /// produced tar is deterministic across runs with different
+    /// on-disk mtimes. It does NOT exercise the `HeaderMode::Complete`
+    /// failure mode (the R4 reviewer correctly noted that
+    /// `Header::new_gnu()` defaults mtime to 0, so removing
+    /// `header.set_mtime(0)` from `package_bundle_tar` would not
+    /// break this test). The `set_mtime(0)` call is defensive
+    /// documentation — explicit zeroing of every metadata field so a
+    /// future change to `new_gnu()`'s defaults can't silently leak
+    /// mtime.
+    ///
+    /// The control assertion below uses `append_path_with_name` with
+    /// the default `HeaderMode::Complete` to PROVE that the path we
+    /// avoided would have leaked mtime. If the control ever produces
+    /// identical bytes, it means `tar` crate behavior changed and
+    /// our hand-built-header approach is no longer strictly needed.
     #[test]
     fn package_bundle_tar_is_byte_for_byte_reproducible() {
         let tmp = std::env::temp_dir().join(format!("simetro-tar-determ-{}", std::process::id()));
@@ -992,21 +1001,17 @@ mod tests {
         let _ = std::fs::remove_file(&tar1);
         let _ = std::fs::remove_file(&tar2);
 
-        // First build: create dir + files, tar, tear down.
+        // First build.
         std::fs::create_dir_all(&tmp).unwrap();
         std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
         std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
         super::package_bundle_tar(&tmp, &tar1).unwrap();
         std::fs::remove_dir_all(&tmp).unwrap();
 
-        // Sleep past the per-second mtime resolution of common
-        // filesystems (ext4/HFS+/NTFS).
+        // Sleep past per-second filesystem mtime resolution.
         std::thread::sleep(std::time::Duration::from_millis(1100));
 
-        // Second build: identical content but fresh on-disk mtimes.
-        // Under HeaderMode::Complete the tar headers would reflect
-        // the new mtime → tarballs would differ. Under
-        // HeaderMode::Deterministic they're zeroed → identical bytes.
+        // Second build: identical content, fresh on-disk mtimes.
         std::fs::create_dir_all(&tmp).unwrap();
         std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
         std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
@@ -1017,12 +1022,66 @@ mod tests {
         assert_eq!(
             bytes1, bytes2,
             "tarballs must be byte-for-byte identical across runs \
-             with fresh on-disk mtimes (HeaderMode::Deterministic \
-             should zero mtime/uid/gid)"
+             with fresh on-disk mtimes"
+        );
+
+        // CONTROL: prove the naive append_path_with_name path WOULD
+        // leak mtime. If this assertion ever fails (control == fresh
+        // tar), the `tar` crate has changed behavior and we should
+        // re-evaluate whether the hand-built header path is still
+        // necessary.
+        let control1 = tmp.with_extension("tar.control1");
+        let control2 = tmp.with_extension("tar.control2");
+        let _ = std::fs::remove_file(&control1);
+        let _ = std::fs::remove_file(&control2);
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        write_naive_tar(&tmp, &control1).unwrap();
+        std::fs::remove_dir_all(&tmp).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
+        write_naive_tar(&tmp, &control2).unwrap();
+        let c1 = std::fs::read(&control1).unwrap();
+        let c2 = std::fs::read(&control2).unwrap();
+        assert_ne!(
+            c1, c2,
+            "control: append_path_with_name MUST leak mtime so we know our \
+             hand-built-header path is doing real work. If this fails, \
+             either the tar crate changed behavior or the test environment \
+             is masking mtime drift (try a longer sleep or different fs)."
         );
 
         let _ = std::fs::remove_dir_all(&tmp);
         let _ = std::fs::remove_file(&tar1);
         let _ = std::fs::remove_file(&tar2);
+        let _ = std::fs::remove_file(&control1);
+        let _ = std::fs::remove_file(&control2);
+    }
+
+    /// Control helper for the determinism test: writes a tar using
+    /// `append_path_with_name`, which inherits the filesystem mtime
+    /// (and thus produces different bytes across runs). The
+    /// production code path uses hand-built headers instead.
+    fn write_naive_tar(
+        bundle_dir: &std::path::Path,
+        tar_path: &std::path::Path,
+    ) -> std::io::Result<()> {
+        let prefix = bundle_dir.file_name().unwrap().to_owned();
+        let file = std::fs::File::create(tar_path)?;
+        let mut builder = tar::Builder::new(file);
+        // Deliberately NOT setting HeaderMode::Deterministic — we
+        // want the leaky default to demonstrate the failure mode.
+        let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(bundle_dir)?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for entry in entries {
+            let inner_name = std::path::Path::new(&prefix).join(entry.file_name().unwrap());
+            builder.append_path_with_name(&entry, inner_name)?;
+        }
+        builder.into_inner()?.sync_all()?;
+        Ok(())
     }
 }
