@@ -8,6 +8,9 @@
 //!   simetro-headless hash           --scene PATH --ticks N --seed S
 //!   simetro-headless replay         --log PATH [--format summary|json|protocol-jsonl]
 //!   simetro-headless export-session --scene PATH --ticks N --seed S --out DIR
+//!   simetro-headless policy-search --scene PATH [--baseline-policy PATH]
+//!                                  --candidate-policy PATH [--candidate-policy PATH...]
+//!                                  --ticks N --seed S --out PATH
 //! ```
 //!
 //! Exits non-zero on load failures (LoadError surfaces as a printed
@@ -25,6 +28,8 @@ use simetro_engine::{hash_run, load_scene_str, TickRunner};
 use simetro_protocol::{
     Action, ActionTag, AgentReport, ConsideredAction, Envelope, SimEvent, SimMessage,
 };
+
+mod policy_search;
 
 const DEFAULT_TICKS: u64 = 10_000;
 const DEFAULT_SEED: u64 = 42;
@@ -103,6 +108,34 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         bundle: bool,
     },
+    /// Autoresearch-style policy-search runner for SL1 scenes (PR 13).
+    ///
+    /// Loads `--scene` once, runs one baseline trial (either the
+    /// scene's authored agents or `--baseline-policy`), then runs one
+    /// candidate trial per `--candidate-policy`. All trials share
+    /// the same seed/ticks/scene; only the agent heuristic overrides
+    /// from each policy artifact change. Output is JSONL with one
+    /// `type: "trial"` row per trial and a single `type: "summary"`
+    /// row at the end. Use `--out -` to write to stdout.
+    PolicySearch {
+        #[arg(long)]
+        scene: PathBuf,
+        /// Optional baseline policy. When omitted, the scene's
+        /// authored agents are the baseline.
+        #[arg(long)]
+        baseline_policy: Option<PathBuf>,
+        /// One or more candidate policy artifacts. Each is run as one
+        /// trial and compared to the baseline.
+        #[arg(long = "candidate-policy", required = true)]
+        candidate_policy: Vec<PathBuf>,
+        #[arg(long, default_value_t = DEFAULT_TICKS)]
+        ticks: u64,
+        #[arg(long, default_value_t = DEFAULT_SEED)]
+        seed: u64,
+        /// JSONL output file. Use `-` for stdout.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 fn main() {
@@ -134,6 +167,21 @@ fn main() {
             out,
             bundle,
         } => cmd_export_session(&scene, ticks, seed, &out, bundle),
+        Cmd::PolicySearch {
+            scene,
+            baseline_policy,
+            candidate_policy,
+            ticks,
+            seed,
+            out,
+        } => policy_search::cmd_policy_search(
+            &scene,
+            baseline_policy.as_deref(),
+            &candidate_policy,
+            seed,
+            ticks,
+            &out,
+        ),
     };
     std::process::exit(code);
 }

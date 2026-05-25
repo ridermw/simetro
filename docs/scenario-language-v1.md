@@ -660,6 +660,179 @@ clears when the registry-backed scene switch fires. Non-SL1 scenes
 hide the panels (`display: none`) so the canvas surface stays
 visually unchanged.
 
+## Policy-search runner (PR 13)
+
+The `simetro-headless policy-search` subcommand is an
+autoresearch-style policy search loop over a fixed SL1 scenario.
+It runs one deterministic baseline trial plus one trial per
+candidate policy, scores each trial, and keeps candidates that
+strictly beat the baseline.
+
+### CLI shape
+
+```
+simetro-headless policy-search \
+  --scene games/gpu-launch-week.json \
+  --baseline policies/gpu-launch-week-baseline.json \
+  --candidate policies/gpu-launch-week-throttler-aggressive.json \
+  [--candidate <more.json> ...] \
+  --ticks 2000 \
+  [--seed 0] \
+  [--output trials.jsonl]
+```
+
+- All trials use the same scene, same seed, same pressure schedule,
+  same tick budget. Only the policy artifact differs.
+- Output is JSONL: N trial rows followed by one `summary` row.
+  Each row carries a `type` discriminator (`"trial" | "summary"`).
+- Stdout if `--output` omitted; trial rows still go to stderr-free
+  stdout in declaration order (baseline first, then candidates in
+  CLI order).
+
+### Policy artifact format
+
+```jsonc
+{
+  "name": "gpu-launch-week-throttler-aggressive",
+  "description": "Optional human-readable description.",
+  "overrides": {
+    "agents": {
+      "demand-throttler": {
+        "interval_ticks": 30,
+        "cooldown_ticks": 60,
+        "max_cost_per_decision": 25,
+        "objective_weights": { "keep-jobs-fresh": 0.8 },
+        "allowed_actions": ["throttle_demand"]
+      }
+    }
+  }
+}
+```
+
+- `#[serde(deny_unknown_fields)]` everywhere. Unknown top-level
+  keys, unknown nested keys, and unknown agent override keys all
+  fail load.
+- Allowed agent override keys (whitelist):
+  `interval_ticks`, `cooldown_ticks`, `max_cost_per_decision`,
+  `objective_weights`, `allowed_actions`.
+- `cooldown_ticks` and `max_cost_per_decision` are applied under
+  `agent.budgets.{...}` in the scene. The remainder are top-level
+  on the agent.
+- `objective_weights` values must be `f64` in `[0, 1]` to match the
+  engine loader's clamp. Values outside that range fail with
+  `PolicyApplyError::ObjectiveWeightOutOfRange`.
+- Unknown agent ids fail with `PolicyApplyError::UnknownAgent`
+  (typed; never silent).
+
+### Score formula (lexicographic)
+
+Each trial produces a `TrialScore { class, weighted }`:
+
+- **Primary key (`class`):** `OutcomeClass` enum with strict order
+  `Lost(0) < InProgress(1) < Won(2)`. A `Lost` trial can never beat
+  an `InProgress` trial regardless of weighted score.
+- **Secondary key (`weighted: f64`):**
+
+  ```
+  weighted =
+      sum(objective.weight)               for each Met objective
+    - sum(objective.weight)               for each Breached objective
+    + sum(fulfilled * demand.value)       for each declared demand
+    - sum(dropped * demand.penalty.score) for each declared demand
+    - 50.0 * fired_failure_conditions
+  ```
+
+Comparison is `(class, weighted)` lexicographic. The
+`TrialScore::beats(other)` method is the source of truth.
+
+### Trial state machine
+
+```
+Baseline ──> first trial; records baseline_score
+Kept     ──> candidate.score > baseline_score (lexicographic)
+Discarded──> candidate.score <= baseline_score
+Failed   ──> engine panicked (catch_unwind caught it)
+Blocked  ──> policy artifact failed validation (typed error)
+```
+
+`Failed` is only reached on a real Rust panic from the engine.
+Every expected error (bad policy / bad scene / unknown agent) is
+typed and surfaces as `Blocked`.
+
+### Exit codes
+
+| code | meaning |
+|---|---|
+| 0 | every trial produced a comparable score |
+| 2 | at least one trial blocked (policy artifact invalid) |
+| 3 | at least one trial failed (engine panic) |
+| 4 | scene/IO error before any trial row was emitted |
+
+The scene file is preflight-parsed and preflight-loaded
+(`load_scene_str`) before any JSONL is written. A malformed or
+SL1-invalid scene file therefore exits with code 4 (process-level
+IO/config problem), not code 2 (policy artifact problem). This
+keeps the contract honest: code 2 always means "a policy artifact
+was rejected", and code 4 always means "we never got far enough
+to run a trial".
+
+### JSONL output schema
+
+Trial row:
+
+```jsonc
+{
+  "type": "trial",
+  "trial_id": 0,
+  "policy_name": "gpu-launch-week-baseline",
+  "status": "baseline",
+  "seed": 0,
+  "ticks": 2000,
+  "score": { "class": "in_progress", "weighted": 3206.0 },
+  "outcome": "in_progress",
+  "hash": "e8b1d03f..."
+}
+```
+
+Summary row:
+
+```jsonc
+{
+  "type": "summary",
+  "trials": 3,
+  "kept": 0,
+  "discarded": 2,
+  "failed": 0,
+  "blocked": 0
+}
+```
+
+Optional fields on trial rows:
+
+- `baseline_score` — copy of the baseline's score (on candidates).
+- `delta` — `candidate.weighted - baseline.weighted` (candidates).
+- `lost_reason` — populated when `outcome = lost`.
+- `error` — typed error message on `Blocked` / `Failed`.
+
+### Determinism guarantee
+
+The trial loop calls `hash_run(&mut world, &mut runner, ticks)`,
+which both produces a SHA-256 fingerprint of
+`(initial_world, per-tick events+messages, final_world)` AND
+advances the world. The runner then reads `world.sl1_runtime`
+directly for scoring — there is no separate tick loop. Two
+invocations of the same policy against the same scene with the
+same seed produce byte-identical JSONL (modulo timestamps, which
+the runner does not emit).
+
+### Reference artifacts
+
+- `policies/gpu-launch-week-baseline.json` — empty-overrides
+  baseline.
+- `policies/gpu-launch-week-throttler-aggressive.json` — example
+  candidate: `interval_ticks: 60 → 30`, `cooldown_ticks: 120 → 60`,
+  modest `objective_weights` tweak on the `demand-throttler` agent.
+
 ## Roadmap (per `plan.md`)
 
 | PR | Adds |
