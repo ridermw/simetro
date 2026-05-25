@@ -6,6 +6,10 @@ AI agents author and play.
 
 > **Status:** Phase 1.5 complete. Engine, protocol, headless CLI, agent-bridge, TypeScript frontend with Canvas2D renderer, animation engine, audio, inspector, UI shell, faults/warnings overlays, and Playwright E2E suite. The Tauri desktop shell now spawns the engine driver, streams snapshots at 20 Hz, handles control intents (pause/resume/speed/reload), and the animated MockTransport keeps the browser-only dev flow working. See [`docs/`](./docs/) for architecture, schema, protocol, agents, testing, runbook, and ADRs.
 
+> **For an agent picking up an in-flight autonomous PR queue**, start at
+> [`docs/superpowers/handoff/HANDOFF.md`](./docs/superpowers/handoff/HANDOFF.md).
+> It enumerates the operating contract, the PR ledger, and what remains.
+
 ## Quick start
 
 ```bash
