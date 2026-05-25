@@ -394,7 +394,10 @@ fn scene_fires_pressure_milestones_during_winning_run() {
     // Health-signal milestones are declared for degenerate runs only; they
     // must NOT fire on the smooth winning path. If either fires it means the
     // tuned baseline pipeline is no longer healthy.
-    for id in ["exec-dashboard-went-stale", "platform-compute-saturated-detected"] {
+    for id in [
+        "exec-dashboard-went-stale",
+        "platform-compute-saturated-detected",
+    ] {
         let entry = runtime
             .milestones
             .get(id)
