@@ -71,6 +71,14 @@ scene_entry!("airport-ground-stop"),
     scene_entry!("warehouse-cold-chain"),
     scene_entry!("weather-balloon-yard"),
     scene_entry!("wildfire-watch-grid"),
+    // PR 15a — Daily-life delights showcase scenes
+    scene_entry!("sandwich-shop"),
+    scene_entry!("theme-park-day"),
+    scene_entry!("school-lunch-line"),
+    scene_entry!("coffee-roastery"),
+    scene_entry!("library-checkout"),
+    scene_entry!("farmers-market"),
+    scene_entry!("bicycle-repair-shop"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

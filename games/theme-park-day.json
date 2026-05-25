@@ -1,0 +1,464 @@
+{
+  "schema_version": 1,
+  "name": "theme-park-day",
+  "theme": {
+    "palette": [
+      "#fff7d6",
+      "#1f2933",
+      "#ef4444",
+      "#f59e0b",
+      "#10b981",
+      "#3b82f6",
+      "#a855f7"
+    ],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "catalog": {
+    "slug": "theme-park-day",
+    "title": "Theme Park Day",
+    "version": "0.1.0",
+    "author": "simetro",
+    "description": "Keep the rides running and the lines moving from gate-open to fireworks. A thunderstorm threatens the parade \u2014 close the park to weather, or stretch the day to closing.",
+    "tags": [
+      "sl1",
+      "scenario_language_v1",
+      "showcase",
+      "daily_life",
+      "easy"
+    ],
+    "palette_note": "Sun-bleached cream and ink navy; cherry red coaster, marigold popcorn, mint topiary, sapphire fountain, violet evening parade.",
+    "layout_note": "Gate (source) feeds the central midway (compute_cluster) which routes guests to the headline ride (dashboard) while a guest services overlay (operator) watches for surges.",
+    "node_language_note": "source / compute_cluster / dashboard / operator. The compute_cluster is the midway \u2014 guests, snacks, and ride tokens all flow through it.",
+    "mover_path_note": "Movers do not exist yet for SL1 scenes; the legacy pieces.movers array is intentionally empty. SL1 links represent typed dependency from the entry gate to the midway, the headline ride, and the manager overlay. Cross-place inventory transport will surface as visible mover sprites when the SL1 renderer lands; today the issue-ride-token and run-coaster transforms live on midway and headline-ride respectively.",
+    "review_note": "Marked status=draft in the frontend catalog because the SL1 canvas renderer is not yet wired. Selecting this scene loads it successfully and shows catalog metadata in the scene browser. The SL1 HUD chips, dashboard freshness pill, and milestone strip render via the existing SL1 HUD overlay; the bespoke canvas vignette ships when the SL1 renderer is wired in a later PR."
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "goals": [
+    {
+      "type": "loop_forever"
+    }
+  ],
+  "agents": [],
+  "scenario_language_v1": {
+    "schema_version": 1,
+    "places": [
+      {
+        "id": "front-gate",
+        "role": "source",
+        "pos": [
+          -320.0,
+          0.0
+        ],
+        "capacity": {
+          "turnstiles": 6
+        },
+        "storage": {},
+        "accepts": [],
+        "produces": [
+          "guest",
+          "snack_voucher"
+        ],
+        "failure_domains": [
+          "park"
+        ],
+        "operating_states": {}
+      },
+      {
+        "id": "midway",
+        "role": "compute_cluster",
+        "pos": [
+          0.0,
+          0.0
+        ],
+        "capacity": {
+          "lanes": 4,
+          "ride_ops": 6
+        },
+        "storage": {
+          "guest": {
+            "capacity": 1500,
+            "initial": 1100
+          },
+          "snack_voucher": {
+            "capacity": 800,
+            "initial": 200
+          },
+          "ride_token": {
+            "capacity": 5000,
+            "initial": 30
+          },
+          "memory_card": {
+            "capacity": 5000,
+            "initial": 0
+          }
+        },
+        "accepts": [
+          "guest",
+          "snack_voucher"
+        ],
+        "produces": [
+          "ride_token",
+          "memory_card"
+        ],
+        "failure_domains": [
+          "park"
+        ],
+        "operating_states": {}
+      },
+      {
+        "id": "headline-ride",
+        "role": "dashboard",
+        "pos": [
+          320.0,
+          -120.0
+        ],
+        "capacity": {
+          "trains": 2
+        },
+        "storage": {
+          "ride_token": {
+            "capacity": 60,
+            "initial": 8
+          },
+          "happy_review": {
+            "capacity": 400,
+            "initial": 0
+          }
+        },
+        "accepts": [
+          "ride_token"
+        ],
+        "produces": [
+          "happy_review"
+        ],
+        "failure_domains": [
+          "park"
+        ],
+        "operating_states": {}
+      },
+      {
+        "id": "guest-services",
+        "role": "operator",
+        "pos": [
+          0.0,
+          240.0
+        ],
+        "capacity": {},
+        "storage": {},
+        "accepts": [],
+        "produces": [],
+        "failure_domains": [
+          "park"
+        ],
+        "operating_states": {}
+      }
+    ],
+    "links": [
+      {
+        "id": "gate-to-midway",
+        "type": "pathway",
+        "from": "front-gate",
+        "to": "midway",
+        "direction": "forward",
+        "capacity": {
+          "guests_per_tick": 8
+        },
+        "travel_ticks": 1,
+        "compatibility": [
+          "guest",
+          "snack_voucher"
+        ],
+        "queue_capacity": 100,
+        "backpressure": "block_upstream",
+        "render": {
+          "style": "flow",
+          "color": 2
+        }
+      },
+      {
+        "id": "midway-to-ride",
+        "type": "queue_line",
+        "from": "midway",
+        "to": "headline-ride",
+        "direction": "forward",
+        "capacity": {
+          "tokens_per_tick": 6
+        },
+        "travel_ticks": 2,
+        "compatibility": [
+          "ride_token"
+        ],
+        "queue_capacity": 80,
+        "backpressure": "drop_low_priority",
+        "render": {
+          "style": "flow",
+          "color": 3
+        }
+      },
+      {
+        "id": "midway-to-services",
+        "type": "radio",
+        "from": "midway",
+        "to": "guest-services",
+        "direction": "bidirectional",
+        "capacity": {},
+        "travel_ticks": 1,
+        "compatibility": [],
+        "queue_capacity": 32,
+        "backpressure": "spill_to_buffer",
+        "render": {
+          "style": "control",
+          "color": 5
+        }
+      }
+    ],
+    "things": [
+      {
+        "id": "guest",
+        "kind": "visitor",
+        "tags": [
+          "park"
+        ],
+        "freshness_budget_ticks": 1200
+      },
+      {
+        "id": "snack_voucher",
+        "kind": "credential",
+        "tags": [
+          "food"
+        ],
+        "freshness_budget_ticks": 600
+      },
+      {
+        "id": "ride_token",
+        "kind": "credential",
+        "tags": [
+          "ride"
+        ],
+        "freshness_budget_ticks": 300
+      },
+      {
+        "id": "memory_card",
+        "kind": "memento",
+        "tags": [
+          "photo"
+        ],
+        "freshness_budget_ticks": 900
+      },
+      {
+        "id": "happy_review",
+        "kind": "report",
+        "tags": [
+          "nps"
+        ],
+        "freshness_budget_ticks": 1200
+      }
+    ],
+    "transforms": [
+      {
+        "id": "issue-ride-token",
+        "type": "issue",
+        "runs_on": "midway",
+        "inputs": [
+          {
+            "thing": "guest",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "ride_token",
+            "amount": 1
+          },
+          {
+            "thing": "memory_card",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 2,
+        "duration_ticks": 1,
+        "deadline_ticks": 4,
+        "capacity_cost": {
+          "ride_ops": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      },
+      {
+        "id": "run-coaster",
+        "type": "ride_cycle",
+        "runs_on": "headline-ride",
+        "inputs": [
+          {
+            "thing": "ride_token",
+            "amount": 1
+          }
+        ],
+        "outputs": [
+          {
+            "thing": "happy_review",
+            "amount": 1
+          }
+        ],
+        "cadence_ticks": 3,
+        "duration_ticks": 2,
+        "deadline_ticks": 8,
+        "capacity_cost": {
+          "trains": 1
+        },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      }
+    ],
+    "demand": [
+      {
+        "id": "guest-wants-ride",
+        "type": "ride_request",
+        "target": {
+          "type": "place",
+          "id": "headline-ride"
+        },
+        "requires": [
+          "happy_review"
+        ],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 8,
+          "start_tick": 40
+        },
+        "deadline_ticks": 60,
+        "priority": "normal",
+        "value": 8,
+        "penalty": {
+          "score": -15,
+          "warning": "guest_left_unhappy"
+        }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "thunderstorm-incoming",
+        "type": "source_multiplier",
+        "at_tick": 1200,
+        "duration_ticks": 200,
+        "target": "midway",
+        "thing": "guest",
+        "multiplier": 1.5
+      }
+    ],
+    "objectives": [
+      {
+        "id": "keep-reviews-fresh",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "headline-ride",
+        "thing": "happy_review",
+        "max_stale_ticks": 360
+      },
+      {
+        "id": "serve-ride-requests",
+        "type": "complete_jobs_before_deadline",
+        "weight": 3,
+        "demand": "guest-wants-ride",
+        "max_missed": 5
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "ride-tokens-vanish",
+        "type": "stale_target",
+        "place": "midway",
+        "thing": "ride_token",
+        "threshold_ticks": 600,
+        "grace_ticks": 60
+      }
+    ],
+    "victory_conditions": [
+      {
+        "id": "stay-open-til-fireworks",
+        "type": "survive_until",
+        "at_tick": 1800
+      }
+    ],
+    "observability": {
+      "metrics": [
+        {
+          "id": "midway-density",
+          "source": "place_inventory_count",
+          "place": "midway",
+          "thing": "guest"
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "park-pulse",
+          "type": "live",
+          "depends_on": [
+            "happy_review"
+          ],
+          "freshness_slo_ticks": 360
+        }
+      ],
+      "alerts": [
+        {
+          "id": "midway-overcrowded",
+          "metric": "midway-density",
+          "predicate": {
+            "type": "gt",
+            "threshold": 200
+          },
+          "severity": "warning"
+        }
+      ]
+    },
+    "agents": [
+      {
+        "id": "park-ops",
+        "kind": "mock",
+        "role": "observer",
+        "interval_ticks": 60,
+        "observation_scope": [
+          "metric:midway-density",
+          "dashboard:park-pulse"
+        ],
+        "allowed_actions": [],
+        "budgets": {
+          "max_cost_per_decision": 1,
+          "cooldown_ticks": 0
+        },
+        "objective_weights": {
+          "serve-ride-requests": 1.0
+        }
+      }
+    ],
+    "milestones": [
+      {
+        "id": "storm-warning-issued",
+        "label": "Thunderstorm warning issued",
+        "trigger": {
+          "type": "pressure_activated",
+          "pressure": "thunderstorm-incoming"
+        },
+        "camera_focus": [
+          "midway"
+        ]
+      },
+      {
+        "id": "storm-passes",
+        "label": "Storm passes \u2014 fireworks back on",
+        "trigger": {
+          "type": "pressure_deactivated",
+          "pressure": "thunderstorm-incoming"
+        },
+        "camera_focus": [
+          "headline-ride"
+        ]
+      }
+    ]
+  }
+}
