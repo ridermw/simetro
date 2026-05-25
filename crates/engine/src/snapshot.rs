@@ -19,19 +19,25 @@
 use simetro_protocol::{
     FreshnessStateView, MoverState as WireMover, NodeShapeTag, NodeView, PathView,
     Sl1DemandPenaltyView, Sl1DemandPriorityView, Sl1DemandRuntimeView, Sl1DemandScheduleView,
-    Sl1DemandTargetView, Sl1DemandView, Sl1FailurePolicyView, Sl1LinkBackpressureView,
-    Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView, Sl1OperatingPredicateView,
-    Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView, Sl1PressureParamsView,
-    Sl1PressureView, Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView,
-    Sl1ThingView, Sl1TransformIoView, Sl1TransformRuntimeView, Sl1TransformStateView,
-    Sl1TransformView, SnapshotPayload, StaticPayload,
+    Sl1DemandTargetView, Sl1DemandView, Sl1FailureConditionParamsView,
+    Sl1FailureConditionRuntimeView, Sl1FailureConditionView, Sl1FailurePolicyView,
+    Sl1GameOutcomeView, Sl1LinkBackpressureView, Sl1LinkDirectionView, Sl1LinkRenderHintView,
+    Sl1LinkView, Sl1ObjectiveParamsView, Sl1ObjectiveRuntimeView, Sl1ObjectiveStatusTag,
+    Sl1ObjectiveView, Sl1OperatingPredicateView, Sl1OperatingStateView, Sl1PlaceInventoryView,
+    Sl1PlaceView, Sl1PressureParamsView, Sl1PressureView, Sl1StorageSlotView,
+    Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView, Sl1TransformIoView,
+    Sl1TransformRuntimeView, Sl1TransformStateView, Sl1TransformView,
+    Sl1VictoryConditionParamsView, Sl1VictoryConditionRuntimeView, Sl1VictoryConditionView,
+    SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
 use crate::scenario_language_v1::{
-    FreshnessState, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1OperatingPredicate,
-    Sl1Place, Sl1Pressure, Sl1PressureKind, Sl1PressureParams, Sl1Thing,
+    FreshnessState, GameOutcome, Sl1FailureCondition, Sl1FailureConditionParams, Sl1Link,
+    Sl1LinkBackpressure, Sl1LinkDirection, Sl1Objective, Sl1ObjectiveParams, Sl1ObjectiveStatus,
+    Sl1OperatingPredicate, Sl1Place, Sl1Pressure, Sl1PressureKind, Sl1PressureParams, Sl1Thing,
+    Sl1VictoryCondition, Sl1VictoryConditionParams,
 };
 use crate::world::World;
 
@@ -124,6 +130,31 @@ pub fn encode_static_parts(
             .sl1
             .as_ref()
             .map(|sl1| sl1.pressure.iter().map(pressure_to_view).collect())
+            .unwrap_or_default(),
+        sl1_objectives: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.objectives.iter().map(objective_to_view).collect())
+            .unwrap_or_default(),
+        sl1_failure_conditions: world
+            .sl1
+            .as_ref()
+            .map(|sl1| {
+                sl1.failure_conditions
+                    .iter()
+                    .map(failure_condition_to_view)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        sl1_victory_conditions: world
+            .sl1
+            .as_ref()
+            .map(|sl1| {
+                sl1.victory_conditions
+                    .iter()
+                    .map(victory_condition_to_view)
+                    .collect()
+            })
             .unwrap_or_default(),
     }
 }
@@ -398,6 +429,114 @@ pub(crate) fn pressure_kind_to_str(kind: Sl1PressureKind) -> &'static str {
     kind.as_str()
 }
 
+fn objective_to_view(o: &Sl1Objective) -> Sl1ObjectiveView {
+    let params = match &o.params {
+        Sl1ObjectiveParams::KeepFresh {
+            place,
+            thing,
+            max_stale_ticks,
+        } => Sl1ObjectiveParamsView::KeepFresh {
+            place: place.clone(),
+            thing: thing.clone(),
+            max_stale_ticks: *max_stale_ticks,
+        },
+        Sl1ObjectiveParams::CompleteJobsBeforeDeadline { demand, max_missed } => {
+            Sl1ObjectiveParamsView::CompleteJobsBeforeDeadline {
+                demand: demand.clone(),
+                max_missed: *max_missed,
+            }
+        }
+        Sl1ObjectiveParams::MaintainUtilization {
+            place,
+            capacity,
+            min_percent,
+            max_percent,
+        } => Sl1ObjectiveParamsView::MaintainUtilization {
+            place: place.clone(),
+            capacity: capacity.clone(),
+            min_percent: *min_percent,
+            max_percent: *max_percent,
+        },
+        Sl1ObjectiveParams::UnsupportedInThisPr => Sl1ObjectiveParamsView::UnsupportedInThisPr,
+    };
+    Sl1ObjectiveView {
+        id: o.id.clone(),
+        kind: o.kind.as_str().to_string(),
+        weight: o.weight,
+        params,
+    }
+}
+
+fn failure_condition_to_view(fc: &Sl1FailureCondition) -> Sl1FailureConditionView {
+    let params = match &fc.params {
+        Sl1FailureConditionParams::StaleTarget {
+            place,
+            thing,
+            threshold_ticks,
+            grace_ticks,
+        } => Sl1FailureConditionParamsView::StaleTarget {
+            place: place.clone(),
+            thing: thing.clone(),
+            threshold_ticks: *threshold_ticks,
+            grace_ticks: *grace_ticks,
+        },
+        Sl1FailureConditionParams::PlaceState {
+            place,
+            state,
+            grace_ticks,
+        } => Sl1FailureConditionParamsView::PlaceState {
+            place: place.clone(),
+            state: state.clone(),
+            grace_ticks: *grace_ticks,
+        },
+        Sl1FailureConditionParams::ObjectiveBreachCount {
+            objective_id,
+            max_count,
+        } => Sl1FailureConditionParamsView::ObjectiveBreachCount {
+            objective_id: objective_id.clone(),
+            max_count: *max_count,
+        },
+    };
+    Sl1FailureConditionView {
+        id: fc.id.clone(),
+        kind: fc.kind.as_str().to_string(),
+        params,
+    }
+}
+
+fn victory_condition_to_view(vc: &Sl1VictoryCondition) -> Sl1VictoryConditionView {
+    let params = match &vc.params {
+        Sl1VictoryConditionParams::SurviveUntil { at_tick } => {
+            Sl1VictoryConditionParamsView::SurviveUntil { at_tick: *at_tick }
+        }
+    };
+    Sl1VictoryConditionView {
+        id: vc.id.clone(),
+        kind: vc.kind.as_str().to_string(),
+        params,
+    }
+}
+
+fn status_to_view(s: Sl1ObjectiveStatus) -> Sl1ObjectiveStatusTag {
+    match s {
+        Sl1ObjectiveStatus::Unknown => Sl1ObjectiveStatusTag::Unknown,
+        Sl1ObjectiveStatus::Met => Sl1ObjectiveStatusTag::Met,
+        Sl1ObjectiveStatus::Breached => Sl1ObjectiveStatusTag::Breached,
+        Sl1ObjectiveStatus::Unsupported => Sl1ObjectiveStatusTag::Unsupported,
+    }
+}
+
+fn outcome_to_view(o: &GameOutcome) -> Sl1GameOutcomeView {
+    let reason = match o {
+        GameOutcome::Lost { reason } => Some(reason.clone()),
+        _ => None,
+    };
+    Sl1GameOutcomeView {
+        state: o.variant_str().to_string(),
+        reason,
+    }
+}
+
 /// Compute group-by-color batches over path views. Renderer caches one
 /// `Path2D` per color and re-uses it across frames.
 ///
@@ -423,6 +562,11 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
     out.sl1_place_inventories.clear();
     out.sl1_transform_states.clear();
     out.sl1_demand_states.clear();
+    out.sl1_objective_states.clear();
+    out.sl1_failure_condition_states.clear();
+    out.sl1_victory_condition_states.clear();
+    out.sl1_game_outcome = None;
+    out.sl1_game_phase = None;
 
     for m in world.movers.values() {
         let (pos, on_path) = match m.state() {
@@ -489,6 +633,30 @@ pub fn encode_snapshot(world: &World, out: &mut SnapshotPayload) -> usize {
                 next_sequence: dr.next_sequence,
             });
         }
+        for (objective_id, or) in runtime.objectives.iter() {
+            out.sl1_objective_states.push(Sl1ObjectiveRuntimeView {
+                objective_id: objective_id.clone(),
+                status: status_to_view(or.status),
+                breach_tick_count: or.breach_tick_count,
+            });
+        }
+        for (fc_id, fr) in runtime.failure_conditions.iter() {
+            out.sl1_failure_condition_states
+                .push(Sl1FailureConditionRuntimeView {
+                    failure_condition_id: fc_id.clone(),
+                    breach_streak_ticks: fr.breach_streak_ticks,
+                    fired_at_tick: fr.fired_at_tick,
+                });
+        }
+        for (vc_id, vr) in runtime.victory_conditions.iter() {
+            out.sl1_victory_condition_states
+                .push(Sl1VictoryConditionRuntimeView {
+                    victory_condition_id: vc_id.clone(),
+                    met_at_tick: vr.met_at_tick,
+                });
+        }
+        out.sl1_game_outcome = Some(outcome_to_view(&runtime.game_outcome));
+        out.sl1_game_phase = Some(runtime.game_phase.as_str().to_string());
     }
 
     out.movers.len()

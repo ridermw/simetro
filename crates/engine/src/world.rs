@@ -107,13 +107,15 @@ impl World {
 
     /// Current SL1 game outcome.
     ///
-    /// PR 0 always reports [`GameOutcome::InProgress`] — real
-    /// objective/failure evaluation lands in PR 8. Worlds without an
-    /// SL1 block also report `InProgress` (legacy scenes have no
-    /// terminal outcome; they "loop forever").
+    /// Returns the runtime's tracked outcome for SL1 scenes (PR 8).
+    /// Worlds without an SL1 runtime always report `InProgress`
+    /// (legacy scenes have no terminal outcome; they "loop forever").
     #[must_use]
     pub fn sl1_outcome(&self) -> GameOutcome {
-        GameOutcome::InProgress
+        self.sl1_runtime
+            .as_ref()
+            .map(|r| r.game_outcome.clone())
+            .unwrap_or(GameOutcome::InProgress)
     }
 
     /// Find a resource by its stable string name. Linear in number of

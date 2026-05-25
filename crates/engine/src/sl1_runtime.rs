@@ -56,6 +56,12 @@ pub fn run(
     if !scene.demand.is_empty() {
         run_demand(scene, runtime, now, messages);
     }
+
+    // Objectives, failure conditions, and victory conditions run LAST
+    // so they observe the post-pressure / post-transform / post-demand
+    // world for this tick. The evaluator is internally short-circuited
+    // when `game_outcome` is already terminal.
+    crate::sl1_objectives::run(scene, runtime, now, events, messages);
 }
 
 fn age_freshness(

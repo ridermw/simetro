@@ -144,6 +144,26 @@ pub struct StaticPayload {
     /// with no `pressure`. Sorted by `id`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_pressure: Vec<Sl1PressureView>,
+    /// SL1 objectives for this scene. PR 8. Static metadata only;
+    /// per-tick status goes in [`SnapshotPayload::sl1_objective_states`].
+    /// Empty for non-SL1 scenes and for SL1 scenes with no
+    /// `objectives`. Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_objectives: Vec<Sl1ObjectiveView>,
+    /// SL1 failure conditions for this scene. PR 8. Static metadata
+    /// only; per-tick fired/streak state goes in
+    /// [`SnapshotPayload::sl1_failure_condition_states`]. Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `failure_conditions`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_failure_conditions: Vec<Sl1FailureConditionView>,
+    /// SL1 victory conditions for this scene. PR 8. Static metadata
+    /// only; per-tick met state goes in
+    /// [`SnapshotPayload::sl1_victory_condition_states`]. Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `victory_conditions`.
+    /// Sorted by `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_victory_conditions: Vec<Sl1VictoryConditionView>,
 }
 
 /// Wire-level view of one validated SL1 place. Mirrors
@@ -482,6 +502,128 @@ pub struct Sl1DemandRuntimeView {
     pub next_sequence: u64,
 }
 
+// --- PR 8 — objectives / failure_conditions / victory_conditions ---
+
+/// Wire-level view of a validated SL1 objective. Mirrors
+/// `engine::scenario_language_v1::Sl1Objective` 1:1.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1ObjectiveView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub weight: u32,
+    pub params: Sl1ObjectiveParamsView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1ObjectiveParamsView {
+    KeepFresh {
+        place: String,
+        thing: String,
+        max_stale_ticks: u64,
+    },
+    CompleteJobsBeforeDeadline {
+        demand: String,
+        max_missed: u64,
+    },
+    MaintainUtilization {
+        place: String,
+        capacity: String,
+        min_percent: u8,
+        max_percent: u8,
+    },
+    UnsupportedInThisPr,
+}
+
+/// Wire-level view of a validated SL1 failure condition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1FailureConditionView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub params: Sl1FailureConditionParamsView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1FailureConditionParamsView {
+    StaleTarget {
+        place: String,
+        thing: String,
+        threshold_ticks: u64,
+        grace_ticks: u64,
+    },
+    PlaceState {
+        place: String,
+        state: String,
+        grace_ticks: u64,
+    },
+    ObjectiveBreachCount {
+        objective_id: String,
+        max_count: u64,
+    },
+}
+
+/// Wire-level view of a validated SL1 victory condition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1VictoryConditionView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub params: Sl1VictoryConditionParamsView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Sl1VictoryConditionParamsView {
+    SurviveUntil { at_tick: u64 },
+}
+
+/// Per-tick status of a single objective.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1ObjectiveRuntimeView {
+    pub objective_id: String,
+    pub status: Sl1ObjectiveStatusTag,
+    pub breach_tick_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1ObjectiveStatusTag {
+    Unknown,
+    Met,
+    Breached,
+    Unsupported,
+}
+
+/// Per-tick state of a single failure condition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1FailureConditionRuntimeView {
+    pub failure_condition_id: String,
+    pub breach_streak_ticks: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fired_at_tick: Option<u64>,
+}
+
+/// Per-tick state of a single victory condition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1VictoryConditionRuntimeView {
+    pub victory_condition_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub met_at_tick: Option<u64>,
+}
+
+/// Per-tick GameOutcome snapshot. `state` is the canonical wire
+/// string (`in_progress` / `won` / `lost`); `reason` is `Some` only
+/// when `state == "lost"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sl1GameOutcomeView {
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeView {
     pub id: u32,
@@ -530,6 +672,31 @@ pub struct SnapshotPayload {
     /// scenes and for SL1 scenes with no `demand`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sl1_demand_states: Vec<Sl1DemandRuntimeView>,
+    /// SL1 per-objective runtime state for this tick (PR 8). Empty for
+    /// non-SL1 scenes and for SL1 scenes with no `objectives`. Sorted
+    /// by `objective_id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_objective_states: Vec<Sl1ObjectiveRuntimeView>,
+    /// SL1 per-failure-condition runtime state for this tick (PR 8).
+    /// Empty for non-SL1 scenes and for SL1 scenes with no
+    /// `failure_conditions`. Sorted by `failure_condition_id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_failure_condition_states: Vec<Sl1FailureConditionRuntimeView>,
+    /// SL1 per-victory-condition runtime state for this tick (PR 8).
+    /// Empty for non-SL1 scenes and for SL1 scenes with no
+    /// `victory_conditions`. Sorted by `victory_condition_id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sl1_victory_condition_states: Vec<Sl1VictoryConditionRuntimeView>,
+    /// SL1 game outcome for this tick (PR 8). `None` for non-SL1
+    /// scenes; always `Some` for SL1 scenes (defaults to
+    /// `in_progress`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sl1_game_outcome: Option<Sl1GameOutcomeView>,
+    /// SL1 game phase for this tick (PR 8) — derived server-side from
+    /// `sl1_game_outcome` and objective/failure-condition statuses.
+    /// `None` for non-SL1 scenes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sl1_game_phase: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -591,6 +758,40 @@ pub enum SimEvent {
         pressure_kind: String,
         event: Sl1PressureEventKind,
         tick: u64,
+    },
+    /// An SL1 objective transitioned between status states (Unknown →
+    /// Met/Breached or Met ↔ Breached). Emitted exactly once per
+    /// transition.
+    Sl1ObjectiveStateChanged {
+        objective_id: String,
+        from: Sl1ObjectiveStatusTag,
+        to: Sl1ObjectiveStatusTag,
+        tick: u64,
+    },
+    /// An SL1 failure condition fired (its breach streak exceeded
+    /// `grace_ticks`). Sticky — emitted exactly once per failure
+    /// condition per scene run.
+    Sl1FailureConditionFired {
+        failure_condition_id: String,
+        tick: u64,
+    },
+    /// An SL1 victory condition was met. Sticky — emitted exactly
+    /// once per victory condition per scene run.
+    Sl1VictoryConditionMet {
+        victory_condition_id: String,
+        tick: u64,
+    },
+    /// The SL1 game outcome transitioned from one state to another.
+    /// Terminal transitions (`in_progress → won` or `in_progress →
+    /// lost`) are emitted exactly once per scene run; the outcome is
+    /// sticky after that.
+    Sl1GameOutcomeChanged {
+        from: String,
+        to: String,
+        tick: u64,
+        /// `Some` only when `to == "lost"`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
 }
 
@@ -751,6 +952,29 @@ pub enum WarningPayload {
         pressure_kind: String,
         tick: u64,
     },
+    /// SL1 objective observability warning (PR 8). Currently used to
+    /// surface "objective has no runtime effect in this build" once
+    /// per objective id for recognized-but-unsupported kinds
+    /// (`cost_budget`, `data_quality`, `query_latency`). Future PRs
+    /// add other variants as the runtime grows.
+    Sl1Objective {
+        objective_id: String,
+        event: Sl1ObjectiveWarningKind,
+        /// Canonical snake_case objective kind ([`Sl1ObjectiveView::kind`]).
+        objective_kind: String,
+        tick: u64,
+    },
+}
+
+/// SL1 objective observability warning (PR 8).
+///
+/// `UnsupportedInThisPr` fires exactly once per objective id at first
+/// evaluation when the variant is recognized by the schema but has no
+/// runtime effect wired in the current build.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Sl1ObjectiveWarningKind {
+    UnsupportedInThisPr,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1077,6 +1301,11 @@ mod tests {
             sl1_place_inventories: Vec::new(),
             sl1_transform_states: Vec::new(),
             sl1_demand_states: Vec::new(),
+            sl1_objective_states: Vec::new(),
+            sl1_failure_condition_states: Vec::new(),
+            sl1_victory_condition_states: Vec::new(),
+            sl1_game_outcome: None,
+            sl1_game_phase: None,
         };
         let back: SnapshotPayload = roundtrip(&snap);
         assert_eq!(back.tick, 100);
@@ -1116,6 +1345,9 @@ mod tests {
             sl1_transforms: Vec::new(),
             sl1_demand: Vec::new(),
             sl1_pressure: Vec::new(),
+            sl1_objectives: Vec::new(),
+            sl1_failure_conditions: Vec::new(),
+            sl1_victory_conditions: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.node_names.len(), 2);
@@ -1211,6 +1443,9 @@ mod tests {
             sl1_transforms: Vec::new(),
             sl1_demand: Vec::new(),
             sl1_pressure: Vec::new(),
+            sl1_objectives: Vec::new(),
+            sl1_failure_conditions: Vec::new(),
+            sl1_victory_conditions: Vec::new(),
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_places, sp.sl1_places);
@@ -1244,6 +1479,9 @@ mod tests {
             sl1_transforms: vec![],
             sl1_demand: vec![],
             sl1_pressure: vec![],
+            sl1_objectives: vec![],
+            sl1_failure_conditions: vec![],
+            sl1_victory_conditions: vec![],
         };
         let bare_json = serde_json::to_value(&bare).unwrap();
         assert!(bare_json.get("sl1_places").is_none());
@@ -1303,6 +1541,9 @@ mod tests {
             sl1_transforms: vec![],
             sl1_demand: vec![],
             sl1_pressure: vec![],
+            sl1_objectives: vec![],
+            sl1_failure_conditions: vec![],
+            sl1_victory_conditions: vec![],
         };
         let back: StaticPayload = roundtrip(&sp);
         assert_eq!(back.sl1_links, links);
