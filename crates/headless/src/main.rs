@@ -728,11 +728,17 @@ fn cmd_export_session(
 /// prefix so `tar -xf <tar_path>` reproduces the original layout
 /// (i.e. extracts into `<basename>/`).
 ///
-/// Entries are added in stable lexicographic order, and headers are
-/// written via [`tar::HeaderMode::Deterministic`] so mtime/uid/gid
-/// are zeroed — the resulting tar is byte-for-byte reproducible
-/// across runs and machines for the same input directory (same hash
-/// → same archive bytes). Per Codex PR #24 R1 P1.
+/// Entries are added in stable lexicographic order, and each entry's
+/// header is built manually with **all metadata zeroed** (mtime,
+/// uid, gid, uname, gname, mode normalized to 0o644). `tar::HeaderMode::Deterministic`
+/// alone does NOT zero mtime in tar 0.4 (it only handles uid/gid/uname/gname),
+/// so we use `append_data` with a hand-built [`tar::Header`] instead
+/// of `append_path_with_name`.
+///
+/// The result is byte-for-byte reproducible across runs and machines
+/// for the same input directory + contents (same hash → same archive
+/// bytes). Per Codex PR #24 R1 P1 + R2 reviewer's observation that
+/// the previous fix only addressed uid/gid, not mtime.
 fn package_bundle_tar(
     bundle_dir: &std::path::Path,
     tar_path: &std::path::Path,
@@ -749,22 +755,40 @@ fn package_bundle_tar(
 
     let file = std::fs::File::create(tar_path)?;
     let mut builder = tar::Builder::new(file);
-    // Per Codex PR #24 R1 P1: Builder::new defaults to
-    // HeaderMode::Complete which records the live filesystem
-    // mtime/uid/gid. That breaks byte-for-byte reproducibility
-    // across runs/machines. Deterministic mode zeroes those fields.
     builder.mode(tar::HeaderMode::Deterministic);
+
     let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(bundle_dir)?
         .filter_map(Result::ok)
         .map(|e| e.path())
         .collect();
     entries.sort();
+
     for entry in entries {
         let inner_name =
             std::path::Path::new(&prefix).join(entry.file_name().ok_or_else(|| {
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "entry has no basename")
             })?);
-        builder.append_path_with_name(&entry, inner_name)?;
+
+        // Read the file once so the header's size matches what we
+        // hand to append_data.
+        let bytes = std::fs::read(&entry)?;
+
+        // Build a header from scratch so every metadata field is
+        // explicitly zeroed — tar 0.4's HeaderMode::Deterministic
+        // does NOT zero mtime, only uid/gid/uname/gname.
+        let mut header = tar::Header::new_gnu();
+        header.set_path(&inner_name).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("set_path: {e}"))
+        })?;
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_mtime(0);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+
+        builder.append(&header, bytes.as_slice())?;
     }
     builder.into_inner()?.sync_all()?;
     Ok(())
