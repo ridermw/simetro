@@ -207,15 +207,16 @@ fn loader_rejects_misplaced_top_level_sl1_primitive() {
 
 #[test]
 fn loader_rejects_non_empty_primitive_until_pr_lands() {
-    // PRs 8–11 have no behavior for their primitive — even a
+    // PRs 10–11 have no behavior for their primitive — even a
     // well-formed entry must fail load so authors cannot build
     // proto-SL1 scenes that silently no-op. PRs 1–5 promoted `places`,
-    // `links`, `things`, `transforms`, and `demand`, and PR 7
-    // promoted `pressure`, to typed primitives, so this regression
-    // test uses `objectives` (still a placeholder until PR 8).
+    // `links`, `things`, `transforms`, and `demand`, PR 7 promoted
+    // `pressure`, and PR 8 promoted `objectives`, `failure_conditions`,
+    // and `victory_conditions` to typed primitives. This regression
+    // test uses `agents` (still a placeholder until PR 10).
     let json = r##"{
         "schema_version": 1,
-        "name": "sl1-non-empty-objectives",
+        "name": "sl1-non-empty-agents",
         "theme": {
             "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
             "background_index": 0,
@@ -223,14 +224,14 @@ fn loader_rejects_non_empty_primitive_until_pr_lands() {
         },
         "pieces": { "nodes": [], "paths": [], "movers": [] },
         "scenario_language_v1": {
-            "objectives": [{}]
+            "agents": [{}]
         }
     }"##;
     let err =
         load_scene_str(json, 0).expect_err("non-empty SL1 placeholder primitive must be rejected");
     match err {
         LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "objectives");
+            assert_eq!(section, "agents");
         }
         other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
     }

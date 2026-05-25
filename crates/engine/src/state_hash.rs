@@ -369,6 +369,39 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
         }
     }
 
+    // Per-objective static fingerprint (PR 8). Sorted by id at
+    // validation time. Gated on `!objectives.is_empty()` so earlier
+    // baselines stay stable.
+    if !sl1.objectives.is_empty() {
+        for o in &sl1.objectives {
+            h.update(b"sl1.objective.v1");
+            feed_str(h, &o.id);
+            h.update([objective_kind_tag(o.kind)]);
+            h.update(o.weight.to_le_bytes());
+            feed_objective_params(h, &o.params);
+        }
+    }
+
+    // Per-failure-condition static fingerprint (PR 8).
+    if !sl1.failure_conditions.is_empty() {
+        for fc in &sl1.failure_conditions {
+            h.update(b"sl1.failure_condition.v1");
+            feed_str(h, &fc.id);
+            h.update([failure_condition_kind_tag(fc.kind)]);
+            feed_failure_condition_params(h, &fc.params);
+        }
+    }
+
+    // Per-victory-condition static fingerprint (PR 8).
+    if !sl1.victory_conditions.is_empty() {
+        for vc in &sl1.victory_conditions {
+            h.update(b"sl1.victory_condition.v1");
+            feed_str(h, &vc.id);
+            h.update([victory_condition_kind_tag(vc.kind)]);
+            feed_victory_condition_params(h, &vc.params);
+        }
+    }
+
     // Per-tick runtime fingerprint (PR 3). Gated on runtime existing
     // AND typed things being present so empty-things scenes stay on
     // their existing baselines. The runtime carries per-place
@@ -441,6 +474,70 @@ fn feed_sl1(h: &mut Sha256, world: &World) {
                     h.update(instance.deadline_tick.to_le_bytes());
                 }
             }
+        }
+        // Per-tick objective/FC/VC runtime fingerprint (PR 8). Each
+        // section is gated by its own static-section emptiness so
+        // pre-PR-8 baselines stay stable.
+        if !sl1.objectives.is_empty() {
+            h.update(b"sl1.runtime.objectives.v1");
+            h.update((runtime.objectives.len() as u64).to_le_bytes());
+            for (oid, or) in &runtime.objectives {
+                feed_str(h, oid);
+                h.update([objective_status_tag(or.status)]);
+                h.update(or.breach_tick_count.to_le_bytes());
+                h.update(or.last_change_tick.to_le_bytes());
+            }
+            h.update((runtime.unsupported_objectives_warned.len() as u64).to_le_bytes());
+            for id in &runtime.unsupported_objectives_warned {
+                feed_str(h, id);
+            }
+        }
+        if !sl1.failure_conditions.is_empty() {
+            h.update(b"sl1.runtime.failure_conditions.v1");
+            h.update((runtime.failure_conditions.len() as u64).to_le_bytes());
+            for (fid, fr) in &runtime.failure_conditions {
+                feed_str(h, fid);
+                h.update(fr.breach_streak_ticks.to_le_bytes());
+                match fr.fired_at_tick {
+                    Some(t) => {
+                        h.update([0x01]);
+                        h.update(t.to_le_bytes());
+                    }
+                    None => h.update([0x00]),
+                }
+            }
+        }
+        if !sl1.victory_conditions.is_empty() {
+            h.update(b"sl1.runtime.victory_conditions.v1");
+            h.update((runtime.victory_conditions.len() as u64).to_le_bytes());
+            for (vid, vr) in &runtime.victory_conditions {
+                feed_str(h, vid);
+                match vr.met_at_tick {
+                    Some(t) => {
+                        h.update([0x01]);
+                        h.update(t.to_le_bytes());
+                    }
+                    None => h.update([0x00]),
+                }
+            }
+        }
+        // Game outcome and phase are gated on the scene declaring at
+        // least one objective/FC/VC so empty-objective scenes stay on
+        // their existing baselines.
+        if !sl1.objectives.is_empty()
+            || !sl1.failure_conditions.is_empty()
+            || !sl1.victory_conditions.is_empty()
+        {
+            h.update(b"sl1.runtime.outcome.v1");
+            h.update(runtime.game_outcome.variant_str().as_bytes());
+            if let crate::scenario_language_v1::GameOutcome::Lost { reason } = &runtime.game_outcome
+            {
+                h.update([0x01]);
+                feed_str(h, reason);
+            } else {
+                h.update([0x00]);
+            }
+            h.update(runtime.game_phase.as_str().as_bytes());
         }
     }
 }
@@ -690,6 +787,68 @@ fn feed_event(h: &mut Sha256, e: &SimEvent) {
             h.update([sl1_pressure_event_tag(*event)]);
             h.update(tick.to_le_bytes());
         }
+        SimEvent::Sl1ObjectiveStateChanged {
+            objective_id,
+            from,
+            to,
+            tick,
+        } => {
+            h.update([0x18]);
+            h.update((objective_id.len() as u64).to_le_bytes());
+            h.update(objective_id.as_bytes());
+            h.update([sl1_objective_status_tag(*from)]);
+            h.update([sl1_objective_status_tag(*to)]);
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1FailureConditionFired {
+            failure_condition_id,
+            tick,
+        } => {
+            h.update([0x19]);
+            h.update((failure_condition_id.len() as u64).to_le_bytes());
+            h.update(failure_condition_id.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1VictoryConditionMet {
+            victory_condition_id,
+            tick,
+        } => {
+            h.update([0x1a]);
+            h.update((victory_condition_id.len() as u64).to_le_bytes());
+            h.update(victory_condition_id.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+        SimEvent::Sl1GameOutcomeChanged {
+            from,
+            to,
+            tick,
+            reason,
+        } => {
+            h.update([0x1b]);
+            h.update((from.len() as u64).to_le_bytes());
+            h.update(from.as_bytes());
+            h.update((to.len() as u64).to_le_bytes());
+            h.update(to.as_bytes());
+            h.update(tick.to_le_bytes());
+            match reason {
+                Some(r) => {
+                    h.update([0x01]);
+                    h.update((r.len() as u64).to_le_bytes());
+                    h.update(r.as_bytes());
+                }
+                None => h.update([0x00]),
+            }
+        }
+    }
+}
+
+fn sl1_objective_status_tag(s: simetro_protocol::Sl1ObjectiveStatusTag) -> u8 {
+    use simetro_protocol::Sl1ObjectiveStatusTag as T;
+    match s {
+        T::Unknown => 0x00,
+        T::Met => 0x01,
+        T::Breached => 0x02,
+        T::Unsupported => 0x03,
     }
 }
 
@@ -852,6 +1011,27 @@ fn feed_warning(h: &mut Sha256, w: &WarningPayload) {
             h.update(pressure_kind.as_bytes());
             h.update(tick.to_le_bytes());
         }
+        WarningPayload::Sl1Objective {
+            objective_id,
+            event,
+            objective_kind,
+            tick,
+        } => {
+            h.update([0x37]);
+            h.update((objective_id.len() as u64).to_le_bytes());
+            h.update(objective_id.as_bytes());
+            h.update([sl1_objective_warning_tag(*event)]);
+            h.update((objective_kind.len() as u64).to_le_bytes());
+            h.update(objective_kind.as_bytes());
+            h.update(tick.to_le_bytes());
+        }
+    }
+}
+
+fn sl1_objective_warning_tag(event: simetro_protocol::Sl1ObjectiveWarningKind) -> u8 {
+    use simetro_protocol::Sl1ObjectiveWarningKind as K;
+    match event {
+        K::UnsupportedInThisPr => 0x01,
     }
 }
 
@@ -924,6 +1104,132 @@ fn feed_pressure_params(h: &mut Sha256, p: &crate::scenario_language_v1::Sl1Pres
         }
         P::UnsupportedInThisPr => {
             h.update([0x05]);
+        }
+    }
+}
+
+fn objective_kind_tag(kind: crate::scenario_language_v1::Sl1ObjectiveKind) -> u8 {
+    use crate::scenario_language_v1::Sl1ObjectiveKind as K;
+    match kind {
+        K::KeepFresh => 0x01,
+        K::CompleteJobsBeforeDeadline => 0x02,
+        K::MaintainUtilization => 0x03,
+        K::CostBudget => 0x04,
+        K::DataQuality => 0x05,
+        K::QueryLatency => 0x06,
+    }
+}
+
+fn objective_status_tag(s: crate::scenario_language_v1::Sl1ObjectiveStatus) -> u8 {
+    use crate::scenario_language_v1::Sl1ObjectiveStatus as S;
+    match s {
+        S::Unknown => 0x00,
+        S::Met => 0x01,
+        S::Breached => 0x02,
+        S::Unsupported => 0x03,
+    }
+}
+
+fn feed_objective_params(h: &mut Sha256, p: &crate::scenario_language_v1::Sl1ObjectiveParams) {
+    use crate::scenario_language_v1::Sl1ObjectiveParams as P;
+    match p {
+        P::KeepFresh {
+            place,
+            thing,
+            max_stale_ticks,
+        } => {
+            h.update([0x01]);
+            feed_str(h, place);
+            feed_str(h, thing);
+            h.update(max_stale_ticks.to_le_bytes());
+        }
+        P::CompleteJobsBeforeDeadline { demand, max_missed } => {
+            h.update([0x02]);
+            feed_str(h, demand);
+            h.update(max_missed.to_le_bytes());
+        }
+        P::MaintainUtilization {
+            place,
+            capacity,
+            min_percent,
+            max_percent,
+        } => {
+            h.update([0x03]);
+            feed_str(h, place);
+            feed_str(h, capacity);
+            h.update([*min_percent]);
+            h.update([*max_percent]);
+        }
+        P::UnsupportedInThisPr => {
+            h.update([0x04]);
+        }
+    }
+}
+
+fn failure_condition_kind_tag(kind: crate::scenario_language_v1::Sl1FailureConditionKind) -> u8 {
+    use crate::scenario_language_v1::Sl1FailureConditionKind as K;
+    match kind {
+        K::StaleTarget => 0x01,
+        K::PlaceState => 0x02,
+        K::ObjectiveBreachCount => 0x03,
+    }
+}
+
+fn feed_failure_condition_params(
+    h: &mut Sha256,
+    p: &crate::scenario_language_v1::Sl1FailureConditionParams,
+) {
+    use crate::scenario_language_v1::Sl1FailureConditionParams as P;
+    match p {
+        P::StaleTarget {
+            place,
+            thing,
+            threshold_ticks,
+            grace_ticks,
+        } => {
+            h.update([0x01]);
+            feed_str(h, place);
+            feed_str(h, thing);
+            h.update(threshold_ticks.to_le_bytes());
+            h.update(grace_ticks.to_le_bytes());
+        }
+        P::PlaceState {
+            place,
+            state,
+            grace_ticks,
+        } => {
+            h.update([0x02]);
+            feed_str(h, place);
+            feed_str(h, state);
+            h.update(grace_ticks.to_le_bytes());
+        }
+        P::ObjectiveBreachCount {
+            objective_id,
+            max_count,
+        } => {
+            h.update([0x03]);
+            feed_str(h, objective_id);
+            h.update(max_count.to_le_bytes());
+        }
+    }
+}
+
+fn victory_condition_kind_tag(kind: crate::scenario_language_v1::Sl1VictoryConditionKind) -> u8 {
+    use crate::scenario_language_v1::Sl1VictoryConditionKind as K;
+    match kind {
+        K::SurviveUntil => 0x01,
+    }
+}
+
+fn feed_victory_condition_params(
+    h: &mut Sha256,
+    p: &crate::scenario_language_v1::Sl1VictoryConditionParams,
+) {
+    use crate::scenario_language_v1::Sl1VictoryConditionParams as P;
+    match p {
+        P::SurviveUntil { at_tick } => {
+            h.update([0x01]);
+            h.update(at_tick.to_le_bytes());
         }
     }
 }

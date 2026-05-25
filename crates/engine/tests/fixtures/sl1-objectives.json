@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "name": "sl1-objectives-fixture",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": { "nodes": [], "paths": [], "movers": [] },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [0.0, 0.0],
+        "capacity": { "machine_hours": 4 },
+        "storage": {
+          "raw_material": { "capacity": 100, "initial": 100 },
+          "report":       { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["report"],
+        "operating_states": {
+          "saturated": { "when": "machine_hours.used_percent >= 90" }
+        }
+      },
+      {
+        "id": "sink",
+        "role": "consumer",
+        "pos": [10.0, 0.0],
+        "capacity": { "queries": 8 },
+        "storage": { "report": { "capacity": 100, "initial": 0 } },
+        "accepts": ["report"],
+        "produces": []
+      }
+    ],
+    "things": [
+      { "id": "raw_material", "kind": "input", "tags": [] },
+      { "id": "report",       "kind": "data",  "tags": [], "freshness_budget_ticks": 50 }
+    ],
+    "links": [
+      {
+        "id": "factory-to-sink",
+        "type": "report_pipe",
+        "from": "factory", "to": "sink",
+        "direction": "forward",
+        "capacity": { "reports": 5 },
+        "travel_ticks": 2,
+        "compatibility": ["report"],
+        "queue_capacity": 5,
+        "backpressure": "block_upstream"
+      }
+    ],
+    "demand": [
+      {
+        "id": "report-d",
+        "type": "report_refresh",
+        "target": { "type": "place", "id": "sink" },
+        "requires": ["report"],
+        "spawn_schedule": { "type": "fixed", "every_ticks": 50, "start_tick": 5 },
+        "deadline_ticks": 100,
+        "priority": "normal",
+        "value": 5,
+        "penalty": { "score": -1 }
+      }
+    ],
+    "objectives": [
+      {
+        "id": "freshness",
+        "type": "keep_fresh",
+        "weight": 2,
+        "place": "factory",
+        "thing": "report",
+        "max_stale_ticks": 50
+      },
+      {
+        "id": "no-dropped",
+        "type": "complete_jobs_before_deadline",
+        "demand": "report-d",
+        "max_missed": 1
+      },
+      {
+        "id": "machine-utilization",
+        "type": "maintain_utilization",
+        "place": "factory",
+        "capacity": "machine_hours",
+        "min_percent": 0,
+        "max_percent": 100
+      },
+      {
+        "id": "budget-unsupported",
+        "type": "cost_budget",
+        "max_cost": 1000
+      }
+    ],
+    "failure_conditions": [
+      {
+        "id": "very-stale-report",
+        "type": "stale_target",
+        "place": "factory",
+        "thing": "report",
+        "threshold_ticks": 200,
+        "grace_ticks": 5
+      },
+      {
+        "id": "saturated-too-long",
+        "type": "place_state",
+        "place": "factory",
+        "state": "saturated",
+        "grace_ticks": 5
+      }
+    ],
+    "victory_conditions": [
+      { "id": "survive-300", "type": "survive_until", "at_tick": 300 }
+    ]
+  }
+}

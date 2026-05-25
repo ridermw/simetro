@@ -161,9 +161,15 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub pressure: Vec<RawSl1Pressure>,
     #[serde(default)]
-    pub objectives: Vec<serde_json::Value>,
+    pub objectives: Vec<RawSl1Objective>,
     #[serde(default)]
-    pub failure_conditions: Vec<serde_json::Value>,
+    pub failure_conditions: Vec<RawSl1FailureCondition>,
+    /// PR 8 victory conditions (`survive_until`). Empty in earlier
+    /// schemas. Optional; absent or empty leaves the scene without an
+    /// explicit win mechanism, in which case `GameOutcome::Won` is
+    /// unreachable (the scene is endless or loss-only).
+    #[serde(default)]
+    pub victory_conditions: Vec<RawSl1VictoryCondition>,
     #[serde(default)]
     pub agents: Vec<serde_json::Value>,
     /// Optional `observability` block. PR 0 accepts an omitted block
@@ -214,6 +220,9 @@ pub struct Sl1Scene {
     pub pressure: Vec<Sl1Pressure>,
     pub objectives: Vec<Sl1Objective>,
     pub failure_conditions: Vec<Sl1FailureCondition>,
+    /// PR 8 victory conditions. Empty if the scene does not declare a
+    /// win mechanism (only failure conditions can end the run).
+    pub victory_conditions: Vec<Sl1VictoryCondition>,
     pub agents: Vec<Sl1Agent>,
     pub observability: Option<Sl1Observability>,
     pub milestones: Vec<Sl1Milestone>,
@@ -926,13 +935,277 @@ impl Sl1Pressure {
     }
 }
 
-/// Placeholder loaded `objective`. Populated in PR 8.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Objective;
+// ---------------------------------------------------------------------------
+// Objective — typed primitive (PR 8).
+// ---------------------------------------------------------------------------
 
-/// Placeholder loaded `failure_condition`. Populated in PR 8.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1FailureCondition;
+/// Maximum allowed `max_stale_ticks` / `max_missed` / `at_tick` for any
+/// objective/failure/victory condition. Matches the pressure cap so an
+/// authored scene cannot accidentally schedule a condition millions of
+/// ticks into the future.
+pub const MAX_OBJECTIVE_TICKS: u64 = 1_000_000;
+
+/// Maximum allowed `weight` on an `objective`. Keeps deterministic
+/// `weight * status` integer arithmetic well below `u32::MAX` so future
+/// score aggregations cannot silently overflow.
+pub const MAX_OBJECTIVE_WEIGHT: u32 = 10_000;
+
+/// Maximum allowed `max_count` on `objective_breach_count` failure
+/// conditions. Beyond this the FC is effectively un-fireable for any
+/// realistic scene length, so we reject it at load to catch typos.
+pub const MAX_OBJECTIVE_BREACH_COUNT: u64 = 1_000_000;
+
+/// Raw `objectives[]` entry. Strict-schema; unknown fields rejected.
+/// The discriminator is a free string so unknown `type` surfaces as
+/// [`Sl1LoadError::ObjectiveUnknownType`] instead of serde's generic
+/// "unknown variant" error.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Objective {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Optional weight for future scoring (PR 13 policy search).
+    /// Default 1. Must be in `1..=MAX_OBJECTIVE_WEIGHT`.
+    #[serde(default)]
+    pub weight: Option<u32>,
+    // KeepFresh / StaleTarget-style fields.
+    #[serde(default)]
+    pub place: Option<String>,
+    #[serde(default)]
+    pub thing: Option<String>,
+    #[serde(default)]
+    pub max_stale_ticks: Option<u64>,
+    // CompleteJobsBeforeDeadline.
+    #[serde(default)]
+    pub demand: Option<String>,
+    #[serde(default)]
+    pub max_missed: Option<u64>,
+    // MaintainUtilization.
+    #[serde(default)]
+    pub capacity: Option<String>,
+    #[serde(default)]
+    pub min_percent: Option<u8>,
+    #[serde(default)]
+    pub max_percent: Option<u8>,
+    // CostBudget (recognized-but-unsupported in PR 8).
+    #[serde(default)]
+    pub max_cost: Option<u64>,
+    // DataQuality (recognized-but-unsupported).
+    #[serde(default)]
+    pub max_contract_violations: Option<u64>,
+    // QueryLatency (recognized-but-unsupported).
+    #[serde(default)]
+    pub p95_max_ticks: Option<u64>,
+    /// Common free-text target used by `data_quality` /
+    /// `query_latency` / `cost_budget` (unsupported in PR 8). Still
+    /// validated to resolve to a declared id where possible.
+    #[serde(default)]
+    pub target: Option<String>,
+}
+
+/// Closed enum of objective kinds. The discriminator is open at the
+/// raw layer so unknowns surface as a typed load error; here we lock
+/// it so downstream pattern matches can be exhaustive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1ObjectiveKind {
+    /// Inventory of `thing` on `place` must stay within
+    /// `max_stale_ticks` of its `freshness_budget_ticks`.
+    KeepFresh,
+    /// At most `max_missed` instances of `demand` may be dropped or
+    /// late since scene start.
+    CompleteJobsBeforeDeadline,
+    /// The named capacity bucket on `place` must stay within the
+    /// `[min_percent, max_percent]` utilization range.
+    MaintainUtilization,
+    /// Recognized-but-unsupported in PR 8. Emits
+    /// [`Sl1Warning::ObjectiveUnsupportedInThisPr`] once on first
+    /// evaluation; status stays `Unsupported` for the rest of the run.
+    CostBudget,
+    /// Recognized-but-unsupported in PR 8.
+    DataQuality,
+    /// Recognized-but-unsupported in PR 8.
+    QueryLatency,
+}
+
+impl Sl1ObjectiveKind {
+    /// Canonical wire string. Stable; do not rename without bumping
+    /// affected hash baselines.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::KeepFresh => "keep_fresh",
+            Self::CompleteJobsBeforeDeadline => "complete_jobs_before_deadline",
+            Self::MaintainUtilization => "maintain_utilization",
+            Self::CostBudget => "cost_budget",
+            Self::DataQuality => "data_quality",
+            Self::QueryLatency => "query_latency",
+        }
+    }
+
+    /// Whether PR 8 actually evaluates the variant.
+    #[must_use]
+    pub const fn has_runtime_effect_in_pr8(self) -> bool {
+        matches!(
+            self,
+            Self::KeepFresh | Self::CompleteJobsBeforeDeadline | Self::MaintainUtilization,
+        )
+    }
+}
+
+/// Per-variant typed parameters. Each variant only carries the fields
+/// it actually consumes; downstream pattern matches cannot observe
+/// stale parameters from a sibling variant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1ObjectiveParams {
+    KeepFresh {
+        place: String,
+        thing: String,
+        max_stale_ticks: u64,
+    },
+    CompleteJobsBeforeDeadline {
+        demand: String,
+        max_missed: u64,
+    },
+    MaintainUtilization {
+        place: String,
+        capacity: String,
+        min_percent: u8,
+        max_percent: u8,
+    },
+    /// Variant accepted at load but not evaluated. The objective
+    /// surfaces as `status == Unsupported` for the whole run.
+    UnsupportedInThisPr,
+}
+
+/// Validated `objective` primitive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Objective {
+    pub id: String,
+    pub kind: Sl1ObjectiveKind,
+    pub weight: u32,
+    pub params: Sl1ObjectiveParams,
+}
+
+// ---------------------------------------------------------------------------
+// FailureCondition — typed primitive (PR 8).
+// ---------------------------------------------------------------------------
+
+/// Raw `failure_conditions[]` entry. Strict-schema.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1FailureCondition {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    // StaleTarget.
+    #[serde(default)]
+    pub place: Option<String>,
+    #[serde(default)]
+    pub thing: Option<String>,
+    #[serde(default)]
+    pub threshold_ticks: Option<u64>,
+    #[serde(default)]
+    pub grace_ticks: Option<u64>,
+    // PlaceState.
+    #[serde(default)]
+    pub state: Option<String>,
+    // ObjectiveBreachCount.
+    #[serde(default)]
+    pub objective_id: Option<String>,
+    #[serde(default)]
+    pub max_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1FailureConditionKind {
+    StaleTarget,
+    PlaceState,
+    ObjectiveBreachCount,
+}
+
+impl Sl1FailureConditionKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::StaleTarget => "stale_target",
+            Self::PlaceState => "place_state",
+            Self::ObjectiveBreachCount => "objective_breach_count",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1FailureConditionParams {
+    StaleTarget {
+        place: String,
+        thing: String,
+        threshold_ticks: u64,
+        grace_ticks: u64,
+    },
+    PlaceState {
+        place: String,
+        state: String,
+        grace_ticks: u64,
+    },
+    ObjectiveBreachCount {
+        objective_id: String,
+        max_count: u64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1FailureCondition {
+    pub id: String,
+    pub kind: Sl1FailureConditionKind,
+    pub params: Sl1FailureConditionParams,
+}
+
+// ---------------------------------------------------------------------------
+// VictoryCondition — typed primitive (PR 8).
+// ---------------------------------------------------------------------------
+
+/// Raw `victory_conditions[]` entry. PR 8 supports the single variant
+/// `survive_until { at_tick }`; the enum is left open at the
+/// discriminator for future variants.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1VictoryCondition {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Required for `survive_until`.
+    #[serde(default)]
+    pub at_tick: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1VictoryConditionKind {
+    SurviveUntil,
+}
+
+impl Sl1VictoryConditionKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SurviveUntil => "survive_until",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1VictoryConditionParams {
+    /// Met the first tick `now >= at_tick` with no failure condition
+    /// previously fired.
+    SurviveUntil { at_tick: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1VictoryCondition {
+    pub id: String,
+    pub kind: Sl1VictoryConditionKind,
+    pub params: Sl1VictoryConditionParams,
+}
 
 /// Placeholder loaded `agent`. Populated in PR 10.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1822,6 +2095,239 @@ pub enum Sl1LoadError {
          {value} out of allowed range [1, {max}]"
     )]
     PressureReductionPercentOutOfRange { id: String, value: u8, max: u8 },
+
+    // ---- PR 8 — objectives / failure_conditions / victory_conditions ----
+    /// Empty / charset / length violation on an `objective.id`.
+    #[error("scenario_language_v1.objectives: invalid id {id:?}")]
+    ObjectiveInvalidId { id: String },
+
+    /// Two objectives share an id.
+    #[error("scenario_language_v1.objectives: duplicate id {id:?}")]
+    ObjectiveDuplicateId { id: String },
+
+    /// `type` does not match any known objective kind.
+    #[error("scenario_language_v1.objectives[{id:?}].type: unknown kind {kind:?}")]
+    ObjectiveUnknownType { id: String, kind: String },
+
+    /// A required per-variant parameter is missing.
+    #[error("scenario_language_v1.objectives[{id:?}] ({kind}): missing required field {field}")]
+    ObjectiveMissingField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// A field that does not belong to this variant was set.
+    #[error("scenario_language_v1.objectives[{id:?}] ({kind}): unexpected field {field}")]
+    ObjectiveUnexpectedField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// `weight` is zero or exceeds [`MAX_OBJECTIVE_WEIGHT`].
+    #[error(
+        "scenario_language_v1.objectives[{id:?}].weight: {value} out of allowed range [1, {max}]"
+    )]
+    ObjectiveWeightOutOfRange { id: String, value: u32, max: u32 },
+
+    /// Target id does not resolve in the expected catalog.
+    #[error(
+        "scenario_language_v1.objectives[{id:?}]: target {target:?} does not resolve to a declared {expected} id"
+    )]
+    ObjectiveUnknownTarget {
+        id: String,
+        expected: &'static str,
+        target: String,
+    },
+
+    /// `keep_fresh` references a `(place, thing)` pair that has no
+    /// declared storage slot on that place.
+    #[error(
+        "scenario_language_v1.objectives[{id:?}] (keep_fresh): \
+         place {place:?} has no storage slot for thing {thing:?}"
+    )]
+    ObjectiveNoStorageSlot {
+        id: String,
+        place: String,
+        thing: String,
+    },
+
+    /// `max_stale_ticks`/`max_missed` exceeds [`MAX_OBJECTIVE_TICKS`].
+    #[error(
+        "scenario_language_v1.objectives[{id:?}].{field}: {value} out of allowed range [1, {max}]"
+    )]
+    ObjectiveValueOutOfRange {
+        id: String,
+        field: &'static str,
+        value: u64,
+        max: u64,
+    },
+
+    /// `maintain_utilization.min_percent` > `max_percent`, or either
+    /// exceeds 100.
+    #[error(
+        "scenario_language_v1.objectives[{id:?}] (maintain_utilization): \
+         invalid percent range [{min}, {max}] (both must be 0..=100 with min <= max)"
+    )]
+    ObjectiveInvalidPercentRange { id: String, min: u8, max: u8 },
+
+    /// `maintain_utilization` references a capacity bucket that doesn't
+    /// exist on the target place.
+    #[error(
+        "scenario_language_v1.objectives[{id:?}] (maintain_utilization): \
+         place {place:?} has no capacity bucket {capacity:?}"
+    )]
+    ObjectiveUnknownCapacityBucket {
+        id: String,
+        place: String,
+        capacity: String,
+    },
+
+    /// Empty / charset / length violation on a `failure_condition.id`.
+    #[error("scenario_language_v1.failure_conditions: invalid id {id:?}")]
+    FailureConditionInvalidId { id: String },
+
+    /// Two failure conditions share an id.
+    #[error("scenario_language_v1.failure_conditions: duplicate id {id:?}")]
+    FailureConditionDuplicateId { id: String },
+
+    /// `type` does not match any known failure-condition kind.
+    #[error("scenario_language_v1.failure_conditions[{id:?}].type: unknown kind {kind:?}")]
+    FailureConditionUnknownType { id: String, kind: String },
+
+    /// A required per-variant parameter is missing.
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}] ({kind}): missing required field {field}"
+    )]
+    FailureConditionMissingField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// A field that does not belong to this variant was set.
+    #[error("scenario_language_v1.failure_conditions[{id:?}] ({kind}): unexpected field {field}")]
+    FailureConditionUnexpectedField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// `threshold_ticks` is zero or exceeds [`MAX_OBJECTIVE_TICKS`].
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}].threshold_ticks: \
+         {value} out of allowed range [1, {max}]"
+    )]
+    FailureConditionThresholdOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `grace_ticks` exceeds [`MAX_OBJECTIVE_TICKS`].
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}].grace_ticks: \
+         {value} out of allowed range [0, {max}]"
+    )]
+    FailureConditionGraceOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `max_count` is zero (would fire on tick 1 with no breach) or
+    /// exceeds [`MAX_OBJECTIVE_BREACH_COUNT`].
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}].max_count: \
+         {value} out of allowed range [1, {max}]"
+    )]
+    FailureConditionMaxCountOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `stale_target` references a `(place, thing)` pair that has no
+    /// declared storage slot on that place.
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}] (stale_target): \
+         place {place:?} has no storage slot for thing {thing:?}"
+    )]
+    FailureConditionNoStorageSlot {
+        id: String,
+        place: String,
+        thing: String,
+    },
+
+    /// Target id does not resolve in the expected catalog.
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}]: target {target:?} does not resolve to a declared {expected} id"
+    )]
+    FailureConditionUnknownTarget {
+        id: String,
+        expected: &'static str,
+        target: String,
+    },
+
+    /// `place_state` references an operating-state name that isn't
+    /// declared on the target place.
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}] (place_state): \
+         place {place:?} has no operating_state {state:?}"
+    )]
+    FailureConditionUnknownPlaceState {
+        id: String,
+        place: String,
+        state: String,
+    },
+
+    /// `place_state` references an operating-state whose predicate kind
+    /// is recognized by the schema but not yet evaluable in PR 8.
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}] (place_state): \
+         place {place:?} operating_state {state:?} uses predicate kind \
+         {predicate:?} which is not evaluable in PR 8"
+    )]
+    FailureConditionPlaceStatePredicateUnsupported {
+        id: String,
+        place: String,
+        state: String,
+        predicate: &'static str,
+    },
+
+    /// `objective_breach_count` references an `objective_id` that
+    /// wasn't declared in `objectives[]`.
+    #[error(
+        "scenario_language_v1.failure_conditions[{id:?}] (objective_breach_count): \
+         unknown objective_id {objective_id:?}"
+    )]
+    FailureConditionUnknownObjective { id: String, objective_id: String },
+
+    /// Empty / charset / length violation on a `victory_condition.id`.
+    #[error("scenario_language_v1.victory_conditions: invalid id {id:?}")]
+    VictoryConditionInvalidId { id: String },
+
+    /// Two victory conditions share an id.
+    #[error("scenario_language_v1.victory_conditions: duplicate id {id:?}")]
+    VictoryConditionDuplicateId { id: String },
+
+    /// `type` does not match any known victory-condition kind.
+    #[error("scenario_language_v1.victory_conditions[{id:?}].type: unknown kind {kind:?}")]
+    VictoryConditionUnknownType { id: String, kind: String },
+
+    /// A required per-variant parameter is missing.
+    #[error(
+        "scenario_language_v1.victory_conditions[{id:?}] ({kind}): missing required field {field}"
+    )]
+    VictoryConditionMissingField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// A field that does not belong to this variant was set.
+    #[error("scenario_language_v1.victory_conditions[{id:?}] ({kind}): unexpected field {field}")]
+    VictoryConditionUnexpectedField {
+        id: String,
+        kind: &'static str,
+        field: &'static str,
+    },
+
+    /// `at_tick` exceeds [`MAX_OBJECTIVE_TICKS`].
+    #[error(
+        "scenario_language_v1.victory_conditions[{id:?}].at_tick: \
+         {value} out of allowed range [1, {max}]"
+    )]
+    VictoryConditionAtTickOutOfRange { id: String, value: u64, max: u64 },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -1912,6 +2418,18 @@ pub enum Sl1Warning {
     )]
     PressureUnsupportedInThisPr {
         pressure_id: String,
+        kind: &'static str,
+        tick: u64,
+    },
+
+    /// An objective with a recognized but not-yet-evaluated kind
+    /// (`cost_budget`, `data_quality`, `query_latency`) was loaded.
+    /// Emitted exactly once per objective on the first tick the
+    /// objective evaluator runs, so authors are never misled into
+    /// thinking their objective is constraining the run.
+    #[error("objective {objective_id:?} ({kind:?}) has no runtime effect in this build")]
+    ObjectiveUnsupportedInThisPr {
+        objective_id: String,
         kind: &'static str,
         tick: u64,
     },
@@ -2010,6 +2528,26 @@ pub struct Sl1RuntimeState {
     /// capacity, effective demand spawn count, outaged links) instead
     /// of mutating the immutable base scene.
     pub pressure: Sl1PressureRuntime,
+    /// Per-objective runtime state (PR 8). One entry per declared
+    /// objective; status, cumulative breach-tick count, and the tick
+    /// the status last changed. Stable order via `BTreeMap`.
+    pub objectives: std::collections::BTreeMap<String, Sl1ObjectiveRuntime>,
+    /// Per-failure-condition runtime state (PR 8). Tracks the current
+    /// breach-streak length and (if fired) the tick it fired.
+    pub failure_conditions: std::collections::BTreeMap<String, Sl1FailureConditionRuntime>,
+    /// Per-victory-condition runtime state (PR 8). Tracks the tick the
+    /// condition was met, if any.
+    pub victory_conditions: std::collections::BTreeMap<String, Sl1VictoryConditionRuntime>,
+    /// Current high-level outcome of the run. Sticky once terminal —
+    /// `Won` and `Lost` never transition back to `InProgress`.
+    pub game_outcome: GameOutcome,
+    /// Server-side derived UX label. Derived after `game_outcome` is
+    /// settled each tick so the frontend never has to reimplement the
+    /// rule.
+    pub game_phase: Sl1GamePhase,
+    /// One-shot warning gate for objectives whose kind is recognized
+    /// but unimplemented in PR 8. Mirrors `pressure.unsupported_warned`.
+    pub unsupported_objectives_warned: std::collections::BTreeSet<String>,
 }
 
 /// Per-tick pressure overlay (PR 7).
@@ -2203,6 +2741,24 @@ impl Sl1RuntimeState {
             pending_outputs: std::collections::BTreeMap::new(),
             demand,
             pressure: Sl1PressureRuntime::default(),
+            objectives: scene
+                .objectives
+                .iter()
+                .map(|o| (o.id.clone(), Sl1ObjectiveRuntime::default()))
+                .collect(),
+            failure_conditions: scene
+                .failure_conditions
+                .iter()
+                .map(|fc| (fc.id.clone(), Sl1FailureConditionRuntime::default()))
+                .collect(),
+            victory_conditions: scene
+                .victory_conditions
+                .iter()
+                .map(|vc| (vc.id.clone(), Sl1VictoryConditionRuntime::default()))
+                .collect(),
+            game_outcome: GameOutcome::InProgress,
+            game_phase: Sl1GamePhase::Stabilizing,
+            unsupported_objectives_warned: std::collections::BTreeSet::new(),
         }
     }
 }
@@ -2228,6 +2784,121 @@ impl GameOutcome {
     #[must_use]
     pub fn is_terminal(&self) -> bool {
         matches!(self, GameOutcome::Won | GameOutcome::Lost { .. })
+    }
+
+    /// Compact wire string for the variant (no payload). Used in
+    /// snapshots and hash baselines so the renderer / replay never
+    /// double-encodes the discriminator.
+    #[must_use]
+    pub fn variant_str(&self) -> &'static str {
+        match self {
+            GameOutcome::InProgress => "in_progress",
+            GameOutcome::Won => "won",
+            GameOutcome::Lost { .. } => "lost",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Objective / FailureCondition / VictoryCondition runtime (PR 8).
+// ---------------------------------------------------------------------------
+
+/// Status of a single objective evaluation. Stable wire strings via
+/// [`Sl1ObjectiveStatus::as_str`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1ObjectiveStatus {
+    /// Not yet evaluated (first tick before the evaluator runs).
+    #[default]
+    Unknown,
+    /// Objective currently satisfied.
+    Met,
+    /// Objective currently violated.
+    Breached,
+    /// Recognized-but-unsupported kind. Status never changes.
+    Unsupported,
+}
+
+impl Sl1ObjectiveStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Met => "met",
+            Self::Breached => "breached",
+            Self::Unsupported => "unsupported",
+        }
+    }
+}
+
+/// Per-objective runtime state.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Sl1ObjectiveRuntime {
+    pub status: Sl1ObjectiveStatus,
+    /// Number of ticks the objective has been observed in the
+    /// `Breached` state since scene start. Consumed by
+    /// `objective_breach_count` failure conditions.
+    pub breach_tick_count: u64,
+    /// Tick of the most recent `status` transition (0 if status is
+    /// still `Unknown`). Used for deterministic event emission.
+    pub last_change_tick: u64,
+}
+
+/// Per-failure-condition runtime state.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Sl1FailureConditionRuntime {
+    /// Consecutive ticks the breach predicate has been true. Reset to
+    /// zero on the first tick the predicate is false. The FC fires
+    /// once `breach_streak_ticks > grace_ticks` (strict gt; a
+    /// `grace_ticks = 0` FC fires the first tick the predicate is
+    /// true).
+    pub breach_streak_ticks: u64,
+    /// First tick the FC fired, if ever. Sticky.
+    pub fired_at_tick: Option<u64>,
+}
+
+/// Per-victory-condition runtime state.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Sl1VictoryConditionRuntime {
+    /// First tick the VC was satisfied, if ever. Sticky.
+    pub met_at_tick: Option<u64>,
+}
+
+/// High-level UX label derived deterministically server-side after
+/// `game_outcome` is settled on each tick. The frontend reads this
+/// string directly — no logic on the client.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1GamePhase {
+    /// Initial state and the catch-all when the run is in progress and
+    /// no objectives have transitioned yet (or all are `Unknown`).
+    #[default]
+    Stabilizing,
+    /// In progress, at least one objective declared, every objective
+    /// currently `Met`.
+    Winning,
+    /// In progress, at least one objective currently `Breached`, no
+    /// failure-condition currently accumulating grace.
+    Losing,
+    /// In progress, at least one failure condition currently has
+    /// `breach_streak_ticks > 0`. Stronger signal than `Losing` —
+    /// indicates a Lost is imminent.
+    Spiraling,
+    /// Run won.
+    Won,
+    /// Run lost.
+    Lost,
+}
+
+impl Sl1GamePhase {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Stabilizing => "stabilizing",
+            Self::Winning => "winning",
+            Self::Losing => "losing",
+            Self::Spiraling => "spiraling",
+            Self::Won => "won",
+            Self::Lost => "lost",
+        }
     }
 }
 
@@ -2295,6 +2966,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     check_section_cap("pressure", raw.pressure.len())?;
     check_section_cap("objectives", raw.objectives.len())?;
     check_section_cap("failure_conditions", raw.failure_conditions.len())?;
+    check_section_cap("victory_conditions", raw.victory_conditions.len())?;
     check_section_cap("agents", raw.agents.len())?;
     check_section_cap("milestones", raw.milestones.len())?;
 
@@ -2309,8 +2981,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.objectives, "objectives");
-    reject_non_empty!(raw.failure_conditions, "failure_conditions");
     reject_non_empty!(raw.agents, "agents");
     reject_non_empty!(raw.milestones, "milestones");
 
@@ -2492,6 +3162,63 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         None
     };
 
+    // ---- PR 8 — objectives ----
+    let mut objectives: Vec<Sl1Objective> = Vec::with_capacity(raw.objectives.len());
+    let mut seen_objective_ids: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    let place_ids: std::collections::BTreeSet<&str> =
+        places.iter().map(|p| p.id.as_str()).collect();
+    let thing_ids: std::collections::BTreeSet<&str> =
+        things.iter().map(|t| t.id.as_str()).collect();
+    let demand_ids: std::collections::BTreeSet<&str> =
+        demand.iter().map(|d| d.id.as_str()).collect();
+    let transform_ids: std::collections::BTreeSet<&str> =
+        transforms.iter().map(|t| t.id.as_str()).collect();
+    for raw_obj in raw.objectives {
+        let obj = validate_objective(
+            raw_obj,
+            &places,
+            &place_ids,
+            &thing_ids,
+            &transform_ids,
+            &demand_ids,
+        )?;
+        if !seen_objective_ids.insert(obj.id.clone()) {
+            return Err(Sl1LoadError::ObjectiveDuplicateId { id: obj.id });
+        }
+        objectives.push(obj);
+    }
+    objectives.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // ---- PR 8 — failure conditions (depend on objectives for refs) ----
+    let mut failure_conditions: Vec<Sl1FailureCondition> =
+        Vec::with_capacity(raw.failure_conditions.len());
+    let mut seen_fc_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let objective_ids: std::collections::BTreeSet<&str> =
+        objectives.iter().map(|o| o.id.as_str()).collect();
+    for raw_fc in raw.failure_conditions {
+        let fc = validate_failure_condition(raw_fc, &places, &thing_ids, &objective_ids)?;
+        if !seen_fc_ids.insert(fc.id.clone()) {
+            return Err(Sl1LoadError::FailureConditionDuplicateId { id: fc.id });
+        }
+        failure_conditions.push(fc);
+    }
+    failure_conditions.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // ---- PR 8 — victory conditions ----
+    let mut victory_conditions: Vec<Sl1VictoryCondition> =
+        Vec::with_capacity(raw.victory_conditions.len());
+    let mut seen_vc_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for raw_vc in raw.victory_conditions {
+        let vc = validate_victory_condition(raw_vc)?;
+        if !seen_vc_ids.insert(vc.id.clone()) {
+            return Err(Sl1LoadError::VictoryConditionDuplicateId { id: vc.id });
+        }
+        victory_conditions.push(vc);
+    }
+    victory_conditions.sort_by(|a, b| a.id.cmp(&b.id));
+    let _ = place_ids; // unused (kept for future cross-refs without warning).
+
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
         places,
@@ -2500,8 +3227,9 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         transforms,
         demand,
         pressure,
-        objectives: Vec::new(),
-        failure_conditions: Vec::new(),
+        objectives,
+        failure_conditions,
+        victory_conditions,
         agents: Vec::new(),
         observability,
         milestones: Vec::new(),
@@ -3932,8 +4660,544 @@ fn reject_pressure_field(
 }
 
 // ---------------------------------------------------------------------------
-// Tests.
+// Objective / FailureCondition / VictoryCondition validation (PR 8).
 // ---------------------------------------------------------------------------
+
+fn objective_id_invalid(id: &str) -> Sl1LoadError {
+    Sl1LoadError::ObjectiveInvalidId { id: id.to_string() }
+}
+
+fn fc_id_invalid(id: &str) -> Sl1LoadError {
+    Sl1LoadError::FailureConditionInvalidId { id: id.to_string() }
+}
+
+fn vc_id_invalid(id: &str) -> Sl1LoadError {
+    Sl1LoadError::VictoryConditionInvalidId { id: id.to_string() }
+}
+
+fn require_objective_field<T>(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    value: Option<T>,
+) -> Result<T, Sl1LoadError> {
+    value.ok_or_else(|| Sl1LoadError::ObjectiveMissingField {
+        id: id.to_string(),
+        kind,
+        field,
+    })
+}
+
+fn reject_objective_field(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    present: bool,
+) -> Result<(), Sl1LoadError> {
+    if present {
+        return Err(Sl1LoadError::ObjectiveUnexpectedField {
+            id: id.to_string(),
+            kind,
+            field,
+        });
+    }
+    Ok(())
+}
+
+fn require_fc_field<T>(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    value: Option<T>,
+) -> Result<T, Sl1LoadError> {
+    value.ok_or_else(|| Sl1LoadError::FailureConditionMissingField {
+        id: id.to_string(),
+        kind,
+        field,
+    })
+}
+
+fn reject_fc_field(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    present: bool,
+) -> Result<(), Sl1LoadError> {
+    if present {
+        return Err(Sl1LoadError::FailureConditionUnexpectedField {
+            id: id.to_string(),
+            kind,
+            field,
+        });
+    }
+    Ok(())
+}
+
+fn require_vc_field<T>(
+    id: &str,
+    kind: &'static str,
+    field: &'static str,
+    value: Option<T>,
+) -> Result<T, Sl1LoadError> {
+    value.ok_or_else(|| Sl1LoadError::VictoryConditionMissingField {
+        id: id.to_string(),
+        kind,
+        field,
+    })
+}
+
+fn objective_kind_from_str(id: &str, s: &str) -> Result<Sl1ObjectiveKind, Sl1LoadError> {
+    match s {
+        "keep_fresh" => Ok(Sl1ObjectiveKind::KeepFresh),
+        "complete_jobs_before_deadline" => Ok(Sl1ObjectiveKind::CompleteJobsBeforeDeadline),
+        "maintain_utilization" => Ok(Sl1ObjectiveKind::MaintainUtilization),
+        "cost_budget" => Ok(Sl1ObjectiveKind::CostBudget),
+        "data_quality" => Ok(Sl1ObjectiveKind::DataQuality),
+        "query_latency" => Ok(Sl1ObjectiveKind::QueryLatency),
+        _ => Err(Sl1LoadError::ObjectiveUnknownType {
+            id: id.to_string(),
+            kind: s.to_string(),
+        }),
+    }
+}
+
+fn fc_kind_from_str(id: &str, s: &str) -> Result<Sl1FailureConditionKind, Sl1LoadError> {
+    match s {
+        "stale_target" => Ok(Sl1FailureConditionKind::StaleTarget),
+        "place_state" => Ok(Sl1FailureConditionKind::PlaceState),
+        "objective_breach_count" => Ok(Sl1FailureConditionKind::ObjectiveBreachCount),
+        _ => Err(Sl1LoadError::FailureConditionUnknownType {
+            id: id.to_string(),
+            kind: s.to_string(),
+        }),
+    }
+}
+
+fn vc_kind_from_str(id: &str, s: &str) -> Result<Sl1VictoryConditionKind, Sl1LoadError> {
+    match s {
+        "survive_until" => Ok(Sl1VictoryConditionKind::SurviveUntil),
+        _ => Err(Sl1LoadError::VictoryConditionUnknownType {
+            id: id.to_string(),
+            kind: s.to_string(),
+        }),
+    }
+}
+
+fn check_ticks_in_range(
+    id: &str,
+    field: &'static str,
+    value: u64,
+    min: u64,
+) -> Result<(), Sl1LoadError> {
+    if value < min || value > MAX_OBJECTIVE_TICKS {
+        return Err(Sl1LoadError::ObjectiveValueOutOfRange {
+            id: id.to_string(),
+            field,
+            value,
+            max: MAX_OBJECTIVE_TICKS,
+        });
+    }
+    Ok(())
+}
+
+fn validate_objective(
+    raw: RawSl1Objective,
+    places: &[Sl1Place],
+    place_ids: &std::collections::BTreeSet<&str>,
+    thing_ids: &std::collections::BTreeSet<&str>,
+    transform_ids: &std::collections::BTreeSet<&str>,
+    demand_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1Objective, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(objective_id_invalid(&raw.id));
+    }
+    let kind = objective_kind_from_str(&raw.id, &raw.kind)?;
+    let weight = raw.weight.unwrap_or(1);
+    if weight == 0 || weight > MAX_OBJECTIVE_WEIGHT {
+        return Err(Sl1LoadError::ObjectiveWeightOutOfRange {
+            id: raw.id,
+            value: weight,
+            max: MAX_OBJECTIVE_WEIGHT,
+        });
+    }
+    let id = raw.id;
+
+    let params = match kind {
+        Sl1ObjectiveKind::KeepFresh => {
+            let kind_str = kind.as_str();
+            let place = require_objective_field(&id, kind_str, "place", raw.place)?;
+            let thing = require_objective_field(&id, kind_str, "thing", raw.thing)?;
+            let max_stale_ticks =
+                require_objective_field(&id, kind_str, "max_stale_ticks", raw.max_stale_ticks)?;
+            reject_objective_field(&id, kind_str, "demand", raw.demand.is_some())?;
+            reject_objective_field(&id, kind_str, "max_missed", raw.max_missed.is_some())?;
+            reject_objective_field(&id, kind_str, "capacity", raw.capacity.is_some())?;
+            reject_objective_field(&id, kind_str, "min_percent", raw.min_percent.is_some())?;
+            reject_objective_field(&id, kind_str, "max_percent", raw.max_percent.is_some())?;
+            reject_objective_field(&id, kind_str, "max_cost", raw.max_cost.is_some())?;
+            reject_objective_field(
+                &id,
+                kind_str,
+                "max_contract_violations",
+                raw.max_contract_violations.is_some(),
+            )?;
+            reject_objective_field(&id, kind_str, "p95_max_ticks", raw.p95_max_ticks.is_some())?;
+            reject_objective_field(&id, kind_str, "target", raw.target.is_some())?;
+            check_ticks_in_range(&id, "max_stale_ticks", max_stale_ticks, 1)?;
+            let place_obj = places.iter().find(|p| p.id == place).ok_or_else(|| {
+                Sl1LoadError::ObjectiveUnknownTarget {
+                    id: id.clone(),
+                    expected: "place",
+                    target: place.clone(),
+                }
+            })?;
+            if !thing_ids.contains(thing.as_str()) {
+                return Err(Sl1LoadError::ObjectiveUnknownTarget {
+                    id,
+                    expected: "thing",
+                    target: thing,
+                });
+            }
+            if !place_obj.storage.contains_key(thing.as_str()) {
+                return Err(Sl1LoadError::ObjectiveNoStorageSlot { id, place, thing });
+            }
+            Sl1ObjectiveParams::KeepFresh {
+                place,
+                thing,
+                max_stale_ticks,
+            }
+        }
+        Sl1ObjectiveKind::CompleteJobsBeforeDeadline => {
+            let kind_str = kind.as_str();
+            let demand = require_objective_field(&id, kind_str, "demand", raw.demand)?;
+            let max_missed = require_objective_field(&id, kind_str, "max_missed", raw.max_missed)?;
+            reject_objective_field(&id, kind_str, "place", raw.place.is_some())?;
+            reject_objective_field(&id, kind_str, "thing", raw.thing.is_some())?;
+            reject_objective_field(
+                &id,
+                kind_str,
+                "max_stale_ticks",
+                raw.max_stale_ticks.is_some(),
+            )?;
+            reject_objective_field(&id, kind_str, "capacity", raw.capacity.is_some())?;
+            reject_objective_field(&id, kind_str, "min_percent", raw.min_percent.is_some())?;
+            reject_objective_field(&id, kind_str, "max_percent", raw.max_percent.is_some())?;
+            reject_objective_field(&id, kind_str, "max_cost", raw.max_cost.is_some())?;
+            reject_objective_field(
+                &id,
+                kind_str,
+                "max_contract_violations",
+                raw.max_contract_violations.is_some(),
+            )?;
+            reject_objective_field(&id, kind_str, "p95_max_ticks", raw.p95_max_ticks.is_some())?;
+            reject_objective_field(&id, kind_str, "target", raw.target.is_some())?;
+            check_ticks_in_range(&id, "max_missed", max_missed, 1)?;
+            if !demand_ids.contains(demand.as_str()) {
+                return Err(Sl1LoadError::ObjectiveUnknownTarget {
+                    id,
+                    expected: "demand",
+                    target: demand,
+                });
+            }
+            Sl1ObjectiveParams::CompleteJobsBeforeDeadline { demand, max_missed }
+        }
+        Sl1ObjectiveKind::MaintainUtilization => {
+            let kind_str = kind.as_str();
+            let place = require_objective_field(&id, kind_str, "place", raw.place)?;
+            let capacity = require_objective_field(&id, kind_str, "capacity", raw.capacity)?;
+            let min_percent =
+                require_objective_field(&id, kind_str, "min_percent", raw.min_percent)?;
+            let max_percent =
+                require_objective_field(&id, kind_str, "max_percent", raw.max_percent)?;
+            reject_objective_field(&id, kind_str, "thing", raw.thing.is_some())?;
+            reject_objective_field(
+                &id,
+                kind_str,
+                "max_stale_ticks",
+                raw.max_stale_ticks.is_some(),
+            )?;
+            reject_objective_field(&id, kind_str, "demand", raw.demand.is_some())?;
+            reject_objective_field(&id, kind_str, "max_missed", raw.max_missed.is_some())?;
+            reject_objective_field(&id, kind_str, "max_cost", raw.max_cost.is_some())?;
+            reject_objective_field(
+                &id,
+                kind_str,
+                "max_contract_violations",
+                raw.max_contract_violations.is_some(),
+            )?;
+            reject_objective_field(&id, kind_str, "p95_max_ticks", raw.p95_max_ticks.is_some())?;
+            reject_objective_field(&id, kind_str, "target", raw.target.is_some())?;
+            if min_percent > 100 || max_percent > 100 || min_percent > max_percent {
+                return Err(Sl1LoadError::ObjectiveInvalidPercentRange {
+                    id,
+                    min: min_percent,
+                    max: max_percent,
+                });
+            }
+            let place_obj = places.iter().find(|p| p.id == place).ok_or_else(|| {
+                Sl1LoadError::ObjectiveUnknownTarget {
+                    id: id.clone(),
+                    expected: "place",
+                    target: place.clone(),
+                }
+            })?;
+            if !place_obj.capacity.contains_key(capacity.as_str()) {
+                return Err(Sl1LoadError::ObjectiveUnknownCapacityBucket {
+                    id,
+                    place,
+                    capacity,
+                });
+            }
+            Sl1ObjectiveParams::MaintainUtilization {
+                place,
+                capacity,
+                min_percent,
+                max_percent,
+            }
+        }
+        Sl1ObjectiveKind::CostBudget
+        | Sl1ObjectiveKind::DataQuality
+        | Sl1ObjectiveKind::QueryLatency => {
+            // Permissive on parameters — they are not consumed, but
+            // still validated against their max range / id-resolution
+            // so authors get useful diagnostics when the variants are
+            // implemented.
+            if let Some(v) = raw.max_cost {
+                if v == 0 || v > MAX_OBJECTIVE_TICKS {
+                    return Err(Sl1LoadError::ObjectiveValueOutOfRange {
+                        id,
+                        field: "max_cost",
+                        value: v,
+                        max: MAX_OBJECTIVE_TICKS,
+                    });
+                }
+            }
+            if let Some(v) = raw.max_contract_violations {
+                if v == 0 || v > MAX_OBJECTIVE_TICKS {
+                    return Err(Sl1LoadError::ObjectiveValueOutOfRange {
+                        id,
+                        field: "max_contract_violations",
+                        value: v,
+                        max: MAX_OBJECTIVE_TICKS,
+                    });
+                }
+            }
+            if let Some(v) = raw.p95_max_ticks {
+                if v == 0 || v > MAX_OBJECTIVE_TICKS {
+                    return Err(Sl1LoadError::ObjectiveValueOutOfRange {
+                        id,
+                        field: "p95_max_ticks",
+                        value: v,
+                        max: MAX_OBJECTIVE_TICKS,
+                    });
+                }
+            }
+            // If `target` is supplied, require it to resolve to a
+            // currently declared id (place, thing, transform, or
+            // demand). The exact target-kind contract for each of
+            // these variants lands with their implementation PR
+            // (observability), but typos must fail load today so
+            // strict-schema posture is preserved.
+            if let Some(target) = raw.target.as_deref() {
+                if !place_ids.contains(target)
+                    && !thing_ids.contains(target)
+                    && !transform_ids.contains(target)
+                    && !demand_ids.contains(target)
+                {
+                    return Err(Sl1LoadError::ObjectiveUnknownTarget {
+                        id,
+                        expected: "place|thing|transform|demand",
+                        target: target.to_string(),
+                    });
+                }
+            }
+            Sl1ObjectiveParams::UnsupportedInThisPr
+        }
+    };
+
+    Ok(Sl1Objective {
+        id,
+        kind,
+        weight,
+        params,
+    })
+}
+
+fn validate_failure_condition(
+    raw: RawSl1FailureCondition,
+    places: &[Sl1Place],
+    thing_ids: &std::collections::BTreeSet<&str>,
+    objective_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1FailureCondition, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(fc_id_invalid(&raw.id));
+    }
+    let kind = fc_kind_from_str(&raw.id, &raw.kind)?;
+    let id = raw.id;
+    let kind_str = kind.as_str();
+
+    let params = match kind {
+        Sl1FailureConditionKind::StaleTarget => {
+            let place = require_fc_field(&id, kind_str, "place", raw.place)?;
+            let thing = require_fc_field(&id, kind_str, "thing", raw.thing)?;
+            let threshold_ticks =
+                require_fc_field(&id, kind_str, "threshold_ticks", raw.threshold_ticks)?;
+            let grace_ticks = raw.grace_ticks.unwrap_or(0);
+            reject_fc_field(&id, kind_str, "state", raw.state.is_some())?;
+            reject_fc_field(&id, kind_str, "objective_id", raw.objective_id.is_some())?;
+            reject_fc_field(&id, kind_str, "max_count", raw.max_count.is_some())?;
+            if threshold_ticks == 0 || threshold_ticks > MAX_OBJECTIVE_TICKS {
+                return Err(Sl1LoadError::FailureConditionThresholdOutOfRange {
+                    id,
+                    value: threshold_ticks,
+                    max: MAX_OBJECTIVE_TICKS,
+                });
+            }
+            if grace_ticks > MAX_OBJECTIVE_TICKS {
+                return Err(Sl1LoadError::FailureConditionGraceOutOfRange {
+                    id,
+                    value: grace_ticks,
+                    max: MAX_OBJECTIVE_TICKS,
+                });
+            }
+            let place_obj = places.iter().find(|p| p.id == place).ok_or_else(|| {
+                Sl1LoadError::FailureConditionUnknownTarget {
+                    id: id.clone(),
+                    expected: "place",
+                    target: place.clone(),
+                }
+            })?;
+            if !thing_ids.contains(thing.as_str()) {
+                return Err(Sl1LoadError::FailureConditionUnknownTarget {
+                    id,
+                    expected: "thing",
+                    target: thing,
+                });
+            }
+            if !place_obj.storage.contains_key(thing.as_str()) {
+                return Err(Sl1LoadError::FailureConditionNoStorageSlot { id, place, thing });
+            }
+            Sl1FailureConditionParams::StaleTarget {
+                place,
+                thing,
+                threshold_ticks,
+                grace_ticks,
+            }
+        }
+        Sl1FailureConditionKind::PlaceState => {
+            let place = require_fc_field(&id, kind_str, "place", raw.place)?;
+            let state = require_fc_field(&id, kind_str, "state", raw.state)?;
+            let grace_ticks = raw.grace_ticks.unwrap_or(0);
+            reject_fc_field(&id, kind_str, "thing", raw.thing.is_some())?;
+            reject_fc_field(
+                &id,
+                kind_str,
+                "threshold_ticks",
+                raw.threshold_ticks.is_some(),
+            )?;
+            reject_fc_field(&id, kind_str, "objective_id", raw.objective_id.is_some())?;
+            reject_fc_field(&id, kind_str, "max_count", raw.max_count.is_some())?;
+            if grace_ticks > MAX_OBJECTIVE_TICKS {
+                return Err(Sl1LoadError::FailureConditionGraceOutOfRange {
+                    id,
+                    value: grace_ticks,
+                    max: MAX_OBJECTIVE_TICKS,
+                });
+            }
+            let place_obj = places.iter().find(|p| p.id == place).ok_or_else(|| {
+                Sl1LoadError::FailureConditionUnknownTarget {
+                    id: id.clone(),
+                    expected: "place",
+                    target: place.clone(),
+                }
+            })?;
+            let op_state = place_obj.operating_states.get(&state).ok_or_else(|| {
+                Sl1LoadError::FailureConditionUnknownPlaceState {
+                    id: id.clone(),
+                    place: place.clone(),
+                    state: state.clone(),
+                }
+            })?;
+            // PR 8 only evaluates `UsedPercentGte`. Reject other
+            // predicate kinds with a clear "supported in a later PR"
+            // diagnostic.
+            match &op_state.predicate {
+                Sl1OperatingPredicate::UsedPercentGte { .. } => {}
+                Sl1OperatingPredicate::OverloadedTicksGt { .. } => {
+                    return Err(
+                        Sl1LoadError::FailureConditionPlaceStatePredicateUnsupported {
+                            id,
+                            place,
+                            state,
+                            predicate: "overloaded_ticks_gt",
+                        },
+                    );
+                }
+            }
+            Sl1FailureConditionParams::PlaceState {
+                place,
+                state,
+                grace_ticks,
+            }
+        }
+        Sl1FailureConditionKind::ObjectiveBreachCount => {
+            let objective_id = require_fc_field(&id, kind_str, "objective_id", raw.objective_id)?;
+            let max_count = require_fc_field(&id, kind_str, "max_count", raw.max_count)?;
+            reject_fc_field(&id, kind_str, "place", raw.place.is_some())?;
+            reject_fc_field(&id, kind_str, "thing", raw.thing.is_some())?;
+            reject_fc_field(
+                &id,
+                kind_str,
+                "threshold_ticks",
+                raw.threshold_ticks.is_some(),
+            )?;
+            reject_fc_field(&id, kind_str, "grace_ticks", raw.grace_ticks.is_some())?;
+            reject_fc_field(&id, kind_str, "state", raw.state.is_some())?;
+            if max_count == 0 || max_count > MAX_OBJECTIVE_BREACH_COUNT {
+                return Err(Sl1LoadError::FailureConditionMaxCountOutOfRange {
+                    id,
+                    value: max_count,
+                    max: MAX_OBJECTIVE_BREACH_COUNT,
+                });
+            }
+            if !objective_ids.contains(objective_id.as_str()) {
+                return Err(Sl1LoadError::FailureConditionUnknownObjective { id, objective_id });
+            }
+            Sl1FailureConditionParams::ObjectiveBreachCount {
+                objective_id,
+                max_count,
+            }
+        }
+    };
+
+    Ok(Sl1FailureCondition { id, kind, params })
+}
+
+fn validate_victory_condition(
+    raw: RawSl1VictoryCondition,
+) -> Result<Sl1VictoryCondition, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(vc_id_invalid(&raw.id));
+    }
+    let kind = vc_kind_from_str(&raw.id, &raw.kind)?;
+    let id = raw.id;
+    let kind_str = kind.as_str();
+
+    let params = match kind {
+        Sl1VictoryConditionKind::SurviveUntil => {
+            let at_tick = require_vc_field(&id, kind_str, "at_tick", raw.at_tick)?;
+            if at_tick == 0 || at_tick > MAX_OBJECTIVE_TICKS {
+                return Err(Sl1LoadError::VictoryConditionAtTickOutOfRange {
+                    id,
+                    value: at_tick,
+                    max: MAX_OBJECTIVE_TICKS,
+                });
+            }
+            Sl1VictoryConditionParams::SurviveUntil { at_tick }
+        }
+    };
+    Ok(Sl1VictoryCondition { id, kind, params })
+}
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -4034,16 +5298,15 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 8-11 have no behavior for their primitive — even a
+        // PRs 10-11 have no behavior for their primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
         // proto-SL1 scene would silently no-op. PR 1 removed `places`,
         // PR 2 removed `links`, PR 3 removed `things`, PR 4 removed
-        // `transforms`, PR 5 removed `demand`, and PR 7 removed
-        // `pressure` from this guard because all six are now typed
-        // and validated.
+        // `transforms`, PR 5 removed `demand`, PR 7 removed
+        // `pressure`, and PR 8 removed `objectives` /
+        // `failure_conditions` / `victory_conditions` from this guard
+        // because all are now typed and validated.
         for (json, expected_section) in [
-            (r#"{"objectives": [{}]}"#, "objectives"),
-            (r#"{"failure_conditions": [{}]}"#, "failure_conditions"),
             (r#"{"agents": [{}]}"#, "agents"),
             (r#"{"milestones": [{}]}"#, "milestones"),
         ] {
