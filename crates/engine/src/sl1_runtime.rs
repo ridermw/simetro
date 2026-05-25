@@ -27,7 +27,11 @@ use crate::world::World;
 /// appended to `messages` as `SimMessage::Warning(WarningPayload::Sl1Transform { .. })`.
 /// Demand-driven warnings (PR 5) — `Dropped`, `BacklogOverflow` —
 /// are appended as `WarningPayload::Sl1Demand { .. }`.
-pub fn run(world: &mut World, messages: &mut Vec<SimMessage>) {
+pub fn run(
+    world: &mut World,
+    events: &mut Vec<simetro_protocol::SimEvent>,
+    messages: &mut Vec<SimMessage>,
+) {
     let Some(scene) = world.sl1.as_ref() else {
         return;
     };
@@ -35,6 +39,12 @@ pub fn run(world: &mut World, messages: &mut Vec<SimMessage>) {
         return;
     };
     let now = world.tick;
+
+    // Pressure runs FIRST so its activation/deactivation events,
+    // inventory injections, and overlay state are observable to
+    // freshness/transforms/demand on the same tick the pressure
+    // activates (PR 7).
+    crate::sl1_pressure::run(scene, runtime, now, events, messages);
 
     age_freshness(scene, runtime, now);
 
@@ -494,7 +504,11 @@ fn try_start(
         .get(place_id)
         .unwrap_or(&used_empty);
     for (k, v) in &def.capacity_cost {
-        let cap = caps.and_then(|c| c.get(k)).copied().unwrap_or(0);
+        let base = caps.and_then(|c| c.get(k)).copied().unwrap_or(0);
+        // PR 7: apply any active `quota_reduction` overlay on this
+        // (place, bucket). Effective capacity = floor(base *
+        // (100-reduction)/100). With no overlay this is `base`.
+        let cap = crate::sl1_pressure::effective_capacity(&runtime.pressure, place_id, k, base);
         let cur = used.get(k).copied().unwrap_or(0);
         if cur.saturating_add(*v) > cap {
             return StartResult::Blocked;
@@ -670,14 +684,23 @@ fn run_demand(
                 continue;
             };
             if should_spawn(def, rt, now) {
-                if rt.pending.len() >= MAX_DEMAND_OUTSTANDING {
-                    if !rt.overflow {
-                        rt.overflow = true;
-                        Some(SpawnOutcome::Overflowed)
-                    } else {
-                        Some(SpawnOutcome::OverflowSuppressed)
+                // PR 7: effective spawn count is 1 plus the sum of
+                // active `demand_growth.spawn_multiplier` overlays on
+                // this demand. We compute it once per scheduled
+                // firing (not per attempted instance) and spawn that
+                // many instances unless overflow gates further work.
+                let want =
+                    crate::sl1_pressure::effective_spawn_count(&runtime.pressure, def.id.as_str());
+                let mut spawned = 0u32;
+                let mut overflowed = false;
+                for _ in 0..want {
+                    if rt.pending.len() >= MAX_DEMAND_OUTSTANDING {
+                        if !rt.overflow {
+                            rt.overflow = true;
+                            overflowed = true;
+                        }
+                        break;
                     }
-                } else {
                     let seq = rt.next_sequence;
                     rt.next_sequence = rt.next_sequence.saturating_add(1);
                     rt.pending.push_back(Sl1DemandInstance {
@@ -685,6 +708,13 @@ fn run_demand(
                         spawned_at: now,
                         deadline_tick: now.saturating_add(def.deadline_ticks),
                     });
+                    spawned = spawned.saturating_add(1);
+                }
+                if overflowed {
+                    Some(SpawnOutcome::Overflowed)
+                } else if spawned == 0 {
+                    Some(SpawnOutcome::OverflowSuppressed)
+                } else {
                     Some(SpawnOutcome::Spawned)
                 }
             } else {

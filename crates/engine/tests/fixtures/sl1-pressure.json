@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "name": "sl1-pressure",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7", "#f7768e"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [0.0, 0.0],
+        "capacity": { "machine_hours": 4 },
+        "storage": {
+          "raw_material": { "capacity": 200, "initial": 200 },
+          "report": { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["report"]
+      },
+      {
+        "id": "sink",
+        "role": "consumer",
+        "pos": [10.0, 0.0],
+        "capacity": { "queries": 8 },
+        "storage": {
+          "report": { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["report"],
+        "produces": []
+      }
+    ],
+    "links": [
+      {
+        "id": "factory-to-sink",
+        "type": "report_pipe",
+        "from": "factory",
+        "to": "sink",
+        "direction": "forward",
+        "capacity": { "reports": 5 },
+        "travel_ticks": 2,
+        "compatibility": ["report"],
+        "queue_capacity": 5,
+        "backpressure": "block_upstream"
+      }
+    ],
+    "things": [
+      { "id": "raw_material", "kind": "input", "tags": [] },
+      {
+        "id": "report",
+        "kind": "data",
+        "tags": ["observation"],
+        "freshness_budget_ticks": 100
+      }
+    ],
+    "transforms": [
+      {
+        "id": "refresh_report",
+        "type": "data_refresh",
+        "runs_on": "factory",
+        "inputs": [{ "thing": "raw_material", "amount": 1 }],
+        "outputs": [{ "thing": "report", "amount": 1 }],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 10,
+        "capacity_cost": { "machine_hours": 2 },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      }
+    ],
+    "demand": [
+      {
+        "id": "fixed_report_demand",
+        "type": "report_refresh",
+        "target": { "type": "place", "id": "sink" },
+        "requires": ["report"],
+        "spawn_schedule": {
+          "type": "fixed",
+          "every_ticks": 10,
+          "start_tick": 5
+        },
+        "deadline_ticks": 12,
+        "priority": "normal",
+        "value": 10,
+        "penalty": { "score": -3, "warning": "report stale" }
+      }
+    ],
+    "pressure": [
+      {
+        "id": "cooling_blip",
+        "type": "cooling_degradation",
+        "at_tick": 8,
+        "duration_ticks": 4,
+        "target": "factory"
+      },
+      {
+        "id": "dashboard_blip",
+        "type": "dashboard_storm",
+        "at_tick": 8,
+        "duration_ticks": 4,
+        "target": "sink"
+      },
+      {
+        "id": "demand_surge",
+        "type": "demand_growth",
+        "at_tick": 20,
+        "duration_ticks": 10,
+        "target": "fixed_report_demand",
+        "spawn_multiplier": 2
+      },
+      {
+        "id": "drift_blip",
+        "type": "schema_drift",
+        "at_tick": 8,
+        "duration_ticks": 4,
+        "target": "report"
+      },
+      {
+        "id": "factory_quota_cut",
+        "type": "quota_reduction",
+        "at_tick": 30,
+        "duration_ticks": 10,
+        "target": "factory",
+        "capacity": "machine_hours",
+        "reduction_percent": 50
+      },
+      {
+        "id": "feed_burst",
+        "type": "source_multiplier",
+        "at_tick": 4,
+        "duration_ticks": 3,
+        "target": "factory",
+        "thing": "report",
+        "multiplier": 2.5
+      },
+      {
+        "id": "metadata_blip",
+        "type": "storage_metadata_storm",
+        "at_tick": 8,
+        "duration_ticks": 4,
+        "target": "factory"
+      },
+      {
+        "id": "pipe_outage",
+        "type": "path_outage",
+        "at_tick": 40,
+        "duration_ticks": 5,
+        "target": "factory-to-sink"
+      },
+      {
+        "id": "spot_blip",
+        "type": "spot_eviction_wave",
+        "at_tick": 8,
+        "duration_ticks": 4,
+        "target": "factory"
+      }
+    ]
+  }
+}

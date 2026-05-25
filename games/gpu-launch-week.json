@@ -204,7 +204,24 @@
         "penalty": { "score": -500, "warning": "critical_report_stale" }
       }
     ],
-    "pressure": [],
+    "pressure": [
+      {
+        "id": "dashboard-storm",
+        "type": "dashboard_storm",
+        "at_tick": 2400,
+        "duration_ticks": 300,
+        "target": "kusto-dashboard"
+      },
+      {
+        "id": "gpu-fault-storm",
+        "type": "source_multiplier",
+        "at_tick": 1500,
+        "duration_ticks": 600,
+        "target": "gpu-platform",
+        "thing": "gpu_heartbeat",
+        "multiplier": 4.0
+      }
+    ],
     "objectives": [],
     "failure_conditions": [],
     "agents": [],

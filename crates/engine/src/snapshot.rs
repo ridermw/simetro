@@ -21,17 +21,17 @@ use simetro_protocol::{
     Sl1DemandPenaltyView, Sl1DemandPriorityView, Sl1DemandRuntimeView, Sl1DemandScheduleView,
     Sl1DemandTargetView, Sl1DemandView, Sl1FailurePolicyView, Sl1LinkBackpressureView,
     Sl1LinkDirectionView, Sl1LinkRenderHintView, Sl1LinkView, Sl1OperatingPredicateView,
-    Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView, Sl1StorageSlotView,
-    Sl1ThingQualityContractView, Sl1ThingRenderHintView, Sl1ThingView, Sl1TransformIoView,
-    Sl1TransformRuntimeView, Sl1TransformStateView, Sl1TransformView, SnapshotPayload,
-    StaticPayload,
+    Sl1OperatingStateView, Sl1PlaceInventoryView, Sl1PlaceView, Sl1PressureParamsView,
+    Sl1PressureView, Sl1StorageSlotView, Sl1ThingQualityContractView, Sl1ThingRenderHintView,
+    Sl1ThingView, Sl1TransformIoView, Sl1TransformRuntimeView, Sl1TransformStateView,
+    Sl1TransformView, SnapshotPayload, StaticPayload,
 };
 
 use crate::components::{MoverState, NodeShape};
 use crate::loader::{IdMap, LoadedScene, Theme};
 use crate::scenario_language_v1::{
     FreshnessState, Sl1Link, Sl1LinkBackpressure, Sl1LinkDirection, Sl1OperatingPredicate,
-    Sl1Place, Sl1Thing,
+    Sl1Place, Sl1Pressure, Sl1PressureKind, Sl1PressureParams, Sl1Thing,
 };
 use crate::world::World;
 
@@ -119,6 +119,11 @@ pub fn encode_static_parts(
             .sl1
             .as_ref()
             .map(|sl1| sl1.demand.iter().map(demand_to_view).collect())
+            .unwrap_or_default(),
+        sl1_pressure: world
+            .sl1
+            .as_ref()
+            .map(|sl1| sl1.pressure.iter().map(pressure_to_view).collect())
             .unwrap_or_default(),
     }
 }
@@ -348,6 +353,49 @@ fn demand_to_view(d: &crate::scenario_language_v1::Sl1Demand) -> Sl1DemandView {
             warning: d.penalty.warning.clone(),
         },
     }
+}
+
+fn pressure_to_view(p: &Sl1Pressure) -> Sl1PressureView {
+    let params = match &p.params {
+        Sl1PressureParams::SourceMultiplier {
+            thing,
+            multiplier_milli,
+        } => Sl1PressureParamsView::SourceMultiplier {
+            thing: thing.clone(),
+            multiplier_milli: *multiplier_milli,
+        },
+        Sl1PressureParams::DemandGrowth { spawn_multiplier } => {
+            Sl1PressureParamsView::DemandGrowth {
+                spawn_multiplier: *spawn_multiplier,
+            }
+        }
+        Sl1PressureParams::QuotaReduction {
+            capacity,
+            reduction_percent,
+        } => Sl1PressureParamsView::QuotaReduction {
+            capacity: capacity.clone(),
+            reduction_percent: *reduction_percent,
+        },
+        Sl1PressureParams::PathOutage => Sl1PressureParamsView::PathOutage,
+        Sl1PressureParams::UnsupportedInThisPr => Sl1PressureParamsView::UnsupportedInThisPr,
+    };
+    Sl1PressureView {
+        id: p.id.clone(),
+        kind: pressure_kind_to_str(p.kind).to_string(),
+        at_tick: p.at_tick,
+        duration_ticks: p.duration_ticks,
+        target: p.target.clone(),
+        params,
+    }
+}
+
+/// Canonical snake_case string for a pressure kind, used in both
+/// snapshot and runtime SimEvent / WarningPayload emissions to keep
+/// the on-wire vocabulary consistent. Mirrors
+/// `Sl1PressureKind::as_str`.
+#[must_use]
+pub(crate) fn pressure_kind_to_str(kind: Sl1PressureKind) -> &'static str {
+    kind.as_str()
 }
 
 /// Compute group-by-color batches over path views. Renderer caches one
