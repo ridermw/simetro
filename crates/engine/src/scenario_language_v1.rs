@@ -171,7 +171,7 @@ pub struct RawSl1Scene {
     #[serde(default)]
     pub victory_conditions: Vec<RawSl1VictoryCondition>,
     #[serde(default)]
-    pub agents: Vec<serde_json::Value>,
+    pub agents: Vec<RawSl1Agent>,
     /// Optional `observability` block (PR 9). Carries declarative
     /// metric/dashboard/alert definitions. Omitted block / explicit
     /// `null` / explicit empty object `{}` all yield an empty
@@ -1223,9 +1223,247 @@ pub struct Sl1VictoryCondition {
     pub params: Sl1VictoryConditionParams,
 }
 
-/// Placeholder loaded `agent`. Populated in PR 10.
+// ---------------------------------------------------------------------------
+// Agent — typed primitive (PR 10).
+//
+// SL1 agents are declarative actors that observe scoped runtime state at
+// fixed intervals and propose typed actions. PR 10 supports one real
+// action (`throttle_demand`) and ships scripted/mock backends for
+// deterministic tests. The `llm` backend is reserved: declarations load
+// successfully but the backend produces no decisions in CI and emits a
+// one-shot `LlmBackendDisabled` event so authors can tell the difference
+// between "agent paused itself" and "live LLM not wired up".
+//
+// Strict-schema (`deny_unknown_fields`) on `agents[*]` and `agents[*]
+// .budgets`. `kind`, `observation_scope[*]`, and `allowed_actions[*]`
+// are open-string at the raw layer so unknown variants surface as a
+// typed `Sl1LoadError` rather than serde's English text.
+// ---------------------------------------------------------------------------
+
+/// Raw `agents[*]` entry. Strict-schema.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Agent {
+    pub id: String,
+    pub kind: String,
+    pub role: String,
+    pub interval_ticks: u64,
+    #[serde(default)]
+    pub observation_scope: Vec<String>,
+    #[serde(default)]
+    pub allowed_actions: Vec<String>,
+    pub budgets: RawSl1AgentBudgets,
+    /// Per-objective weights in `[0, 1]`. Used by future built-in
+    /// agents to prioritize objectives; PR 10 stores them but the
+    /// scripted backend ignores them.
+    #[serde(default)]
+    pub objective_weights: BTreeMap<String, f64>,
+}
+
+/// Raw `agents[*].budgets`. Strict-schema.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1AgentBudgets {
+    pub max_cost_per_decision: u64,
+    pub cooldown_ticks: u64,
+}
+
+/// Validated `agents[*]` entry. PR 10.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sl1Agent {
+    pub id: String,
+    pub kind: Sl1AgentKind,
+    pub role: String,
+    pub interval_ticks: u64,
+    pub observation_scope: Vec<Sl1AgentObservationTarget>,
+    pub allowed_actions: Vec<Sl1AgentActionKind>,
+    pub max_cost_per_decision: u64,
+    pub cooldown_ticks: u64,
+    pub objective_weights: BTreeMap<String, f64>,
+}
+
+/// Closed enum of agent backend kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1AgentKind {
+    /// No-op backend. Never produces a decision. Used in CI baselines.
+    Mock,
+    /// Deterministic rule-based backend. PR 10 ships this variant as
+    /// "no decision" until a later PR wires concrete heuristics.
+    Builtin,
+    /// Live LLM backend. PR 10 always returns `None` and emits a
+    /// one-shot [`simetro_protocol::SimEvent::Sl1AgentLlmDisabled`] so
+    /// distinguish "feature-gated off" from "agent chose not to act".
+    Llm,
+}
+
+impl Sl1AgentKind {
+    /// Canonical wire string.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mock => "mock",
+            Self::Builtin => "builtin",
+            Self::Llm => "llm",
+        }
+    }
+}
+
+/// Targets an agent may observe at each decision tick. Authors declare
+/// scope entries as `"<kind>:<id>"` strings; the loader parses them
+/// into typed targets and validates each id against the matching
+/// scene-level catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum Sl1AgentObservationTarget {
+    Place(String),
+    Transform(String),
+    Demand(String),
+    Dashboard(String),
+    Metric(String),
+}
+
+impl Sl1AgentObservationTarget {
+    /// Canonical wire prefix.
+    #[must_use]
+    pub const fn kind_str(&self) -> &'static str {
+        match self {
+            Self::Place(_) => "place",
+            Self::Transform(_) => "transform",
+            Self::Demand(_) => "demand",
+            Self::Dashboard(_) => "dashboard",
+            Self::Metric(_) => "metric",
+        }
+    }
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Place(s)
+            | Self::Transform(s)
+            | Self::Demand(s)
+            | Self::Dashboard(s)
+            | Self::Metric(s) => s.as_str(),
+        }
+    }
+}
+
+/// Closed enum of agent action kinds. PR 10 only implements
+/// `ThrottleDemand` at runtime; the other variants are accepted in
+/// `allowed_actions` declarations so authors can prepare for future
+/// PRs without churn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum Sl1AgentActionKind {
+    SetJobPriority,
+    ThrottleDemand,
+    ScalePlaceCapacity,
+    WarmCache,
+    PrioritizeTransform,
+    PauseReportRefresh,
+}
+
+impl Sl1AgentActionKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SetJobPriority => "set_job_priority",
+            Self::ThrottleDemand => "throttle_demand",
+            Self::ScalePlaceCapacity => "scale_place_capacity",
+            Self::WarmCache => "warm_cache",
+            Self::PrioritizeTransform => "prioritize_transform",
+            Self::PauseReportRefresh => "pause_report_refresh",
+        }
+    }
+}
+
+/// A typed action proposed by an agent backend. PR 10 only implements
+/// [`Sl1AgentAction::ThrottleDemand`]; future PRs add the rest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1AgentAction {
+    /// Pause spawn of the named demand for `pause_ticks` ticks
+    /// starting on the next tick after the agent decides.
+    ThrottleDemand { demand_id: String, pause_ticks: u64 },
+}
+
+impl Sl1AgentAction {
+    #[must_use]
+    pub const fn kind(&self) -> Sl1AgentActionKind {
+        match self {
+            Self::ThrottleDemand { .. } => Sl1AgentActionKind::ThrottleDemand,
+        }
+    }
+    /// Unit cost in PR 10. Future PRs may vary cost by variant.
+    #[must_use]
+    pub const fn cost(&self) -> u64 {
+        1
+    }
+}
+
+/// Per-agent runtime state (PR 10). Tracks the last tick the agent
+/// fired, the tick its cooldown expires at, whether the one-shot
+/// "live LLM disabled" event has been emitted, and any agent-owned
+/// demand pauses keyed by demand id.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Agent;
+pub struct Sl1AgentRuntimeState {
+    /// Last tick on which the agent's `interval_ticks` cadence fired.
+    /// `None` means the agent has not yet fired.
+    pub last_decision_tick: Option<u64>,
+    /// Cooldown deadline tick (exclusive). No new actions may apply
+    /// while `now < cooldown_until_tick`.
+    pub cooldown_until_tick: Option<u64>,
+    /// True once `Sl1AgentLlmDisabled` has been emitted for this
+    /// agent, so the warning fires exactly once per scene run.
+    pub llm_disabled_emitted: bool,
+}
+
+/// Reason an agent action was rejected. Carried on
+/// [`simetro_protocol::SimEvent::Sl1AgentActionRejected`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Sl1AgentRejectionReason {
+    /// The proposed action's kind is not in this agent's
+    /// `allowed_actions`.
+    ActionNotAllowed,
+    /// The action's target id is not in this agent's
+    /// `observation_scope`.
+    ActionTargetOutOfScope,
+    /// The action's target id does not resolve to a declared scene
+    /// element.
+    ActionTargetUnknown,
+    /// `action.cost() > agent.max_cost_per_decision`.
+    CostExceedsBudget,
+    /// The agent is currently cooling down from a previous action.
+    Cooldown,
+    /// The runtime understood the action but PR 10 does not implement
+    /// its effect. Reserved for future variants of
+    /// [`Sl1AgentAction`].
+    EffectUnsupportedInThisPr,
+    /// Action carried an out-of-range or nonsensical parameter (e.g.
+    /// `pause_ticks == 0`).
+    InvalidActionParameter,
+}
+
+impl Sl1AgentRejectionReason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ActionNotAllowed => "action_not_allowed",
+            Self::ActionTargetOutOfScope => "action_target_out_of_scope",
+            Self::ActionTargetUnknown => "action_target_unknown",
+            Self::CostExceedsBudget => "cost_exceeds_budget",
+            Self::Cooldown => "cooldown",
+            Self::EffectUnsupportedInThisPr => "effect_unsupported_in_this_pr",
+            Self::InvalidActionParameter => "invalid_action_parameter",
+        }
+    }
+}
+
+/// PR 10 bound on per-agent `interval_ticks` to avoid pathological
+/// schedules. Same shape as observability caps.
+pub const SL1_AGENT_MAX_INTERVAL_TICKS: u64 = 1_000_000;
+/// PR 10 bound on per-agent `cooldown_ticks` and per-action
+/// `pause_ticks`. Same shape as observability caps.
+pub const SL1_AGENT_MAX_COOLDOWN_TICKS: u64 = 1_000_000;
+/// Maximum entries in `observation_scope` and `allowed_actions`.
+pub const SL1_AGENT_MAX_LIST_LEN: usize = 256;
+/// Maximum entries in `objective_weights`.
+pub const SL1_AGENT_MAX_OBJECTIVE_WEIGHTS: usize = 256;
 
 // ---------------------------------------------------------------------------
 // Observability — typed primitive (PR 9).
@@ -2915,6 +3153,130 @@ pub enum Sl1LoadError {
          unsupported severity {severity:?}"
     )]
     AlertUnsupportedSeverity { id: String, severity: String },
+
+    // ---- PR 10 — agents ----------------------------------------------
+    /// Empty / charset / length violation on an `agent.id`.
+    #[error("scenario_language_v1.agents: invalid id {id:?}")]
+    AgentInvalidId { id: String },
+
+    /// Two agents share an id.
+    #[error("scenario_language_v1.agents: duplicate id {id:?}")]
+    AgentDuplicateId { id: String },
+
+    /// `kind` did not match any known agent backend kind.
+    #[error("scenario_language_v1.agents[{id:?}].kind: unknown kind {kind:?}")]
+    AgentUnknownKind { id: String, kind: String },
+
+    /// `role` is empty or whitespace-only.
+    #[error("scenario_language_v1.agents[{id:?}].role: must be non-empty")]
+    AgentRoleEmpty { id: String },
+
+    /// `interval_ticks` is zero — the agent could never fire.
+    #[error("scenario_language_v1.agents[{id:?}].interval_ticks: must be > 0")]
+    AgentIntervalTicksZero { id: String },
+
+    /// `interval_ticks` exceeds [`SL1_AGENT_MAX_INTERVAL_TICKS`].
+    #[error(
+        "scenario_language_v1.agents[{id:?}].interval_ticks: \
+         {value} out of allowed range [1, {max}]"
+    )]
+    AgentIntervalTicksOutOfRange { id: String, value: u64, max: u64 },
+
+    /// `observation_scope` entry was not formatted as `"<kind>:<id>"`
+    /// with a known kind prefix.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].observation_scope: \
+         malformed entry {entry:?} (expected `<kind>:<id>`)"
+    )]
+    AgentObservationScopeMalformed { id: String, entry: String },
+
+    /// `observation_scope` references a target id that does not
+    /// resolve in the matching scene-level catalog.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].observation_scope: \
+         unknown {kind} id {target:?}"
+    )]
+    AgentObservationScopeUnknownId {
+        id: String,
+        kind: &'static str,
+        target: String,
+    },
+
+    /// Two `observation_scope` entries are identical after parsing.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].observation_scope: \
+         duplicate entry {entry:?}"
+    )]
+    AgentObservationScopeDuplicate { id: String, entry: String },
+
+    /// `allowed_actions` carries an unknown action kind.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].allowed_actions: \
+         unknown action kind {kind:?}"
+    )]
+    AgentAllowedActionsUnknownKind { id: String, kind: String },
+
+    /// Two `allowed_actions` entries refer to the same action kind.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].allowed_actions: \
+         duplicate entry {kind:?}"
+    )]
+    AgentAllowedActionsDuplicate { id: String, kind: String },
+
+    /// `budgets.max_cost_per_decision` is zero — the agent can never
+    /// successfully act.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].budgets.max_cost_per_decision: \
+         must be > 0"
+    )]
+    AgentMaxCostPerDecisionZero { id: String },
+
+    /// `budgets.cooldown_ticks` exceeds
+    /// [`SL1_AGENT_MAX_COOLDOWN_TICKS`].
+    #[error(
+        "scenario_language_v1.agents[{id:?}].budgets.cooldown_ticks: \
+         {value} out of allowed range [0, {max}]"
+    )]
+    AgentCooldownTicksOutOfRange { id: String, value: u64, max: u64 },
+
+    /// An `objective_weights` value is NaN or infinite.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].objective_weights[{objective:?}]: \
+         value must be finite"
+    )]
+    AgentObjectiveWeightNonFinite { id: String, objective: String },
+
+    /// An `objective_weights` value is outside `[0, 1]`.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].objective_weights[{objective:?}]: \
+         {value} out of range [0, 1]"
+    )]
+    AgentObjectiveWeightOutOfRange {
+        id: String,
+        objective: String,
+        value: f64,
+    },
+
+    /// `objective_weights` references an objective id that is not
+    /// declared on the scene.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].objective_weights: \
+         unknown objective {objective:?}"
+    )]
+    AgentObjectiveWeightUnknown { id: String, objective: String },
+
+    /// `observation_scope`, `allowed_actions`, or `objective_weights`
+    /// has more entries than the matching cap.
+    #[error(
+        "scenario_language_v1.agents[{id:?}].{field}: \
+         {count} entries (max {max})"
+    )]
+    AgentTooManyEntries {
+        id: String,
+        field: &'static str,
+        count: usize,
+        max: usize,
+    },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -3146,6 +3508,17 @@ pub struct Sl1RuntimeState {
     /// `Sl1AlertFired`, `Firing` → `Inactive` emits `Sl1AlertCleared`.
     /// Same-state ticks do not emit events.
     pub alert_states: std::collections::BTreeMap<String, Sl1AlertState>,
+    /// Per-agent runtime state (PR 10). One entry per declared agent.
+    /// Updated each agent decision tick.
+    pub agents: std::collections::BTreeMap<String, Sl1AgentRuntimeState>,
+    /// Per-demand agent-imposed pause (PR 10). Maps a demand id to the
+    /// tick (exclusive) at which its spawn loop may resume. While
+    /// `now < pause_until_tick`, `crate::sl1_runtime::run_demand`
+    /// skips spawning new instances for that demand.
+    ///
+    /// Stable order via `BTreeMap`. Entries are dropped when they
+    /// expire (no point keeping `0` sentinels in the protocol view).
+    pub agent_demand_pauses: std::collections::BTreeMap<String, u64>,
 }
 
 /// Per-tick pressure overlay (PR 7).
@@ -3387,6 +3760,12 @@ impl Sl1RuntimeState {
                         .collect()
                 })
                 .unwrap_or_default(),
+            agents: scene
+                .agents
+                .iter()
+                .map(|a| (a.id.clone(), Sl1AgentRuntimeState::default()))
+                .collect(),
+            agent_demand_pauses: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -3609,7 +3988,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.agents, "agents");
     reject_non_empty!(raw.milestones, "milestones");
 
     // Validate things (PR 3) FIRST so places + links can cross-check
@@ -3837,6 +4215,44 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         None
     };
 
+    // ---- PR 10 — agents ----
+    // Validated last so it can cross-reference every primitive
+    // (places, transforms, demand, dashboards, metrics, objectives).
+    let mut agents: Vec<Sl1Agent> = Vec::with_capacity(raw.agents.len());
+    let mut seen_agent_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let dashboard_ids: std::collections::BTreeSet<&str> = observability
+        .as_ref()
+        .map(|o| o.dashboards.iter().map(|d| d.id.as_str()).collect())
+        .unwrap_or_default();
+    let metric_ids: std::collections::BTreeSet<&str> = observability
+        .as_ref()
+        .map(|o| o.metrics.iter().map(|m| m.id.as_str()).collect())
+        .unwrap_or_default();
+    let objective_ids_ref: std::collections::BTreeSet<&str> =
+        objectives.iter().map(|o| o.id.as_str()).collect();
+    let place_ids_ref: std::collections::BTreeSet<&str> =
+        places.iter().map(|p| p.id.as_str()).collect();
+    let transform_ids_ref: std::collections::BTreeSet<&str> =
+        transforms.iter().map(|t| t.id.as_str()).collect();
+    let demand_ids_ref: std::collections::BTreeSet<&str> =
+        demand.iter().map(|d| d.id.as_str()).collect();
+    for raw_agent in raw.agents {
+        let agent = validate_agent(
+            raw_agent,
+            &place_ids_ref,
+            &transform_ids_ref,
+            &demand_ids_ref,
+            &dashboard_ids,
+            &metric_ids,
+            &objective_ids_ref,
+        )?;
+        if !seen_agent_ids.insert(agent.id.clone()) {
+            return Err(Sl1LoadError::AgentDuplicateId { id: agent.id });
+        }
+        agents.push(agent);
+    }
+    agents.sort_by(|a, b| a.id.cmp(&b.id));
+
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
         places,
@@ -3848,7 +4264,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         objectives,
         failure_conditions,
         victory_conditions,
-        agents: Vec::new(),
+        agents,
         observability,
         milestones: Vec::new(),
     })
@@ -4266,6 +4682,251 @@ fn is_valid_sl1_id(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+// ---------------------------------------------------------------------------
+// Agent validation (PR 10).
+// ---------------------------------------------------------------------------
+
+fn validate_agent(
+    raw: RawSl1Agent,
+    place_ids: &std::collections::BTreeSet<&str>,
+    transform_ids: &std::collections::BTreeSet<&str>,
+    demand_ids: &std::collections::BTreeSet<&str>,
+    dashboard_ids: &std::collections::BTreeSet<&str>,
+    metric_ids: &std::collections::BTreeSet<&str>,
+    objective_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1Agent, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::AgentInvalidId { id: raw.id });
+    }
+
+    let kind = match raw.kind.as_str() {
+        "mock" => Sl1AgentKind::Mock,
+        "builtin" => Sl1AgentKind::Builtin,
+        "llm" => Sl1AgentKind::Llm,
+        _ => {
+            return Err(Sl1LoadError::AgentUnknownKind {
+                id: raw.id,
+                kind: raw.kind,
+            });
+        }
+    };
+
+    if raw.role.trim().is_empty() {
+        return Err(Sl1LoadError::AgentRoleEmpty { id: raw.id });
+    }
+
+    if raw.interval_ticks == 0 {
+        return Err(Sl1LoadError::AgentIntervalTicksZero { id: raw.id });
+    }
+    if raw.interval_ticks > SL1_AGENT_MAX_INTERVAL_TICKS {
+        return Err(Sl1LoadError::AgentIntervalTicksOutOfRange {
+            id: raw.id,
+            value: raw.interval_ticks,
+            max: SL1_AGENT_MAX_INTERVAL_TICKS,
+        });
+    }
+
+    if raw.observation_scope.len() > SL1_AGENT_MAX_LIST_LEN {
+        return Err(Sl1LoadError::AgentTooManyEntries {
+            id: raw.id,
+            field: "observation_scope",
+            count: raw.observation_scope.len(),
+            max: SL1_AGENT_MAX_LIST_LEN,
+        });
+    }
+    if raw.allowed_actions.len() > SL1_AGENT_MAX_LIST_LEN {
+        return Err(Sl1LoadError::AgentTooManyEntries {
+            id: raw.id,
+            field: "allowed_actions",
+            count: raw.allowed_actions.len(),
+            max: SL1_AGENT_MAX_LIST_LEN,
+        });
+    }
+    if raw.objective_weights.len() > SL1_AGENT_MAX_OBJECTIVE_WEIGHTS {
+        return Err(Sl1LoadError::AgentTooManyEntries {
+            id: raw.id,
+            field: "objective_weights",
+            count: raw.objective_weights.len(),
+            max: SL1_AGENT_MAX_OBJECTIVE_WEIGHTS,
+        });
+    }
+
+    let mut observation_scope: Vec<Sl1AgentObservationTarget> =
+        Vec::with_capacity(raw.observation_scope.len());
+    let mut seen_scope: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in raw.observation_scope {
+        if !seen_scope.insert(entry.clone()) {
+            return Err(Sl1LoadError::AgentObservationScopeDuplicate { id: raw.id, entry });
+        }
+        let target = parse_observation_target(
+            &raw.id,
+            &entry,
+            place_ids,
+            transform_ids,
+            demand_ids,
+            dashboard_ids,
+            metric_ids,
+        )?;
+        observation_scope.push(target);
+    }
+    observation_scope.sort();
+
+    let mut allowed_actions: Vec<Sl1AgentActionKind> =
+        Vec::with_capacity(raw.allowed_actions.len());
+    let mut seen_action: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for action in raw.allowed_actions {
+        if !seen_action.insert(action.clone()) {
+            return Err(Sl1LoadError::AgentAllowedActionsDuplicate {
+                id: raw.id,
+                kind: action,
+            });
+        }
+        let parsed = match action.as_str() {
+            "set_job_priority" => Sl1AgentActionKind::SetJobPriority,
+            "throttle_demand" => Sl1AgentActionKind::ThrottleDemand,
+            "scale_place_capacity" => Sl1AgentActionKind::ScalePlaceCapacity,
+            "warm_cache" => Sl1AgentActionKind::WarmCache,
+            "prioritize_transform" => Sl1AgentActionKind::PrioritizeTransform,
+            "pause_report_refresh" => Sl1AgentActionKind::PauseReportRefresh,
+            _ => {
+                return Err(Sl1LoadError::AgentAllowedActionsUnknownKind {
+                    id: raw.id,
+                    kind: action,
+                });
+            }
+        };
+        allowed_actions.push(parsed);
+    }
+    allowed_actions.sort();
+
+    if raw.budgets.max_cost_per_decision == 0 {
+        return Err(Sl1LoadError::AgentMaxCostPerDecisionZero { id: raw.id });
+    }
+    if raw.budgets.cooldown_ticks > SL1_AGENT_MAX_COOLDOWN_TICKS {
+        return Err(Sl1LoadError::AgentCooldownTicksOutOfRange {
+            id: raw.id,
+            value: raw.budgets.cooldown_ticks,
+            max: SL1_AGENT_MAX_COOLDOWN_TICKS,
+        });
+    }
+
+    for (objective, weight) in &raw.objective_weights {
+        if !weight.is_finite() {
+            return Err(Sl1LoadError::AgentObjectiveWeightNonFinite {
+                id: raw.id,
+                objective: objective.clone(),
+            });
+        }
+        if !(0.0..=1.0).contains(weight) {
+            return Err(Sl1LoadError::AgentObjectiveWeightOutOfRange {
+                id: raw.id,
+                objective: objective.clone(),
+                value: *weight,
+            });
+        }
+        if !objective_ids.contains(objective.as_str()) {
+            return Err(Sl1LoadError::AgentObjectiveWeightUnknown {
+                id: raw.id,
+                objective: objective.clone(),
+            });
+        }
+    }
+
+    Ok(Sl1Agent {
+        id: raw.id,
+        kind,
+        role: raw.role,
+        interval_ticks: raw.interval_ticks,
+        observation_scope,
+        allowed_actions,
+        max_cost_per_decision: raw.budgets.max_cost_per_decision,
+        cooldown_ticks: raw.budgets.cooldown_ticks,
+        objective_weights: raw.objective_weights,
+    })
+}
+
+fn parse_observation_target(
+    agent_id: &str,
+    entry: &str,
+    place_ids: &std::collections::BTreeSet<&str>,
+    transform_ids: &std::collections::BTreeSet<&str>,
+    demand_ids: &std::collections::BTreeSet<&str>,
+    dashboard_ids: &std::collections::BTreeSet<&str>,
+    metric_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1AgentObservationTarget, Sl1LoadError> {
+    let Some((kind, id)) = entry.split_once(':') else {
+        return Err(Sl1LoadError::AgentObservationScopeMalformed {
+            id: agent_id.to_string(),
+            entry: entry.to_string(),
+        });
+    };
+    if id.is_empty() {
+        return Err(Sl1LoadError::AgentObservationScopeMalformed {
+            id: agent_id.to_string(),
+            entry: entry.to_string(),
+        });
+    }
+    let target = match kind {
+        "place" => {
+            if !place_ids.contains(id) {
+                return Err(Sl1LoadError::AgentObservationScopeUnknownId {
+                    id: agent_id.to_string(),
+                    kind: "place",
+                    target: id.to_string(),
+                });
+            }
+            Sl1AgentObservationTarget::Place(id.to_string())
+        }
+        "transform" => {
+            if !transform_ids.contains(id) {
+                return Err(Sl1LoadError::AgentObservationScopeUnknownId {
+                    id: agent_id.to_string(),
+                    kind: "transform",
+                    target: id.to_string(),
+                });
+            }
+            Sl1AgentObservationTarget::Transform(id.to_string())
+        }
+        "demand" => {
+            if !demand_ids.contains(id) {
+                return Err(Sl1LoadError::AgentObservationScopeUnknownId {
+                    id: agent_id.to_string(),
+                    kind: "demand",
+                    target: id.to_string(),
+                });
+            }
+            Sl1AgentObservationTarget::Demand(id.to_string())
+        }
+        "dashboard" => {
+            if !dashboard_ids.contains(id) {
+                return Err(Sl1LoadError::AgentObservationScopeUnknownId {
+                    id: agent_id.to_string(),
+                    kind: "dashboard",
+                    target: id.to_string(),
+                });
+            }
+            Sl1AgentObservationTarget::Dashboard(id.to_string())
+        }
+        "metric" => {
+            if !metric_ids.contains(id) {
+                return Err(Sl1LoadError::AgentObservationScopeUnknownId {
+                    id: agent_id.to_string(),
+                    kind: "metric",
+                    target: id.to_string(),
+                });
+            }
+            Sl1AgentObservationTarget::Metric(id.to_string())
+        }
+        _ => {
+            return Err(Sl1LoadError::AgentObservationScopeMalformed {
+                id: agent_id.to_string(),
+                entry: entry.to_string(),
+            });
+        }
+    };
+    Ok(target)
 }
 
 fn validate_sl1_id(id: &str) -> Result<(), Sl1LoadError> {
@@ -6193,25 +6854,22 @@ mod tests {
 
     #[test]
     fn non_empty_primitive_rejected_until_pr_lands() {
-        // PRs 10-11 have no behavior for their primitive — even a
+        // PR 11 has no behavior for its primitive — even a
         // perfectly-shaped (empty) entry must fail load, otherwise a
         // proto-SL1 scene would silently no-op. PR 1 removed `places`,
         // PR 2 removed `links`, PR 3 removed `things`, PR 4 removed
         // `transforms`, PR 5 removed `demand`, PR 7 removed
-        // `pressure`, and PR 8 removed `objectives` /
-        // `failure_conditions` / `victory_conditions` from this guard
-        // because all are now typed and validated.
-        for (json, expected_section) in [
-            (r#"{"agents": [{}]}"#, "agents"),
-            (r#"{"milestones": [{}]}"#, "milestones"),
-        ] {
-            let err = load_str(json).unwrap_err();
-            match err {
-                Sl1LoadError::PrimitiveNotImplemented { section } => {
-                    assert_eq!(section, expected_section, "json was {json}");
-                }
-                other => panic!("expected PrimitiveNotImplemented for {json}, got {other:?}"),
+        // `pressure`, PR 8 removed `objectives` / `failure_conditions`
+        // / `victory_conditions`, and PR 10 removed `agents` because
+        // all are now typed and validated.
+        let json = r#"{"milestones": [{}]}"#;
+        let expected_section = "milestones";
+        let err = load_str(json).unwrap_err();
+        match err {
+            Sl1LoadError::PrimitiveNotImplemented { section } => {
+                assert_eq!(section, expected_section, "json was {json}");
             }
+            other => panic!("expected PrimitiveNotImplemented for {json}, got {other:?}"),
         }
     }
 
@@ -6281,7 +6939,7 @@ mod tests {
         // typo at the top level is surfaced even if the author also
         // populated a primitive that would have hit
         // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "agents": [{}]}"#).unwrap_err();
+        let err = load_str(r#"{"mystery": 1, "milestones": [{}]}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),

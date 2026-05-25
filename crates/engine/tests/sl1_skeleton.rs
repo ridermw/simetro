@@ -133,13 +133,13 @@ fn loader_rejects_explicit_null_sl1_block() {
 }
 
 #[test]
-fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
+fn legacy_top_level_agents_still_loads_but_nested_milestones_does_not() {
     // `agents` is intentionally excluded from the reserved-top-level
     // guard because legacy v1/v2 scenes use it at the top level
     // alongside `pieces`. This test documents both halves of that
     // intentional collision: top-level `agents` still loads, while a
-    // nested SL1 `agents` block fails with PrimitiveNotImplemented
-    // until PR 10 lands.
+    // nested SL1 placeholder primitive (`milestones`, still
+    // unimplemented as of PR 10) fails with PrimitiveNotImplemented.
 
     let with_legacy_agents = r##"{
         "schema_version": 1,
@@ -157,7 +157,7 @@ fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
 
     let with_nested_agents = r##"{
         "schema_version": 1,
-        "name": "sl1-nested-agents",
+        "name": "sl1-nested-milestones",
         "theme": {
             "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
             "background_index": 0,
@@ -165,14 +165,14 @@ fn legacy_top_level_agents_still_loads_but_nested_agents_does_not() {
         },
         "pieces": { "nodes": [], "paths": [], "movers": [] },
         "scenario_language_v1": {
-            "agents": [{}]
+            "milestones": [{}]
         }
     }"##;
     let err = load_scene_str(with_nested_agents, 0)
-        .expect_err("nested SL1 `agents` must fail until PR 10");
+        .expect_err("nested SL1 `milestones` must fail until PR 11");
     match err {
         LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "agents");
+            assert_eq!(section, "milestones");
         }
         other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
     }
@@ -207,16 +207,17 @@ fn loader_rejects_misplaced_top_level_sl1_primitive() {
 
 #[test]
 fn loader_rejects_non_empty_primitive_until_pr_lands() {
-    // PRs 10–11 have no behavior for their primitive — even a
-    // well-formed entry must fail load so authors cannot build
-    // proto-SL1 scenes that silently no-op. PRs 1–5 promoted `places`,
-    // `links`, `things`, `transforms`, and `demand`, PR 7 promoted
-    // `pressure`, and PR 8 promoted `objectives`, `failure_conditions`,
-    // and `victory_conditions` to typed primitives. This regression
-    // test uses `agents` (still a placeholder until PR 10).
+    // PR 11 has no behavior for its primitive — even a well-formed
+    // entry must fail load so authors cannot build proto-SL1 scenes
+    // that silently no-op. PRs 1–5 promoted `places`, `links`,
+    // `things`, `transforms`, and `demand`, PR 7 promoted `pressure`,
+    // PR 8 promoted `objectives` / `failure_conditions` /
+    // `victory_conditions`, and PR 10 promoted `agents`. This
+    // regression test uses `milestones` (still a placeholder until
+    // PR 11).
     let json = r##"{
         "schema_version": 1,
-        "name": "sl1-non-empty-agents",
+        "name": "sl1-non-empty-milestones",
         "theme": {
             "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
             "background_index": 0,
@@ -224,14 +225,14 @@ fn loader_rejects_non_empty_primitive_until_pr_lands() {
         },
         "pieces": { "nodes": [], "paths": [], "movers": [] },
         "scenario_language_v1": {
-            "agents": [{}]
+            "milestones": [{}]
         }
     }"##;
     let err =
         load_scene_str(json, 0).expect_err("non-empty SL1 placeholder primitive must be rejected");
     match err {
         LoadError::Sl1(Sl1LoadError::PrimitiveNotImplemented { section }) => {
-            assert_eq!(section, "agents");
+            assert_eq!(section, "milestones");
         }
         other => panic!("expected LoadError::Sl1(PrimitiveNotImplemented), got {other:?}"),
     }
