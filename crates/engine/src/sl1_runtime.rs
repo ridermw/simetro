@@ -75,6 +75,14 @@ pub fn run(
     if !scene.agents.is_empty() {
         crate::sl1_agents::run(scene, runtime, now, events);
     }
+
+    // Milestones run LAST so they can fire on the freshest
+    // post-pressure / post-observability / post-agent state for the
+    // current tick (PR 11). Per the SL1 spec ordering
+    // "objectives → observability → agents → milestones".
+    if !scene.milestones.is_empty() {
+        crate::sl1_milestones::run(scene, runtime, now, events);
+    }
 }
 
 fn age_freshness(

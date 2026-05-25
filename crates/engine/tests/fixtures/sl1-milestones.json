@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "name": "sl1-milestones-fixture",
+  "theme": {
+    "palette": ["#0e1116", "#e8eaed", "#7aa2f7"],
+    "background_index": 0,
+    "font": "system-ui"
+  },
+  "pieces": {
+    "nodes": [],
+    "paths": [],
+    "movers": []
+  },
+  "scenario_language_v1": {
+    "places": [
+      {
+        "id": "factory",
+        "role": "producer",
+        "pos": [0.0, 0.0],
+        "capacity": { "machine_hours": 4 },
+        "storage": {
+          "raw_material": { "capacity": 200, "initial": 200 },
+          "report":       { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["raw_material"],
+        "produces": ["report"]
+      },
+      {
+        "id": "sink",
+        "role": "consumer",
+        "pos": [10.0, 0.0],
+        "capacity": { "queries": 8 },
+        "storage": {
+          "report": { "capacity": 100, "initial": 0 }
+        },
+        "accepts": ["report"],
+        "produces": []
+      }
+    ],
+    "things": [
+      { "id": "raw_material", "kind": "input", "tags": [] },
+      { "id": "report",       "kind": "data",  "tags": [], "freshness_budget_ticks": 50 }
+    ],
+    "links": [
+      {
+        "id": "factory-to-sink",
+        "type": "report_pipe",
+        "from": "factory",
+        "to": "sink",
+        "direction": "forward",
+        "capacity": { "reports": 5 },
+        "travel_ticks": 2,
+        "compatibility": ["report"],
+        "queue_capacity": 5,
+        "backpressure": "block_upstream"
+      }
+    ],
+    "transforms": [
+      {
+        "id": "refresh_report",
+        "type": "data_refresh",
+        "runs_on": "factory",
+        "inputs": [{ "thing": "raw_material", "amount": 1 }],
+        "outputs": [{ "thing": "report", "amount": 1 }],
+        "cadence_ticks": 5,
+        "duration_ticks": 2,
+        "deadline_ticks": 10,
+        "capacity_cost": { "machine_hours": 2 },
+        "failure_policy": "retry_then_warn",
+        "max_attempts": 2
+      }
+    ],
+    "pressure": [
+      {
+        "id": "drift_blip",
+        "type": "schema_drift",
+        "at_tick": 8,
+        "duration_ticks": 4,
+        "target": "report"
+      }
+    ],
+    "observability": {
+      "dashboards": [
+        {
+          "id": "exec-report",
+          "type": "report",
+          "depends_on": ["report"],
+          "freshness_slo_ticks": 10
+        }
+      ],
+      "metrics": [
+        {
+          "id": "factory-report-count",
+          "source": "place_inventory_count",
+          "place": "factory",
+          "thing": "report"
+        }
+      ],
+      "alerts": []
+    },
+    "milestones": [
+      {
+        "id": "drift-activated",
+        "label": "Schema drift detected",
+        "trigger": { "type": "pressure_activated", "pressure": "drift_blip" }
+      },
+      {
+        "id": "drift-cleared",
+        "label": "Schema drift cleared",
+        "trigger": { "type": "pressure_deactivated", "pressure": "drift_blip" },
+        "camera_focus": ["factory"]
+      },
+      {
+        "id": "first-report",
+        "label": "First report produced",
+        "trigger": {
+          "type": "metric_threshold",
+          "metric": "factory-report-count",
+          "predicate": "gte",
+          "value": 1
+        },
+        "highlight": "factory"
+      },
+      {
+        "id": "exec-dashboard-stale",
+        "label": "Exec dashboard went stale",
+        "trigger": {
+          "type": "dashboard_state",
+          "dashboard": "exec-report",
+          "state": "stale"
+        }
+      }
+    ]
+  }
+}

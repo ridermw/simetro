@@ -185,7 +185,7 @@ pub struct RawSl1Scene {
     #[serde(default, deserialize_with = "deserialize_observability")]
     pub observability: Option<RawSl1Observability>,
     #[serde(default)]
-    pub milestones: Vec<serde_json::Value>,
+    pub milestones: Vec<RawSl1Milestone>,
     /// Permissive catalog/theme/metadata block. Unknown fields here are
     /// allowed because catalog entries are author-facing free-form data
     /// (titles, descriptions, palette notes). Behavior-bearing fields
@@ -1865,9 +1865,193 @@ impl Sl1AlertState {
     }
 }
 
-/// Placeholder loaded `milestone`. Populated in PR 11.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Sl1Milestone;
+// ---------------------------------------------------------------------------
+// Milestone — typed primitive (PR 11).
+// ---------------------------------------------------------------------------
+
+/// Raw, post-serde representation of a `milestones[]` entry.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawSl1Milestone {
+    pub id: String,
+    pub trigger: RawSl1MilestoneTrigger,
+    pub label: String,
+    #[serde(default)]
+    pub camera_focus: Option<Vec<String>>,
+    #[serde(default)]
+    pub highlight: Option<String>,
+}
+
+/// Raw trigger discriminator. The `type` tag matches the typed
+/// [`Sl1MilestoneTrigger`] variants.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RawSl1MilestoneTrigger {
+    PressureActivated {
+        pressure: String,
+    },
+    PressureDeactivated {
+        pressure: String,
+    },
+    MetricThreshold {
+        metric: String,
+        predicate: String,
+        value: i64,
+    },
+    DashboardState {
+        dashboard: String,
+        state: String,
+    },
+}
+
+/// Validated milestone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sl1Milestone {
+    pub id: String,
+    pub trigger: Sl1MilestoneTrigger,
+    pub label: String,
+    /// Optional list of node/dashboard ids the viewer should focus on
+    /// when this milestone fires. Empty when omitted.
+    pub camera_focus: Vec<String>,
+    /// Optional id (often a dashboard or place) the viewer should
+    /// highlight when this milestone fires. `None` when omitted.
+    pub highlight: Option<String>,
+}
+
+/// Typed milestone trigger. Each variant is edge-triggered: the
+/// milestone fires AT MOST ONCE on the first tick the condition
+/// transitions from false to true.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sl1MilestoneTrigger {
+    /// Fires the tick the named pressure transitions from inactive
+    /// to active. The pressure must exist in the scene.
+    PressureActivated { pressure: String },
+    /// Fires the tick the named pressure transitions from active to
+    /// inactive.
+    PressureDeactivated { pressure: String },
+    /// Fires the first tick the named metric's `Ok { value }`
+    /// satisfies the predicate. `NoData` is never satisfying.
+    MetricThreshold {
+        metric: String,
+        predicate: Sl1MilestonePredicate,
+        value: i64,
+    },
+    /// Fires the first tick the named dashboard's state matches
+    /// `target_state`.
+    DashboardState {
+        dashboard: String,
+        target_state: Sl1MilestoneDashboardState,
+    },
+}
+
+/// Comparison predicate for `MetricThreshold` triggers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1MilestonePredicate {
+    Gte,
+    Lte,
+    Gt,
+    Lt,
+}
+
+impl Sl1MilestonePredicate {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "gte" => Some(Self::Gte),
+            "lte" => Some(Self::Lte),
+            "gt" => Some(Self::Gt),
+            "lt" => Some(Self::Lt),
+            _ => None,
+        }
+    }
+
+    /// Canonical wire string.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Gte => "gte",
+            Self::Lte => "lte",
+            Self::Gt => "gt",
+            Self::Lt => "lt",
+        }
+    }
+
+    /// Evaluate the predicate against an observed value.
+    #[must_use]
+    pub fn evaluate(&self, observed: i64, target: i64) -> bool {
+        match self {
+            Self::Gte => observed >= target,
+            Self::Lte => observed <= target,
+            Self::Gt => observed > target,
+            Self::Lt => observed < target,
+        }
+    }
+}
+
+/// Canonical dashboard-state discriminator for `DashboardState`
+/// triggers. Mirrors the `Sl1DashboardState` variants minus payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sl1MilestoneDashboardState {
+    Ok,
+    Stale,
+    NoData,
+}
+
+impl Sl1MilestoneDashboardState {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "ok" => Some(Self::Ok),
+            "stale" => Some(Self::Stale),
+            "no_data" => Some(Self::NoData),
+            _ => None,
+        }
+    }
+
+    /// Canonical wire string.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Stale => "stale",
+            Self::NoData => "no_data",
+        }
+    }
+
+    /// True iff the loaded dashboard state matches this discriminator.
+    #[must_use]
+    pub fn matches(&self, ds: Sl1DashboardState) -> bool {
+        match self {
+            Self::Ok => matches!(ds, Sl1DashboardState::Ok),
+            Self::Stale => matches!(ds, Sl1DashboardState::Stale { .. }),
+            Self::NoData => matches!(ds, Sl1DashboardState::NoData),
+        }
+    }
+}
+
+/// Per-milestone runtime state. A milestone fires at most once over
+/// the lifetime of a scene run.
+///
+/// `armed` is used only by `pressure_deactivated` triggers: such a
+/// milestone fires the first tick the named pressure is NOT active
+/// AFTER having been observed active at least once during the run.
+/// For all other trigger types, `armed` is `true` from tick 0 and the
+/// milestone fires the first tick its condition holds.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Sl1MilestoneRuntime {
+    /// `Some(tick)` once the milestone has fired. `None` while pending.
+    pub fired_at_tick: Option<u64>,
+    /// `true` once the trigger's prerequisite condition has been
+    /// observed (for `pressure_deactivated`: the pressure has been
+    /// observed active at least once). `true` from tick 0 for all
+    /// other trigger types.
+    pub armed: bool,
+}
+
+impl Sl1MilestoneRuntime {
+    #[must_use]
+    pub const fn fired(&self) -> bool {
+        self.fired_at_tick.is_some()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Error / warning / fault / outcome taxonomy.
@@ -3277,6 +3461,89 @@ pub enum Sl1LoadError {
         count: usize,
         max: usize,
     },
+
+    // ---- Milestone primitive (PR 11) --------------------------------------
+    /// Milestone id failed `is_valid_sl1_id`.
+    #[error("scenario_language_v1.milestones[{id:?}]: invalid id")]
+    MilestoneInvalidId { id: String },
+
+    /// Two milestones declared the same id.
+    #[error("scenario_language_v1.milestones[{id:?}]: duplicate id")]
+    MilestoneDuplicateId { id: String },
+
+    /// `label` is empty.
+    #[error("scenario_language_v1.milestones[{id:?}].label: must not be empty")]
+    MilestoneEmptyLabel { id: String },
+
+    /// `camera_focus` is present but empty.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].camera_focus: \
+         must contain at least one entry if present"
+    )]
+    MilestoneEmptyCameraFocus { id: String },
+
+    /// `camera_focus[*]` contains an empty string.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].camera_focus: \
+         contains empty entry"
+    )]
+    MilestoneEmptyCameraFocusEntry { id: String },
+
+    /// `camera_focus[*]` contains a duplicate entry.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].camera_focus: \
+         duplicate entry {entry:?}"
+    )]
+    MilestoneDuplicateCameraFocus { id: String, entry: String },
+
+    /// `highlight` is present but empty.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].highlight: \
+         must not be empty if present"
+    )]
+    MilestoneEmptyHighlight { id: String },
+
+    /// A `pressure_activated`/`pressure_deactivated` trigger names a
+    /// pressure id that is not declared on the scene.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].trigger.pressure: \
+         unknown pressure {pressure:?}"
+    )]
+    MilestoneUnknownPressure { id: String, pressure: String },
+
+    /// A `metric_threshold` trigger names a metric id that is not
+    /// declared on the scene's observability block.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].trigger.metric: \
+         unknown metric {metric:?}"
+    )]
+    MilestoneUnknownMetric { id: String, metric: String },
+
+    /// A `metric_threshold` trigger has a predicate string that is not
+    /// one of `gte | lte | gt | lt`.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].trigger.predicate: \
+         unknown predicate {predicate:?} \
+         (expected one of: gte, lte, gt, lt)"
+    )]
+    MilestoneUnknownPredicate { id: String, predicate: String },
+
+    /// A `dashboard_state` trigger names a dashboard id that is not
+    /// declared on the scene's observability block.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].trigger.dashboard: \
+         unknown dashboard {dashboard:?}"
+    )]
+    MilestoneUnknownDashboard { id: String, dashboard: String },
+
+    /// A `dashboard_state` trigger has a state string that is not one
+    /// of `ok | stale | no_data`.
+    #[error(
+        "scenario_language_v1.milestones[{id:?}].trigger.state: \
+         unknown state {state:?} \
+         (expected one of: ok, stale, no_data)"
+    )]
+    MilestoneUnknownDashboardState { id: String, state: String },
 }
 
 /// Non-fatal SL1 conditions surfaced to the UI. Populated in later PRs
@@ -3519,6 +3786,11 @@ pub struct Sl1RuntimeState {
     /// Stable order via `BTreeMap`. Entries are dropped when they
     /// expire (no point keeping `0` sentinels in the protocol view).
     pub agent_demand_pauses: std::collections::BTreeMap<String, u64>,
+    /// Per-milestone runtime state (PR 11). One entry per declared
+    /// milestone. A milestone fires at most once over the lifetime of
+    /// a scene run; once `fired_at_tick` is `Some`, the milestone is
+    /// terminal.
+    pub milestones: std::collections::BTreeMap<String, Sl1MilestoneRuntime>,
 }
 
 /// Per-tick pressure overlay (PR 7).
@@ -3766,6 +4038,21 @@ impl Sl1RuntimeState {
                 .map(|a| (a.id.clone(), Sl1AgentRuntimeState::default()))
                 .collect(),
             agent_demand_pauses: std::collections::BTreeMap::new(),
+            milestones: scene
+                .milestones
+                .iter()
+                .map(|m| {
+                    let armed =
+                        !matches!(m.trigger, Sl1MilestoneTrigger::PressureDeactivated { .. });
+                    (
+                        m.id.clone(),
+                        Sl1MilestoneRuntime {
+                            fired_at_tick: None,
+                            armed,
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
@@ -3977,10 +4264,12 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     check_section_cap("agents", raw.agents.len())?;
     check_section_cap("milestones", raw.milestones.len())?;
 
-    // PRs 2–11 add behavior for each primitive. Reject non-empty
-    // sections so a proto-SL1 scene can't silently no-op while
-    // developers wait. PR 1 has removed `places` from this guard
-    // because the typed `Vec<RawSl1Place>` is now validated below.
+    // PRs 2–11 added typed validators for every primitive. The
+    // placeholder-rejection macro is intentionally retained (but
+    // unused) so future PRs can re-introduce it for new primitives
+    // without re-deriving the pattern. `PrimitiveNotImplemented`
+    // remains in the error enum for the same reason.
+    #[allow(unused_macros)]
     macro_rules! reject_non_empty {
         ($vec:expr, $name:literal) => {
             if !$vec.is_empty() {
@@ -3988,7 +4277,6 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
             }
         };
     }
-    reject_non_empty!(raw.milestones, "milestones");
 
     // Validate things (PR 3) FIRST so places + links can cross-check
     // against the declared thing catalog.
@@ -4253,6 +4541,27 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
     }
     agents.sort_by(|a, b| a.id.cmp(&b.id));
 
+    // ---- PR 11 — milestones ----
+    // Cross-references existing pressure / metric / dashboard ids.
+    let pressure_ids_ref: std::collections::BTreeSet<&str> =
+        pressure.iter().map(|p| p.id.as_str()).collect();
+    let mut milestones: Vec<Sl1Milestone> = Vec::with_capacity(raw.milestones.len());
+    let mut seen_milestone_ids: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for raw_milestone in raw.milestones {
+        let milestone = validate_milestone(
+            raw_milestone,
+            &pressure_ids_ref,
+            &metric_ids,
+            &dashboard_ids,
+        )?;
+        if !seen_milestone_ids.insert(milestone.id.clone()) {
+            return Err(Sl1LoadError::MilestoneDuplicateId { id: milestone.id });
+        }
+        milestones.push(milestone);
+    }
+    milestones.sort_by(|a, b| a.id.cmp(&b.id));
+
     Ok(Sl1Scene {
         schema_version: raw.schema_version,
         places,
@@ -4266,7 +4575,7 @@ pub fn validate(raw: RawSl1Scene) -> Result<Sl1Scene, Sl1LoadError> {
         victory_conditions,
         agents,
         observability,
-        milestones: Vec::new(),
+        milestones,
     })
 }
 
@@ -4687,6 +4996,115 @@ fn is_valid_sl1_id(id: &str) -> bool {
 // ---------------------------------------------------------------------------
 // Agent validation (PR 10).
 // ---------------------------------------------------------------------------
+
+fn validate_milestone(
+    raw: RawSl1Milestone,
+    pressure_ids: &std::collections::BTreeSet<&str>,
+    metric_ids: &std::collections::BTreeSet<&str>,
+    dashboard_ids: &std::collections::BTreeSet<&str>,
+) -> Result<Sl1Milestone, Sl1LoadError> {
+    if !is_valid_sl1_id(&raw.id) {
+        return Err(Sl1LoadError::MilestoneInvalidId { id: raw.id });
+    }
+    if raw.label.trim().is_empty() {
+        return Err(Sl1LoadError::MilestoneEmptyLabel { id: raw.id });
+    }
+    let camera_focus = match raw.camera_focus {
+        Some(list) => {
+            if list.is_empty() {
+                return Err(Sl1LoadError::MilestoneEmptyCameraFocus { id: raw.id });
+            }
+            let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            for entry in &list {
+                if entry.trim().is_empty() {
+                    return Err(Sl1LoadError::MilestoneEmptyCameraFocusEntry { id: raw.id });
+                }
+                if !seen.insert(entry.clone()) {
+                    return Err(Sl1LoadError::MilestoneDuplicateCameraFocus {
+                        id: raw.id,
+                        entry: entry.clone(),
+                    });
+                }
+            }
+            list
+        }
+        None => Vec::new(),
+    };
+    let highlight = match raw.highlight {
+        Some(s) => {
+            if s.trim().is_empty() {
+                return Err(Sl1LoadError::MilestoneEmptyHighlight { id: raw.id });
+            }
+            Some(s)
+        }
+        None => None,
+    };
+    let trigger = match raw.trigger {
+        RawSl1MilestoneTrigger::PressureActivated { pressure } => {
+            if !pressure_ids.contains(pressure.as_str()) {
+                return Err(Sl1LoadError::MilestoneUnknownPressure {
+                    id: raw.id,
+                    pressure,
+                });
+            }
+            Sl1MilestoneTrigger::PressureActivated { pressure }
+        }
+        RawSl1MilestoneTrigger::PressureDeactivated { pressure } => {
+            if !pressure_ids.contains(pressure.as_str()) {
+                return Err(Sl1LoadError::MilestoneUnknownPressure {
+                    id: raw.id,
+                    pressure,
+                });
+            }
+            Sl1MilestoneTrigger::PressureDeactivated { pressure }
+        }
+        RawSl1MilestoneTrigger::MetricThreshold {
+            metric,
+            predicate,
+            value,
+        } => {
+            if !metric_ids.contains(metric.as_str()) {
+                return Err(Sl1LoadError::MilestoneUnknownMetric { id: raw.id, metric });
+            }
+            let predicate = Sl1MilestonePredicate::from_str(&predicate).ok_or_else(|| {
+                Sl1LoadError::MilestoneUnknownPredicate {
+                    id: raw.id.clone(),
+                    predicate: predicate.clone(),
+                }
+            })?;
+            Sl1MilestoneTrigger::MetricThreshold {
+                metric,
+                predicate,
+                value,
+            }
+        }
+        RawSl1MilestoneTrigger::DashboardState { dashboard, state } => {
+            if !dashboard_ids.contains(dashboard.as_str()) {
+                return Err(Sl1LoadError::MilestoneUnknownDashboard {
+                    id: raw.id,
+                    dashboard,
+                });
+            }
+            let target_state = Sl1MilestoneDashboardState::from_str(&state).ok_or_else(|| {
+                Sl1LoadError::MilestoneUnknownDashboardState {
+                    id: raw.id.clone(),
+                    state: state.clone(),
+                }
+            })?;
+            Sl1MilestoneTrigger::DashboardState {
+                dashboard,
+                target_state,
+            }
+        }
+    };
+    Ok(Sl1Milestone {
+        id: raw.id,
+        trigger,
+        label: raw.label,
+        camera_focus,
+        highlight,
+    })
+}
 
 fn validate_agent(
     raw: RawSl1Agent,
@@ -6853,23 +7271,22 @@ mod tests {
     }
 
     #[test]
-    fn non_empty_primitive_rejected_until_pr_lands() {
-        // PR 11 has no behavior for its primitive — even a
-        // perfectly-shaped (empty) entry must fail load, otherwise a
-        // proto-SL1 scene would silently no-op. PR 1 removed `places`,
-        // PR 2 removed `links`, PR 3 removed `things`, PR 4 removed
-        // `transforms`, PR 5 removed `demand`, PR 7 removed
-        // `pressure`, PR 8 removed `objectives` / `failure_conditions`
-        // / `victory_conditions`, and PR 10 removed `agents` because
-        // all are now typed and validated.
-        let json = r#"{"milestones": [{}]}"#;
-        let expected_section = "milestones";
-        let err = load_str(json).unwrap_err();
+    fn non_empty_milestone_missing_fields_hits_typed_parse_error() {
+        // Post-PR 11: milestones is a typed `Vec<RawSl1Milestone>` with
+        // strict `deny_unknown_fields`. A milestone missing required
+        // fields (`id`, `trigger`, `label`) hits a serde Parse error,
+        // not `PrimitiveNotImplemented`. The placeholder rejection
+        // macro is retained in the loader for future PRs but no
+        // primitive currently uses it.
+        let err = load_str(r#"{"milestones": [{}]}"#).unwrap_err();
         match err {
-            Sl1LoadError::PrimitiveNotImplemented { section } => {
-                assert_eq!(section, expected_section, "json was {json}");
+            Sl1LoadError::Parse { message } => {
+                assert!(
+                    message.contains("missing field") || message.contains("id"),
+                    "expected serde missing-field error, got message: {message}"
+                );
             }
-            other => panic!("expected PrimitiveNotImplemented for {json}, got {other:?}"),
+            other => panic!("expected Parse for empty milestone, got {other:?}"),
         }
     }
 
@@ -6935,11 +7352,12 @@ mod tests {
 
     #[test]
     fn unknown_field_alongside_primitive_is_unknown_field() {
-        // Unknown-field detection happens BEFORE primitive guards, so a
-        // typo at the top level is surfaced even if the author also
-        // populated a primitive that would have hit
-        // PrimitiveNotImplemented.
-        let err = load_str(r#"{"mystery": 1, "milestones": [{}]}"#).unwrap_err();
+        // Unknown-field detection happens BEFORE per-section validators,
+        // so a typo at the top level is surfaced even if the author also
+        // populated a section. The primitive here is the empty (but
+        // type-valid) `places: []` so we test top-level routing rather
+        // than a section parse failure.
+        let err = load_str(r#"{"mystery": 1, "places": []}"#).unwrap_err();
         match err {
             Sl1LoadError::UnknownField { field } => assert_eq!(field, "mystery"),
             other => panic!("expected UnknownField first, got {other:?}"),
