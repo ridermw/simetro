@@ -501,6 +501,111 @@ of:
 Re-entry into `Starved` or `Blocked` does **not** re-emit; warnings
 are state-class change events, not per-tick.
 
+## Demand (PR 5)
+
+A `demand` is a deterministic spawner of "someone is waiting for
+something". Each spawn creates a pending instance; the runtime
+attempts to fulfill it by observing required things at the target
+place, drops it if its deadline passes, and emits a typed warning
+on every drop or backlog overflow.
+
+PR 5 fulfillment is **observation-only**: when every `requires`
+thing has count ≥ 1 in the target place's inventory, the oldest
+Pending instance becomes Fulfilled. No inventory is decremented.
+This matches the `report_refresh` example from the spec where
+dashboards observe data freshness rather than consume it. A future
+PR may introduce a consuming variant.
+
+### Grammar
+
+```json
+{
+  "id": "fixed_dashboard_refresh",
+  "type": "report_refresh",
+  "target": { "type": "place", "id": "dashboard" },
+  "requires": ["report"],
+  "spawn_schedule": {
+    "type": "fixed",
+    "every_ticks": 10,
+    "start_tick": 5
+  },
+  "deadline_ticks": 12,
+  "priority": "normal",
+  "value": 10,
+  "penalty": { "score": -3, "warning": "report stale" }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `target.type` | Closed for PR 5: only `place` is honored. `transform`, `dashboard`, `virtual_sink` are recognized vocabulary but rejected at load with `DemandTargetKindNotImplemented` until PR 8/9. |
+| `requires` | At least one ThingId, ≤ `MAX_DEMAND_REQUIRES`. Canonicalized (sorted, deduped) so hash + protocol are declaration-order independent. |
+| `spawn_schedule.type` | Closed for PR 5: `fixed` and `scripted`. `wave` is rejected at load with `DemandScheduleNotImplemented` until PR 7. |
+| `spawn_schedule` (fixed) | Requires `every_ticks > 0` and `start_tick > 0`, both ≤ `MAX_DEMAND_TICKS`. Spawns at `tick == start_tick + k*every_ticks` for `k ≥ 0`. |
+| `spawn_schedule` (scripted) | Requires non-empty `ticks` array, each entry > 0, strictly increasing, length ≤ `MAX_DEMAND_SCRIPTED_TICKS`. |
+| `deadline_ticks` | Must be > 0 and ≤ `MAX_DEMAND_TICKS`. An instance is dropped when `now > spawned_at + deadline_ticks`. |
+| `priority` | Closed enum: `low`, `normal`, `high`, `critical`. PR 5 does not act on priority — it is carried for PR 8 scheduling/scoring. |
+| `value` | Reward awarded on fulfillment, ≤ `MAX_DEMAND_VALUE`. Carried in the Dropped warning so PR 8 can wire score arithmetic without a protocol bump. |
+| `penalty.score` | Must be ≤ 0 (positive scores rejected) and `\|score\| ≤ MAX_DEMAND_PENALTY_SCORE`. |
+| `penalty.warning` | Optional opaque author-supplied severity tag carried in runtime warnings. Empty/whitespace strings rejected. |
+
+All nested types (`RawSl1DemandTarget`, `RawSl1DemandSchedule`,
+`RawSl1DemandPenalty`) use `#[serde(deny_unknown_fields)]` so a
+typo in any sub-field is a typed load error, not a silent no-op.
+
+### Runtime pipeline
+
+The demand system runs **after** transforms in the per-tick driver
+so any same-tick produced outputs (e.g., a transform finishes
+`refresh_report` on tick `T`) are visible to fulfillment on tick
+`T`. Per demand, in stable id order:
+
+1. **Spawn.** If the schedule fires at `now`:
+   - if the pending backlog is at `MAX_DEMAND_OUTSTANDING`, the
+     spawn is suppressed and the overflow flag edge-triggers a
+     `BacklogOverflow` warning (only on the rising edge).
+   - otherwise, append a new `Pending` instance with monotonic
+     sequence and `deadline_tick = now + deadline_ticks`.
+2. **Fulfill.** If the oldest Pending exists AND every `requires`
+   thing has count ≥ 1 at the target place's inventory, pop it and
+   bump `fulfilled_count`.
+3. **Drop.** Drain past-deadline instances from the front
+   (`now > deadline_tick`). Each drop bumps `dropped_count` and
+   emits a `Dropped` warning carrying the instance sequence, the
+   demand's `value`, and the demand's `penalty.score` so PR 8 can
+   wire score arithmetic without a protocol change.
+4. **Rearm.** If the backlog has drained below the cap, clear the
+   overflow flag so a future spawn can trip it again.
+
+### Warnings
+
+The `Sl1Demand` warning payload carries `demand_id`, `event` (one of
+`Dropped` or `BacklogOverflow`), `tick`, and (for `Dropped`) the
+instance `sequence`, `value`, and `penalty_score`. `BacklogOverflow`
+carries no sequence/value/penalty.
+
+### Bounded sizes
+
+- `MAX_DEMAND_OUTSTANDING` — per-definition pending backlog cap.
+- `MAX_DEMAND_TICKS` — upper bound on any scheduling tick field.
+- `MAX_DEMAND_VALUE` — upper bound on `value`.
+- `MAX_DEMAND_PENALTY_SCORE` — upper bound on `|penalty.score|`.
+- `MAX_DEMAND_REQUIRES` — max number of required things.
+- `MAX_DEMAND_SCRIPTED_TICKS` — max scripted schedule length.
+
+### Deterministic exposure
+
+The per-definition static fingerprint and per-tick runtime
+fingerprint are gated on `if !sl1.demand.is_empty()` so scenes
+without any `demand` keep their existing baseline hashes stable.
+
+### Protocol mirror
+
+`StaticPayload.sl1_demand: Vec<Sl1DemandView>` carries the
+declaration, and `SnapshotPayload.sl1_demand_states: Vec<Sl1DemandRuntimeView>`
+carries `{ demand_id, outstanding, fulfilled_count, dropped_count,
+next_sequence }` per tick.
+
 ## Roadmap (per `plan.md`)
 
 | PR | Adds |
