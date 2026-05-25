@@ -959,7 +959,7 @@ pub const MAX_OBJECTIVE_BREACH_COUNT: u64 = 1_000_000;
 /// (`observability.metrics`, `observability.dashboards`,
 /// `observability.alerts`). Beyond this the per-tick derivation loop
 /// becomes a wall-clock latency concern even with strictly-bounded
-/// inner work. Far below [`MAX_SL1_ITEMS_PER_SECTION`] because each
+/// inner work. Far below the generic per-section cap because each
 /// observability item touches metric state every tick.
 pub const MAX_OBSERVABILITY_ITEMS: usize = 1_000;
 
