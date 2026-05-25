@@ -1,0 +1,15 @@
+{
+  "label": "malformed_response",
+  "doc": "LlmError::MalformedResponse → Warning::InvalidAction. Per spec §7.1 XPIA contract, `raw` is NEVER included in the reason — only a hardcoded constant. Test asserts the rationale contains the constant and NOT the raw payload.",
+  "backend": {
+    "kind": "err",
+    "variant": "malformed_response",
+    "agent_id": "test-agent",
+    "raw": "SECRET_TOKEN_ghs_REDACTEDREDACTEDREDACTEDREDACTED"
+  },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["warning", "InvalidAction"],
+    "rationale_must_not_contain": ["SECRET_TOKEN", "ghs_REDACTED"]
+  }
+}

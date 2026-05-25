@@ -1,0 +1,9 @@
+{
+  "label": "subprocess_died",
+  "doc": "LlmError::SubprocessDied → Fault::AgentCrashed in error_mapping. `code` is forwarded to the message.",
+  "backend": { "kind": "err", "variant": "subprocess_died", "code": 137 },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["fault", "AgentCrashed", "137"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "label": "timeout",
+  "doc": "LlmError::Timeout → Warning::Behind in error_mapping with agent_id populated.",
+  "backend": {
+    "kind": "err",
+    "variant": "timeout",
+    "agent_id": "test-agent",
+    "elapsed_ms": 500
+  },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["warning", "Behind"]
+  }
+}

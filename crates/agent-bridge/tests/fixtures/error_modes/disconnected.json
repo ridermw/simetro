@@ -1,0 +1,9 @@
+{
+  "label": "disconnected",
+  "doc": "LlmError::Disconnected → Fault::AgentCrashed in error_mapping. Loss of connection without subprocess exit.",
+  "backend": { "kind": "err", "variant": "disconnected" },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["fault", "AgentCrashed"]
+  }
+}

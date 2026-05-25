@@ -1,0 +1,9 @@
+{
+  "label": "rate_limited",
+  "doc": "LlmError::RateLimited → Warning::Behind in error_mapping (transient backoff).",
+  "backend": { "kind": "err", "variant": "rate_limited", "retry_after_ms": 250 },
+  "expected": {
+    "chosen_kind": "no_op",
+    "rationale_contains": ["warning", "Behind"]
+  }
+}
