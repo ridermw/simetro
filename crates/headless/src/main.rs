@@ -84,6 +84,10 @@ enum Cmd {
         format: ReplayFormat,
     },
     /// Export a session bundle (scene + AgentLog + tracing + hash).
+    /// When `--bundle` is given, the bundle directory contents are
+    /// ALSO packaged into a `<out>.tar` file alongside the directory
+    /// (the directory is kept for backward-compat with existing
+    /// tooling; future P2.B replay UI reads the `.tar` form).
     ExportSession {
         #[arg(long)]
         scene: PathBuf,
@@ -93,6 +97,11 @@ enum Cmd {
         seed: u64,
         #[arg(long)]
         out: PathBuf,
+        /// Also produce `<out>.tar` containing the bundle contents.
+        /// The tarball uses the bundle directory name as the inner
+        /// prefix so extracting reproduces the same layout.
+        #[arg(long, default_value_t = false)]
+        bundle: bool,
     },
 }
 
@@ -123,7 +132,8 @@ fn main() {
             ticks,
             seed,
             out,
-        } => cmd_export_session(&scene, ticks, seed, &out),
+            bundle,
+        } => cmd_export_session(&scene, ticks, seed, &out, bundle),
     };
     std::process::exit(code);
 }
@@ -615,6 +625,7 @@ fn cmd_export_session(
     ticks: u64,
     seed: u64,
     out: &std::path::Path,
+    bundle: bool,
 ) -> i32 {
     // Layout per PLAN §15:
     //  out/
@@ -686,8 +697,101 @@ fn cmd_export_session(
         eprintln!("error: writing manifest.json: {e}");
         return 3;
     }
-    println!("export-session: {} (hash={hex})", out.display());
+    // Flush + close manifest before tar packaging so the file is on disk.
+    drop(f);
+
+    if bundle {
+        // Per Codex PR #24 R1 P2: `out.with_extension(...)` REPLACES
+        // any existing extension, so `--out session.v1` would write
+        // `session.tar` (clobbering an unrelated file). Append `.tar`
+        // verbatim so `--out session.v1` produces `session.v1.tar`.
+        let mut tar_name = out.as_os_str().to_owned();
+        tar_name.push(".tar");
+        let tar_path = std::path::PathBuf::from(tar_name);
+        if let Err(e) = package_bundle_tar(out, &tar_path) {
+            eprintln!("error: packaging tar: {e}");
+            return 3;
+        }
+        println!(
+            "export-session: {} (hash={hex}) bundle={}",
+            out.display(),
+            tar_path.display()
+        );
+    } else {
+        println!("export-session: {} (hash={hex})", out.display());
+    }
     0
+}
+
+/// Package the contents of `bundle_dir` into `tar_path`. The
+/// archive uses the bundle directory's basename as the top-level
+/// prefix so `tar -xf <tar_path>` reproduces the original layout
+/// (i.e. extracts into `<basename>/`).
+///
+/// Entries are added in stable lexicographic order, and each entry's
+/// header is built manually with **all metadata zeroed** (mtime,
+/// uid, gid, uname, gname, mode normalized to 0o644). `tar::HeaderMode::Deterministic`
+/// alone does NOT zero mtime in tar 0.4 (it only handles uid/gid/uname/gname),
+/// so we use `append_data` with a hand-built [`tar::Header`] instead
+/// of `append_path_with_name`.
+///
+/// The result is byte-for-byte reproducible across runs and machines
+/// for the same input directory + contents (same hash → same archive
+/// bytes). Per Codex PR #24 R1 P1 + R2 reviewer's observation that
+/// the previous fix only addressed uid/gid, not mtime.
+fn package_bundle_tar(
+    bundle_dir: &std::path::Path,
+    tar_path: &std::path::Path,
+) -> std::io::Result<()> {
+    let prefix = bundle_dir
+        .file_name()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "bundle_dir has no basename",
+            )
+        })?
+        .to_owned();
+
+    let file = std::fs::File::create(tar_path)?;
+    let mut builder = tar::Builder::new(file);
+    builder.mode(tar::HeaderMode::Deterministic);
+
+    let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(bundle_dir)?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .collect();
+    entries.sort();
+
+    for entry in entries {
+        let inner_name =
+            std::path::Path::new(&prefix).join(entry.file_name().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "entry has no basename")
+            })?);
+
+        // Read the file once so the header's size matches what we
+        // hand to append_data.
+        let bytes = std::fs::read(&entry)?;
+
+        // Build a header from scratch so every metadata field is
+        // explicitly zeroed — tar 0.4's HeaderMode::Deterministic
+        // does NOT zero mtime, only uid/gid/uname/gname.
+        let mut header = tar::Header::new_gnu();
+        header.set_path(&inner_name).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("set_path: {e}"))
+        })?;
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_mtime(0);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+
+        builder.append(&header, bytes.as_slice())?;
+    }
+    builder.into_inner()?.sync_all()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -819,5 +923,165 @@ mod tests {
             }
             other => panic!("expected agent report, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn package_bundle_tar_uses_directory_basename_as_prefix() {
+        let tmp =
+            std::env::temp_dir().join(format!("simetro-export-tar-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Drop a few files to simulate the bundle contents.
+        std::fs::write(tmp.join("scene.json"), "{}\n").unwrap();
+        std::fs::write(tmp.join("manifest.json"), r#"{"version":"test"}"#).unwrap();
+        std::fs::write(tmp.join("baseline.hash"), "abcdef\n").unwrap();
+        std::fs::write(tmp.join("agent-log.jsonl"), "").unwrap();
+        std::fs::write(tmp.join("tracing.jsonl"), "").unwrap();
+
+        let tar_path = tmp.with_extension("tar");
+        let _ = std::fs::remove_file(&tar_path);
+        super::package_bundle_tar(&tmp, &tar_path).expect("package");
+        assert!(tar_path.exists(), "tarball was created");
+
+        // Verify the archive's entry names use <basename>/ prefix
+        // (so `tar -xf` reproduces the original layout) and that the
+        // entries are sorted lexicographically for reproducibility.
+        let f = std::fs::File::open(&tar_path).unwrap();
+        let mut archive = tar::Archive::new(f);
+        let names: Vec<String> = archive
+            .entries()
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.path().unwrap().to_string_lossy().into_owned())
+            .collect();
+        let prefix = tmp.file_name().unwrap().to_string_lossy().into_owned();
+        for n in &names {
+            assert!(
+                n.starts_with(&prefix),
+                "tar entry {n:?} missing prefix {prefix:?}"
+            );
+        }
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(
+            names, sorted,
+            "tar entries must be in lexicographic order for reproducibility"
+        );
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&tar_path);
+    }
+
+    /// Per Codex PR #24 R1 P1 + R2 + R3 + R4: building the same
+    /// directory contents twice MUST produce identical tar bytes.
+    ///
+    /// **What this test actually checks**: that the END STATE of the
+    /// produced tar is deterministic across runs with different
+    /// on-disk mtimes. It does NOT exercise the `HeaderMode::Complete`
+    /// failure mode (the R4 reviewer correctly noted that
+    /// `Header::new_gnu()` defaults mtime to 0, so removing
+    /// `header.set_mtime(0)` from `package_bundle_tar` would not
+    /// break this test). The `set_mtime(0)` call is defensive
+    /// documentation — explicit zeroing of every metadata field so a
+    /// future change to `new_gnu()`'s defaults can't silently leak
+    /// mtime.
+    ///
+    /// The control assertion below uses `append_path_with_name` with
+    /// the default `HeaderMode::Complete` to PROVE that the path we
+    /// avoided would have leaked mtime. If the control ever produces
+    /// identical bytes, it means `tar` crate behavior changed and
+    /// our hand-built-header approach is no longer strictly needed.
+    #[test]
+    fn package_bundle_tar_is_byte_for_byte_reproducible() {
+        let tmp = std::env::temp_dir().join(format!("simetro-tar-determ-{}", std::process::id()));
+        let tar1 = tmp.with_extension("tar.1");
+        let tar2 = tmp.with_extension("tar.2");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&tar1);
+        let _ = std::fs::remove_file(&tar2);
+
+        // First build.
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
+        super::package_bundle_tar(&tmp, &tar1).unwrap();
+        std::fs::remove_dir_all(&tmp).unwrap();
+
+        // Sleep past per-second filesystem mtime resolution.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // Second build: identical content, fresh on-disk mtimes.
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
+        super::package_bundle_tar(&tmp, &tar2).unwrap();
+
+        let bytes1 = std::fs::read(&tar1).unwrap();
+        let bytes2 = std::fs::read(&tar2).unwrap();
+        assert_eq!(
+            bytes1, bytes2,
+            "tarballs must be byte-for-byte identical across runs \
+             with fresh on-disk mtimes"
+        );
+
+        // CONTROL: prove the naive append_path_with_name path WOULD
+        // leak mtime. If this assertion ever fails (control == fresh
+        // tar), the `tar` crate has changed behavior and we should
+        // re-evaluate whether the hand-built header path is still
+        // necessary.
+        let control1 = tmp.with_extension("tar.control1");
+        let control2 = tmp.with_extension("tar.control2");
+        let _ = std::fs::remove_file(&control1);
+        let _ = std::fs::remove_file(&control2);
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        write_naive_tar(&tmp, &control1).unwrap();
+        std::fs::remove_dir_all(&tmp).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(tmp.join("b.txt"), b"beta").unwrap();
+        write_naive_tar(&tmp, &control2).unwrap();
+        let c1 = std::fs::read(&control1).unwrap();
+        let c2 = std::fs::read(&control2).unwrap();
+        assert_ne!(
+            c1, c2,
+            "control: append_path_with_name MUST leak mtime so we know our \
+             hand-built-header path is doing real work. If this fails, \
+             either the tar crate changed behavior or the test environment \
+             is masking mtime drift (try a longer sleep or different fs)."
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_file(&tar1);
+        let _ = std::fs::remove_file(&tar2);
+        let _ = std::fs::remove_file(&control1);
+        let _ = std::fs::remove_file(&control2);
+    }
+
+    /// Control helper for the determinism test: writes a tar using
+    /// `append_path_with_name`, which inherits the filesystem mtime
+    /// (and thus produces different bytes across runs). The
+    /// production code path uses hand-built headers instead.
+    fn write_naive_tar(
+        bundle_dir: &std::path::Path,
+        tar_path: &std::path::Path,
+    ) -> std::io::Result<()> {
+        let prefix = bundle_dir.file_name().unwrap().to_owned();
+        let file = std::fs::File::create(tar_path)?;
+        let mut builder = tar::Builder::new(file);
+        // Deliberately NOT setting HeaderMode::Deterministic — we
+        // want the leaky default to demonstrate the failure mode.
+        let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(bundle_dir)?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for entry in entries {
+            let inner_name = std::path::Path::new(&prefix).join(entry.file_name().unwrap());
+            builder.append_path_with_name(&entry, inner_name)?;
+        }
+        builder.into_inner()?.sync_all()?;
+        Ok(())
     }
 }
