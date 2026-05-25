@@ -20,6 +20,7 @@ pub mod error;
 pub mod error_mapping;
 pub mod prompt;
 pub mod tools;
+pub mod wire;
 
 pub use backend::{Backend, BackendRequest, BackendResponse, ToolCall, ToolSpec};
 pub use backends::copilot::{CopilotBackend, CopilotConfig};
@@ -29,3 +30,4 @@ pub use error::LlmError;
 pub use error_mapping::llm_error_to_message;
 pub use prompt::{REQUIRED_PROMPT_SUBSTRINGS, SYSTEM_PROMPT};
 pub use tools::{action_tool_specs, names};
+pub use wire::{hello_envelope, read_envelope, shutdown_envelope, write_envelope, BridgeMessage};

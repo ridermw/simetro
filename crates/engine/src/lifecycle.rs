@@ -54,7 +54,7 @@ use simetro_protocol::{Action, FaultPayload, SimMessage, WarningPayload};
 /// The four fields together pin a request to a specific
 /// (decision, agent, tick, attempt) tuple. A re-issued request bumps
 /// `attempt` so it's distinct from the original at the type level.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct RequestId {
     /// Monotonic-per-engine-run identifier from the DecisionTimeline
     /// (P2.A task 7 will produce these). Distinguishes one logical
@@ -92,7 +92,7 @@ impl RequestId {
 ///
 /// The `observation_json` is the engine's serialized `Observation`
 /// — opaque to the lifecycle module; the bridge interprets it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentRequest {
     pub id: RequestId,
     /// Engine-relative deadline (in ticks) by which a reply must be
@@ -112,7 +112,7 @@ pub struct AgentRequest {
 /// A reply the bridge writes back to the inbox. Carries the chosen
 /// action (or `None` for an error reply — equivalent to NoOp at the
 /// apply layer).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentReply {
     pub id: RequestId,
     /// `None` ⇒ apply [`Action::NoOp`]; `Some(a)` ⇒ apply `a` via
