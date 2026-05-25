@@ -15,13 +15,14 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::components::{
     Consumer, ConsumerId, Mover, MoverId, Node, NodeId, NodeShape, Path, PathId, Producer,
     ProducerId, Resource, ResourceId,
 };
 use crate::error::LoadError;
+use crate::scenario_language_v1::{self, Sl1Scene};
 use crate::world::World;
 
 const MIN_SCHEMA_VERSION: u32 = 1;
@@ -93,6 +94,9 @@ pub struct LoadedScene {
     pub agents: Vec<AgentSpec>,
     pub id_map: IdMap,
     pub world: World,
+    /// Validated `scenario_language_v1` block, if the scene JSON
+    /// included one. `None` for legacy v1/v2 scenes.
+    pub sl1: Option<Sl1Scene>,
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +122,32 @@ struct RawScene {
     producers: Vec<RawProducer>,
     #[serde(default)]
     consumers: Vec<RawConsumer>,
+    /// Optional `scenario_language_v1` block. Sibling of `pieces` so
+    /// legacy v1/v2 scenes are unaffected. Captured as a raw JSON
+    /// `Value` here so that strict-schema deserialization runs through
+    /// `scenario_language_v1::load_value` in validate(), producing
+    /// typed `LoadError::Sl1` errors (e.g. `UnknownField`) instead of
+    /// being swallowed into the outer scene parse error.
+    ///
+    /// `deserialize_with = "deserialize_some"` is used so we can
+    /// distinguish a key that is absent (None) from a key that is
+    /// explicitly `null` (Some(Value::Null)) — the latter must be
+    /// rejected so a scene cannot bypass SL1 validation by writing
+    /// `"scenario_language_v1": null`.
+    #[serde(
+        default,
+        rename = "scenario_language_v1",
+        deserialize_with = "deserialize_some"
+    )]
+    sl1: Option<serde_json::Value>,
+    /// Any top-level key not matched by a named field lands here.
+    /// We use this to reject SL1 grammar primitive names that were
+    /// authored at the scene's top level rather than inside the
+    /// `scenario_language_v1` block — a common error mode that would
+    /// otherwise silently no-op. Legacy unknown keys (anything not in
+    /// the reserved list) remain accepted to preserve v1/v2 behavior.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +161,21 @@ struct RawTheme {
 
 fn default_font() -> String {
     "system-ui".to_string()
+}
+
+/// `#[serde(deserialize_with = "deserialize_some")]` helper.
+///
+/// Lets a field distinguish "key absent" (resolved by `#[serde(default)]`
+/// to `None`) from "key explicitly null" (becomes `Some(T)` where `T`
+/// is `serde_json::Value::Null`). The standard `Option<T>` deserializer
+/// collapses both into `None`. We need the distinction so explicit
+/// `"scenario_language_v1": null` can be rejected.
+fn deserialize_some<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,6 +299,48 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
             found: raw.schema_version,
             supported: SUPPORTED_SCHEMA_VERSION,
         });
+    }
+
+    // Reject `scenario_language_v1` grammar primitives that were
+    // mistakenly placed at the scene's top level rather than inside
+    // the `scenario_language_v1` block. Without this guard the SL1
+    // section would silently no-op.
+    //
+    // `agents` is intentionally NOT in this list — it is a legacy
+    // top-level key in existing scenes and clashes with SL1's nested
+    // `agents`. PR 10 resolves the ambiguity.
+    const SL1_RESERVED_TOP_LEVEL_KEYS: &[&str] = &[
+        "places",
+        "links",
+        "things",
+        "transforms",
+        "demand",
+        "pressure",
+        "objectives",
+        "failure_conditions",
+        "observability",
+        "milestones",
+    ];
+    for &reserved in SL1_RESERVED_TOP_LEVEL_KEYS {
+        if raw.extra.contains_key(reserved) {
+            return Err(LoadError::Sl1ReservedKeyAtTopLevel { name: reserved });
+        }
+    }
+
+    // Reject typo'd / future-versioned SL1 root keys at the top level.
+    // Any unmatched top-level key starting with `scenario_` (case
+    // insensitive) is almost certainly an authoring mistake that would
+    // otherwise fail open by loading as a legacy scene with the SL1
+    // block silently dropped. A prefix check catches both "near-miss"
+    // typos like `scenario_langauge_v1` (where `ua` → `au` defeats a
+    // substring match) and forward-looking keys like
+    // `scenario_language_v2`. No legacy or v1/v2 scene field starts
+    // with `scenario_`, so the check is safe. BTreeMap iteration is
+    // sorted, so the first reported misspelling is deterministic.
+    for key in raw.extra.keys() {
+        if key.to_ascii_lowercase().starts_with("scenario_") {
+            return Err(LoadError::Sl1MisspelledTopLevelKey { name: key.clone() });
+        }
     }
 
     validate_name(&raw.name)?;
@@ -517,6 +604,8 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         })
         .collect();
 
+    let sl1 = raw.sl1.map(scenario_language_v1::load_value).transpose()?;
+
     let mut world = World::new(seed);
     world.nodes = nodes;
     world.paths = paths;
@@ -525,6 +614,7 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
     world.inventory = inventory;
     world.producers = producers;
     world.consumers = consumers;
+    world.sl1 = sl1.clone();
     world.state = crate::world::RunState::Loaded;
 
     Ok(LoadedScene {
@@ -534,6 +624,7 @@ fn validate(raw: RawScene, seed: u64) -> Result<LoadedScene, LoadError> {
         agents,
         id_map,
         world,
+        sl1,
     })
 }
 

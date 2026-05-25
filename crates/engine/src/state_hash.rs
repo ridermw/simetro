@@ -91,6 +91,35 @@ fn feed_world(h: &mut Sha256, world: &World) {
             h.update(c.interval_ticks.to_le_bytes());
         }
     }
+    feed_sl1(h, world);
+}
+
+/// Stable contribution of `world.sl1` to the deterministic hash.
+///
+/// Emits a fixed `sl1.v1` tag with the SL1 schema version and the
+/// section counts in canonical order. Empty in PR 0 (counts are all 0)
+/// but **always emitted when an SL1 block is present** so that the
+/// baseline distinguishes a legacy scene from an SL1-equipped scene.
+/// Later PRs extend this with per-primitive content as behavior lands;
+/// any extension is a deliberate baseline drift that must be rolled
+/// into the baseline hash in the same PR.
+fn feed_sl1(h: &mut Sha256, world: &World) {
+    let Some(sl1) = world.sl1.as_ref() else {
+        return;
+    };
+    h.update(b"sl1.v1");
+    h.update(sl1.schema_version.to_le_bytes());
+    h.update((sl1.places.len() as u64).to_le_bytes());
+    h.update((sl1.links.len() as u64).to_le_bytes());
+    h.update((sl1.things.len() as u64).to_le_bytes());
+    h.update((sl1.transforms.len() as u64).to_le_bytes());
+    h.update((sl1.demand.len() as u64).to_le_bytes());
+    h.update((sl1.pressure.len() as u64).to_le_bytes());
+    h.update((sl1.objectives.len() as u64).to_le_bytes());
+    h.update((sl1.failure_conditions.len() as u64).to_le_bytes());
+    h.update((sl1.agents.len() as u64).to_le_bytes());
+    h.update((sl1.milestones.len() as u64).to_le_bytes());
+    h.update([u8::from(sl1.observability.is_some())]);
 }
 
 fn feed_mover_state(h: &mut Sha256, s: MoverState) {

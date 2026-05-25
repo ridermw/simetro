@@ -6,6 +6,8 @@
 
 use thiserror::Error;
 
+use crate::scenario_language_v1::Sl1LoadError;
+
 /// Errors produced by the JSON scene loader. scene loader contract + §11.1.
 ///
 /// Every variant has a typed field-path or section/id so the renderer
@@ -82,6 +84,34 @@ pub enum LoadError {
         "agent kind `{kind}` at agents[{index}] requires building with the `llm-live` feature"
     )]
     AgentKindRequiresFeature { index: usize, kind: String },
+
+    /// A grammar-primitive name from `scenario_language_v1`
+    /// (e.g. `places`, `links`, `objectives`) appeared at the scene's
+    /// top level rather than inside the `scenario_language_v1` block.
+    /// Almost always an authoring mistake; surfacing it as a typed
+    /// error prevents the entire SL1 block from silently no-op-ing.
+    #[error(
+        "top-level `{name}` is reserved for the `scenario_language_v1` block; \
+         move it inside `scenario_language_v1`"
+    )]
+    Sl1ReservedKeyAtTopLevel { name: &'static str },
+
+    /// A top-level key was authored that looks like an attempt at the
+    /// `scenario_language_v1` block (e.g. a typo such as
+    /// `scenario_langauge_v1` or a forward-looking `scenario_language_v2`)
+    /// but does not match the canonical key. Without this guard the SL1
+    /// block would be silently dropped and the scene would fail open
+    /// as legacy, masking objectives, agents, and failure conditions.
+    #[error(
+        "top-level `{name}` looks like a misspelling of `scenario_language_v1`; \
+         rename it or remove it"
+    )]
+    Sl1MisspelledTopLevelKey { name: String },
+
+    /// Wraps an `scenario_language_v1`-specific load failure so the
+    /// surrounding scene loader returns a uniform [`LoadError`].
+    #[error(transparent)]
+    Sl1(#[from] Sl1LoadError),
 }
 
 #[derive(Debug, Error, PartialEq)]
