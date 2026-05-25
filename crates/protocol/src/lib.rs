@@ -202,6 +202,10 @@ pub enum ActionTag {
     PlacePiece,
     ConnectPieces,
     RemovePiece,
+    DefineResource,
+    AddProducer,
+    AddConsumer,
+    SetGoal,
 }
 
 impl Action {
@@ -212,6 +216,10 @@ impl Action {
             Action::PlacePiece { .. } => ActionTag::PlacePiece,
             Action::ConnectPieces { .. } => ActionTag::ConnectPieces,
             Action::RemovePiece { .. } => ActionTag::RemovePiece,
+            Action::DefineResource { .. } => ActionTag::DefineResource,
+            Action::AddProducer { .. } => ActionTag::AddProducer,
+            Action::AddConsumer { .. } => ActionTag::AddConsumer,
+            Action::SetGoal { .. } => ActionTag::SetGoal,
         }
     }
 }
@@ -310,16 +318,56 @@ pub enum AgentMessage {
 }
 
 /// Actions an agent may take. Author actions (PlacePiece/ConnectPieces/
-/// RemovePiece) mutate the world when valid; malformed or unsafe requests
-/// are rejected with a typed [`WarningPayload::InvalidAction`].
+/// RemovePiece, plus the P2.A task 9 resource/production tools
+/// DefineResource/AddProducer/AddConsumer/SetGoal) mutate the world
+/// when valid; malformed or unsafe requests are rejected with a typed
+/// [`WarningPayload::InvalidAction`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {
     NoOp,
-    SetSpeed { mover: u32, speed: f32 },
-    PlacePiece { piece_kind: String, pos: [f32; 2] },
-    ConnectPieces { from: u32, to: u32 },
-    RemovePiece { id: u32 },
+    SetSpeed {
+        mover: u32,
+        speed: f32,
+    },
+    PlacePiece {
+        piece_kind: String,
+        pos: [f32; 2],
+    },
+    ConnectPieces {
+        from: u32,
+        to: u32,
+    },
+    RemovePiece {
+        id: u32,
+    },
+
+    // ---- Author tools (P2.A task 9) ---------------------------------
+    /// Create a new resource kind addressable by `name`. `color` is a
+    /// palette index validated against the loaded theme.
+    DefineResource {
+        name: String,
+        color: u8,
+    },
+    /// Add a producer that emits `amount` of `resource` (by name)
+    /// every `interval_ticks`.
+    AddProducer {
+        resource: String,
+        amount: u64,
+        interval_ticks: u32,
+    },
+    /// Add a consumer that drains `amount` of `resource` (by name)
+    /// every `interval_ticks` when inventory is sufficient.
+    AddConsumer {
+        resource: String,
+        amount: u64,
+        interval_ticks: u32,
+    },
+    /// Set the scene's win/end condition. Today only `"loop_forever"`
+    /// is supported; future variants will be added here.
+    SetGoal {
+        goal: String,
+    },
 }
 
 // =====================================================================

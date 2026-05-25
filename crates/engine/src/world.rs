@@ -90,6 +90,18 @@ impl World {
             && self.producers.is_empty()
             && self.consumers.is_empty()
     }
+
+    /// Find a resource by its stable string name. Linear in number of
+    /// resources — fine for the typical few-dozen-resource scenes. Used
+    /// by author-tool actions (P2.A task 9) so the LLM can reference
+    /// resources by the same name the scene JSON uses.
+    #[must_use]
+    pub fn resource_id_by_name(&self, name: &str) -> Option<crate::components::ResourceId> {
+        self.resources
+            .values()
+            .find(|r| r.name == name)
+            .map(|r| r.id)
+    }
 }
 
 impl Default for World {

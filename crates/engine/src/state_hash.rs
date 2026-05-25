@@ -354,6 +354,39 @@ fn feed_action(h: &mut Sha256, a: &Action) {
             h.update([0x54]);
             h.update(id.to_le_bytes());
         }
+        Action::DefineResource { name, color } => {
+            h.update([0x55]);
+            h.update((name.len() as u64).to_le_bytes());
+            h.update(name.as_bytes());
+            h.update([*color]);
+        }
+        Action::AddProducer {
+            resource,
+            amount,
+            interval_ticks,
+        } => {
+            h.update([0x56]);
+            h.update((resource.len() as u64).to_le_bytes());
+            h.update(resource.as_bytes());
+            h.update(amount.to_le_bytes());
+            h.update(interval_ticks.to_le_bytes());
+        }
+        Action::AddConsumer {
+            resource,
+            amount,
+            interval_ticks,
+        } => {
+            h.update([0x57]);
+            h.update((resource.len() as u64).to_le_bytes());
+            h.update(resource.as_bytes());
+            h.update(amount.to_le_bytes());
+            h.update(interval_ticks.to_le_bytes());
+        }
+        Action::SetGoal { goal } => {
+            h.update([0x58]);
+            h.update((goal.len() as u64).to_le_bytes());
+            h.update(goal.as_bytes());
+        }
     }
 }
 
