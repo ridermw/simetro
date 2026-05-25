@@ -614,7 +614,7 @@ pub struct Sl1Transform {
 /// no-op even though top-level SL1 typos are also blocked.
 ///
 /// The `spawn_schedule` is intentionally loosely typed at deserialize
-/// time and dispatched in [`validate_demand`] so that unsupported
+/// time and dispatched in demand validation so that unsupported
 /// schedule types (e.g. `"wave"` until PR 8) can return a typed
 /// [`Sl1LoadError::DemandScheduleNotImplemented`] instead of serde's
 /// generic "unknown variant" message. The inner
@@ -648,7 +648,7 @@ pub struct RawSl1DemandTarget {
 }
 
 /// Raw demand spawn schedule. Each variant is checked + populated in
-/// [`validate_demand`]. The `kind` discriminator stays a free string
+/// demand validation. The `kind` discriminator stays a free string
 /// so unknown values can be reported with a typed
 /// [`Sl1LoadError::DemandUnknownScheduleType`] instead of a generic
 /// serde "unknown variant" message.
