@@ -45,13 +45,13 @@ test.describe("SL1 HUD viewer litmus", () => {
     await expect(alerts.first()).toContainText("warning");
     await expect(alerts.first()).toContainText("exec-dashboard-stale");
 
-    // At tick 8 the dashboard recovers — alert pill disappears and
+    // At tick 25 the dashboard recovers — alert pill disappears and
     // milestone 2 fires.
     await expect(alerts).toHaveCount(0, { timeout: 5000 });
     await expect(milestones).toHaveCount(2, { timeout: 5000 });
     await expect(milestones.nth(1)).toContainText("Executive dashboard recovered");
 
-    // At tick 10 the outcome flips to "won".
+    // At tick 30 the outcome flips to "won".
     await expect(page.locator("#simetro-sl1-status-outcome")).toContainText("won", {
       timeout: 5000,
     });
@@ -67,7 +67,7 @@ test.describe("SL1 HUD viewer litmus", () => {
     await expect(chip).toHaveAttribute("data-state", "ok", { timeout: 5000 });
     // At tick 5 the dashboard goes stale.
     await expect(chip).toHaveAttribute("data-state", "stale", { timeout: 5000 });
-    // At tick 8 it recovers.
+    // At tick 25 it recovers.
     await expect(chip).toHaveAttribute("data-state", "ok", { timeout: 5000 });
   });
 

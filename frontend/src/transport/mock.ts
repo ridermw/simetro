@@ -288,8 +288,6 @@ const SL1_SCRIPT: Sl1Step[] = [
   },
 ];
 
-
-
 export class MockTransport implements Transport {
   readonly name = "mock";
   private handler: MessageHandler | null = null;
