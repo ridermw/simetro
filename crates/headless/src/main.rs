@@ -265,6 +265,8 @@ fn cmd_emit_static(scenes_dir: &std::path::Path, output_dir: &std::path::Path) -
 
     let mut total = 0u32;
     let mut failed = 0u32;
+    let mut payloads = Vec::new();
+    let mut written_files = std::collections::HashSet::new();
 
     for path in scene_paths {
         let scene_id = match path.file_stem().and_then(|stem| stem.to_str()) {
@@ -298,23 +300,60 @@ fn cmd_emit_static(scenes_dir: &std::path::Path, output_dir: &std::path::Path) -
             }
         };
 
-        let out_path = output_dir.join(format!("{scene_id}.json"));
-        if let Err(e) = std::fs::write(&out_path, json) {
-            eprintln!("emit-static: write failed for {scene_id}: {e}");
-            failed += 1;
-            continue;
-        }
+        let file_name = format!("{scene_id}.json");
+        written_files.insert(file_name.clone());
+        payloads.push((file_name, json));
     }
 
     eprintln!(
         "emit-static: {}/{total} payloads generated ({failed} failed)",
         total - failed
     );
+
     if failed > 0 {
-        1
-    } else {
-        0
+        return 1;
     }
+
+    let mut write_failed = false;
+    for (file_name, json) in payloads {
+        let out_path = output_dir.join(&file_name);
+        if let Err(e) = std::fs::write(&out_path, json) {
+            eprintln!("emit-static: write failed for {file_name}: {e}");
+            write_failed = true;
+        }
+    }
+
+    if write_failed {
+        return 1;
+    }
+
+    match std::fs::read_dir(output_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = match path.file_name().and_then(|n| n.to_str()) {
+                    Some(name) => name,
+                    None => continue,
+                };
+                if name == ".gitkeep" || !name.ends_with(".json") {
+                    continue;
+                }
+                if !written_files.contains(name) {
+                    if let Err(e) = std::fs::remove_file(&path) {
+                        eprintln!(
+                            "emit-static: failed to remove stale {}: {e}",
+                            path.display()
+                        );
+                    } else {
+                        eprintln!("emit-static: removed stale {name}");
+                    }
+                }
+            }
+        }
+        Err(e) => eprintln!("emit-static: failed to scan output dir for cleanup: {e}"),
+    }
+
+    0
 }
 
 fn cmd_run(scene: &std::path::Path, ticks: u64, seed: u64) -> i32 {
@@ -1294,5 +1333,37 @@ mod tests {
         assert_eq!(count, expected, "should generate payloads for all scenes");
 
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn emit_static_removes_stale_payloads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let scenes_dir = tmp.path().join("games");
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir(&scenes_dir).unwrap();
+        std::fs::create_dir(&out_dir).unwrap();
+
+        let demo =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../games/demo-paths.json");
+        std::fs::copy(&demo, scenes_dir.join("demo-paths.json")).unwrap();
+
+        std::fs::write(out_dir.join("old-scene.json"), "{\"stale\":true}").unwrap();
+        std::fs::write(out_dir.join(".gitkeep"), "").unwrap();
+
+        let code = cmd_emit_static(&scenes_dir, &out_dir);
+        assert_eq!(code, 0);
+
+        assert!(
+            out_dir.join("demo-paths.json").exists(),
+            "new payload should be written"
+        );
+        assert!(
+            !out_dir.join("old-scene.json").exists(),
+            "stale payload should be removed"
+        );
+        assert!(
+            out_dir.join(".gitkeep").exists(),
+            ".gitkeep should be preserved"
+        );
     }
 }
