@@ -178,7 +178,7 @@ describe("Sl1AlertStrip", () => {
 });
 
 describe("createSl1Hud composite", () => {
-  it("mounts all four panels and resets them together", () => {
+  it("mounts all five panels and resets them together", () => {
     const parent = document.createElement("div");
     const hud = createSl1Hud(parent);
     hud.status.update({ state: "in_progress" }, "winning");
@@ -189,17 +189,22 @@ describe("createSl1Hud composite", () => {
       { id: "a1", metric: "m1", predicate: { kind: "gt", threshold: 1 }, severity: "warning" },
     ]);
     hud.alerts.updateStates([{ alert_id: "a1", state: "firing" }]);
+    hud.conditions.setConditions([
+      { id: "loss", type: "place_state", params: { kind: "place_state", place: "p", state: "bad", grace_ticks: 1 } },
+    ], []);
     hud.milestones.push({ milestone_id: "m1", label: "ok", tick: 1 });
 
     expect(hud.status.__testRoot().style.display).toBe("block");
     expect(hud.dashboards.__testRoot().children.length).toBe(1);
     expect(hud.alerts.__testRoot().children.length).toBe(1);
+    expect(hud.conditions.__testRoot().style.display).toBe("block");
     expect(hud.milestones.__chipCount()).toBe(1);
 
     hud.reset();
     expect(hud.status.__testRoot().style.display).toBe("none");
     expect(hud.dashboards.__testRoot().children.length).toBe(0);
     expect(hud.alerts.__testRoot().children.length).toBe(0);
+    expect(hud.conditions.__testRoot().style.display).toBe("none");
     expect(hud.milestones.__chipCount()).toBe(0);
   });
 });
