@@ -955,8 +955,14 @@ export class Sl1MetricsPanel {
   }
 
   private applyState(row: MetricRow, state: Sl1MetricState, value: number | undefined): void {
-    const hasValue = state !== "no_data" && value !== undefined;
-    row.valueEl.textContent = hasValue ? formatMetricValue(row.source, value) : "—";
+    // Treat non-finite values (NaN, Infinity) the same as no_data to
+    // avoid showing "NaN%" or "Infinity" as a legitimate metric value
+    // (Codex non-blocking #2 on PR #58).
+    const isFinite = value !== undefined && Number.isFinite(value);
+    const hasValue = state !== "no_data" && isFinite;
+    row.valueEl.textContent = hasValue
+      ? formatMetricValue(row.source, value as number)
+      : "—";
     row.valueEl.style.color = hasValue ? METRIC_VALUE_COLOR : METRIC_EMPTY_VALUE_COLOR;
     row.stateEl.textContent = METRIC_STATE_LABEL[state] ?? METRIC_STATE_LABEL.no_data;
     row.stateEl.style.color = METRIC_STATE_COLOR[state] ?? METRIC_STATE_COLOR.no_data;
@@ -976,7 +982,10 @@ export function describeMetricSource(source: Sl1MetricSourceView): string {
   }
 }
 
-function formatMetricValue(source: Sl1MetricSourceView, value: number): string {
+/** Format a finite metric value for display. Pure helper, exported
+ *  for testing. Callers must guard non-finite values upstream — this
+ *  function assumes `Number.isFinite(value) === true`. */
+export function formatMetricValue(source: Sl1MetricSourceView, value: number): string {
   const formatted = Number.isInteger(value) ? String(value) : value.toFixed(1);
   return source.kind === "place_capacity_used_percent" ? `${formatted}%` : formatted;
 }

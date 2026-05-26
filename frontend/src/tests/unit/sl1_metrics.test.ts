@@ -4,7 +4,7 @@
 // metrics, applies live metric states, and keeps author strings safe.
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { Sl1MetricsPanel, describeMetricSource } from "../../ui/sl1_hud";
+import { Sl1MetricsPanel, describeMetricSource, formatMetricValue } from "../../ui/sl1_hud";
 import type {
   Sl1MetricSourceView,
   Sl1MetricStateView,
@@ -239,5 +239,106 @@ describe("Sl1MetricsPanel", () => {
     expect(css).toContain("left: 240px");
     expect(css).toContain("max-width: min(360px, calc(100vw - 264px))");
     expect(css).toContain("overflow-wrap: anywhere");
+  });
+});
+
+describe("formatMetricValue", () => {
+  it("formats integer values without decimal point", () => {
+    const src = { kind: "place_inventory_count" as const, place: "p", thing: "t" };
+    expect(formatMetricValue(src, 42)).toBe("42");
+  });
+
+  it("formats fractional values with one decimal", () => {
+    const src = { kind: "place_inventory_count" as const, place: "p", thing: "t" };
+    expect(formatMetricValue(src, 3.14)).toBe("3.1");
+  });
+
+  it("appends % suffix for place_capacity_used_percent", () => {
+    const src = {
+      kind: "place_capacity_used_percent" as const,
+      place: "p",
+      capacity: "c",
+    };
+    expect(formatMetricValue(src, 75)).toBe("75%");
+  });
+});
+
+describe("Sl1MetricsPanel numeric edge cases", () => {
+  let parent: HTMLElement;
+  beforeEach(() => {
+    parent = document.createElement("div");
+    document.body.appendChild(parent);
+  });
+
+  it("renders NaN value as no-data placeholder (not 'NaN%')", () => {
+    const panel = new Sl1MetricsPanel(parent);
+    const metric = {
+      id: "m1",
+      source: {
+        kind: "place_capacity_used_percent" as const,
+        place: "p",
+        capacity: "c",
+      },
+    };
+    panel.setMetrics([metric]);
+    panel.updateStates([{ metric_id: "m1", state: "ok", value: Number.NaN }]);
+    const text = panel.__testRoot().textContent ?? "";
+    expect(text).not.toContain("NaN");
+    expect(text).toContain("—");
+  });
+
+  it("renders Infinity value as no-data placeholder", () => {
+    const panel = new Sl1MetricsPanel(parent);
+    const metric = {
+      id: "m1",
+      source: { kind: "place_inventory_count" as const, place: "p", thing: "t" },
+    };
+    panel.setMetrics([metric]);
+    panel.updateStates([{ metric_id: "m1", state: "ok", value: Number.POSITIVE_INFINITY }]);
+    const text = panel.__testRoot().textContent ?? "";
+    expect(text).not.toContain("Infinity");
+    expect(text).toContain("—");
+  });
+
+  it("renders -Infinity as no-data placeholder", () => {
+    const panel = new Sl1MetricsPanel(parent);
+    const metric = {
+      id: "m1",
+      source: { kind: "dashboard_freshness" as const, dashboard: "d" },
+    };
+    panel.setMetrics([metric]);
+    panel.updateStates([{ metric_id: "m1", state: "ok", value: Number.NEGATIVE_INFINITY }]);
+    const text = panel.__testRoot().textContent ?? "";
+    expect(text).not.toContain("Infinity");
+    expect(text).toContain("—");
+  });
+
+  it("renders very large finite values without truncation", () => {
+    const panel = new Sl1MetricsPanel(parent);
+    const metric = {
+      id: "m1",
+      source: { kind: "place_inventory_count" as const, place: "p", thing: "t" },
+    };
+    panel.setMetrics([metric]);
+    panel.updateStates([{ metric_id: "m1", state: "ok", value: 9999999999 }]);
+    const text = panel.__testRoot().textContent ?? "";
+    expect(text).toContain("9999999999");
+  });
+
+  it("renders negative percent values verbatim (does not suppress)", () => {
+    // Negative percent is unusual but a finite number; we surface it
+    // rather than hide it so an author can see their bug.
+    const panel = new Sl1MetricsPanel(parent);
+    const metric = {
+      id: "m1",
+      source: {
+        kind: "place_capacity_used_percent" as const,
+        place: "p",
+        capacity: "c",
+      },
+    };
+    panel.setMetrics([metric]);
+    panel.updateStates([{ metric_id: "m1", state: "ok", value: -5 }]);
+    expect(panel.__testRoot().textContent).toContain("-5%");
   });
 });
