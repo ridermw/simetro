@@ -6,6 +6,14 @@
 > Milestones), the GPU Launch Week marquee scene, the frontend HUD,
 > and the policy-search runner ship in v1.
 >
+> **Frontend visible-stakes layer:** PRs #52-#60 (canvas synthesis,
+> labels, arrows, role legend, objectives/conditions/metrics HUD
+> panels, stacked layout, live mock snapshots) make every SL1 scene
+> visually communicate "what is the AI operating, what's wrong, did
+> the latest tick help" within 30 seconds. See the
+> ["SL1 canvas + HUD visible-stakes layer"](#sl1-canvas--hud-visible-stakes-layer-prs-5260)
+> section below for the full inventory.
+>
 > **Authoritative spec:**
 > [`docs/superpowers/specs/2026-05-24-scenario_language_v1-plan.md`](superpowers/specs/2026-05-24-scenario_language_v1-plan.md)
 >
@@ -671,6 +679,161 @@ is not required.
 clears when the registry-backed scene switch fires. Non-SL1 scenes
 hide the panels (`display: none`) so the canvas surface stays
 visually unchanged.
+
+## SL1 canvas + HUD visible-stakes layer (PRs #52-#60)
+
+After PR 12b shipped the HUD components, a follow-up burn-down of nine
+PRs made GPU Launch Week (and every other SL1 scene) actually look like
+a running game instead of a blank canvas under an empty HUD. The
+viewer-litmus is now fully realized: a first-time viewer can identify
+what the AI is operating, what's wrong, and whether the latest tick
+helped, all within 30 seconds of clicking the scene from the gallery.
+
+### Canvas: SL1 places + links projected to visible geometry (PR #52)
+
+`frontend/src/renderer/sl1_synth.ts` projects `sl1_places` and
+`sl1_links` into the legacy `nodes` and `paths` arrays at the
+frontend boundary when the engine hasn't populated them. Place role
+maps to shape + palette index:
+
+| Role | Shape | Color |
+| --- | --- | --- |
+| `source` | circle | palette[2] |
+| `compute_cluster` | hexagon | palette[4] |
+| `dashboard` | square | palette[5] |
+| `operator` | diamond | palette[6] |
+| (other) | circle | foreground |
+
+Link color is the source place's color so the eye can trace data
+flow from origin. Synthesis is purely render-time; the engine
+remains unaware and deterministic. Pass-through when the engine
+populated legacy nodes/paths or the scene has no SL1 places.
+
+### Canvas: name labels under each place (PR #53)
+
+`StaticPayload.show_node_labels` flag opts into per-node text labels
+below each shape. SL1 synth sets the flag so place IDs (e.g.
+`gpu-platform`, `mycroft-telemetry`) render below their shapes via
+`fillText`. Labels are counter-scaled by the viewport so they stay
+readable at any zoom. Truncated at 28 chars with an ellipsis;
+full IDs remain available via hover tooltip. Auto-fit padding
+expands by ~22px when labels are visible.
+
+### Canvas: direction arrows on SL1 links (PR #54)
+
+`PathView.arrow?: "forward" | "bidirectional"` opt-in. SL1 synth
+maps `sl1_links[i].direction` to the arrow hint. The renderer's
+`drawArrowheads` pass draws filled triangular arrowheads at the
+destination end (inset by `NODE_RADIUS + 2`); bidirectional links
+get a second arrowhead at the source end.
+
+### Canvas: role legend overlay (PR #55)
+
+`Sl1RoleLegend` (`frontend/src/ui/sl1_legend.ts`) renders a small
+floating overlay in the bottom-left corner that decodes the shape
+vocabulary for the current scene. Data-driven from `SL1_ROLE_HINTS`
+(same table the synth uses), so the legend cannot drift from the
+rendered shapes. Only shows rows for roles present in the scene.
+Non-canonical roles appear after the canonical four in code-point
+order so non-standard SL1 scenes don't hide nodes the viewer
+can't decode.
+
+### HUD: objectives panel (PR #56)
+
+`Sl1ObjectivesPanel` (`#simetro-sl1-objectives`) renders each
+declared objective sorted by descending weight:
+
+- Weight badge (`w1`, `w2`, `w3`) for visible priority.
+- Human-readable description via `describeObjective()`:
+  - `keep_fresh` → "Keep \<thing\> fresh in \<place\> (≤N ticks stale)"
+  - `complete_jobs_before_deadline` → "Complete demand \<id\> (≤N missed)"
+  - `maintain_utilization` → "Keep \<place\> \<cap\> between X% and Y%"
+- Status pill (`—` / `met` / `breached` / `n/a`), colour-coded.
+
+Snapshot drives the pills via `sl1_objective_states`.
+
+### HUD: win/loss conditions panel (PR #57)
+
+`Sl1ConditionsPanel` (`#simetro-sl1-conditions`) renders failure
+conditions with red `LOSS` badges and victory conditions with green
+`WIN` badges:
+
+| Kind | Renders as |
+| --- | --- |
+| `stale_target` | "\<thing\> in \<place\> stale > N ticks (grace M)" |
+| `place_state` | "\<place\> in state \<state\> (grace N)" |
+| `objective_breach_count` | "Objective \<id\> breached > N times" |
+| `survive_until` | "Survive until tick N" |
+
+Runtime status: "armed"/"FIRED @ tick N"/"streak: K ticks" for
+failures; "pending"/"ACHIEVED @ tick N" for victories.
+Right-anchored with `overflow-wrap: anywhere` so long author IDs
+wrap rather than overflow the viewport.
+
+### HUD: observability metrics panel (PR #58)
+
+`Sl1MetricsPanel` (`#simetro-sl1-metrics`) renders each declared
+metric with source description + live value:
+
+- `place_capacity_used_percent` → "X.Y%" formatted
+- `place_inventory_count` → integer (or one decimal if fractional)
+- `dashboard_freshness` → integer tick count
+
+Non-finite values (`NaN`, `Infinity`) render as `—` (no_data)
+instead of showing literal "NaN%" — invalid metrics should never
+look like legitimate readings.
+
+### HUD: stacked flex column layout (PR #59)
+
+All HUD panels live inside two flex column containers
+(`#simetro-sl1-hud-left` and `#simetro-sl1-hud-right`) instead of
+hard-coded absolute positions. Stacks have `pointer-events: auto`
+to enable scrollbar interaction when content overflows
+`max-height: calc(100vh - 24px)`, but `width: fit-content` so the
+hit-test area matches the widest panel and doesn't swallow canvas
+clicks in empty stack space. Individual panels remain
+`pointer-events: none` (read-only display).
+
+Left stack: `Sl1StatusPanel`, `Sl1ObjectivesPanel`, `Sl1MetricsPanel`.
+Right stack: `Sl1ConditionsPanel`, `Sl1DashboardChips`, `Sl1AlertStrip`.
+The milestone strip and role legend keep their own bottom-edge
+positions.
+
+### Mock: live SL1 snapshots driven by scene metadata (PR #60)
+
+`computeSl1MockRuntime(tick, sceneMeta)` in
+`frontend/src/transport/mock.ts` is a pure deterministic function
+of `(tick, scene)` that returns metric/objective/failure/victory
+runtime states using the scene's REAL IDs. When `MockTransport`
+loads an SL1 scene by ID (detected via `payloadHasNativeSl1`),
+the snapshot stream carries this generated runtime state so the
+HUD animates as if it were a real engine run.
+
+- Metric values are deterministic functions: capacity oscillates as
+  `50 + 30*sin(tick/40 + index*0.17)`, inventory counts use
+  `abs(floor(sin(tick*0.13+i)*200))`, freshness counters grow then
+  reset.
+- One objective deterministically flips `met → breached → met`
+  during ticks 60-100; phase tracks `winning → losing → winning`.
+- Game outcome is always `{state: "in_progress"}` so the status
+  panel stays visible.
+- Non-finite `tick` is normalized via `safeTick(t)`
+  (`isFinite ? (t mod 100000) : 0`) to avoid `Math.sin` precision
+  drift at very large ticks.
+
+This is a pure frontend demo — does NOT affect the engine. Live SL1
+scenes from the bridge use real engine state. The legacy
+`?sl1demo=1` path remains for the existing E2E suite; the two paths
+are mutually exclusive via the `payloadHasNativeSl1` gate.
+
+### Gallery integration
+
+All 28 SL1 scenes are listed in the catalog with `status: "ready"`
+(PR #47). Clicking GPU Launch Week from the gallery loads the
+`/static-payloads/gpu-launch-week.json` payload (generated by
+`simetro-headless emit-static` at build time), MockTransport
+detects native SL1 metadata and starts the live mock loop, and the
+HUD animates immediately.
 
 ## Policy-search runner (PR 13)
 
