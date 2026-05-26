@@ -476,8 +476,10 @@ export class Sl1ConditionsPanel {
     this.root.style.cssText = [
       "position: absolute",
       "top: 12px",
-      "left: 640px",
-      "max-width: 360px",
+      // Use right-anchor with width clamp so the panel stays inside
+      // the viewport on narrower windows (Codex non-blocking #1).
+      "right: 12px",
+      "max-width: min(360px, calc(100vw - 24px))",
       "padding: 8px 12px",
       "background: rgba(14, 17, 22, 0.85)",
       "border: 1px solid #2a2e39",
@@ -487,6 +489,9 @@ export class Sl1ConditionsPanel {
       "z-index: 20",
       "pointer-events: none",
       "display: none",
+      // Wrap long author-supplied ids/values rather than overflow.
+      "overflow-wrap: anywhere",
+      "word-break: break-word",
     ].join(";");
 
     const heading = document.createElement("div");
@@ -613,7 +618,8 @@ export class Sl1ConditionsPanel {
 
     const statusEl = document.createElement("span");
     statusEl.dataset.conditionStatus = kind;
-    statusEl.style.cssText = "min-width: 112px; text-align: right; font-weight: 600;";
+    statusEl.style.cssText =
+      "min-width: 80px; max-width: 160px; text-align: right; font-weight: 600; overflow-wrap: anywhere;";
     rowEl.appendChild(statusEl);
 
     return { id, statusEl, rowEl };

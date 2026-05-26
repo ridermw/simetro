@@ -278,4 +278,31 @@ describe("Sl1ConditionsPanel", () => {
     panel.setConditions([loss], [win]);
     expect(panel.__testRoot().querySelectorAll("[data-condition-kind]").length).toBe(2);
   });
+
+  it("panel layout uses right-anchor + viewport-clamped max-width", () => {
+    const panel = new Sl1ConditionsPanel(parent);
+    const css = panel.__testRoot().style.cssText;
+    // Right-anchor so the panel never overflows past the right edge.
+    expect(css).toContain("right: 12px");
+    // Should NOT use a fixed left position that can collide on narrow viewports.
+    expect(css).not.toContain("left: 640px");
+  });
+
+  it("long author ids do not overflow horizontally", () => {
+    const panel = new Sl1ConditionsPanel(parent);
+    const longId = "a".repeat(200);
+    const loss = failure(longId, "stale_target", {
+      kind: "stale_target",
+      place: longId,
+      thing: longId,
+      threshold_ticks: 999999999,
+      grace_ticks: 999999999,
+    });
+    panel.setConditions([loss], []);
+    const root = panel.__testRoot();
+    // The full id appears via textContent — wrapping is CSS-driven so we
+    // just verify the panel renders without throwing and keeps the text.
+    expect(root.textContent).toContain(longId);
+    expect(root.style.cssText).toContain("overflow-wrap");
+  });
 });
