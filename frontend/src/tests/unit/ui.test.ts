@@ -192,6 +192,37 @@ describe("WarningStrip", () => {
     expect(s.__testCount()).toBe(2);
     expect(parent.textContent).toContain("behind");
   });
+
+  it("coalesce refreshes pill text from the LATEST warning payload (Codex P2 #1)", () => {
+    // Repeating a payload-bearing warning with escalating values
+    // must show the new values, not the original. Hiding escalation
+    // (e.g. lag 3 → lag 50) defeats the warning's purpose.
+    const parent = document.createElement("div");
+    const s = new WarningStrip(parent);
+    s.push({ kind: "behind", lag_frames: 3 });
+    s.push({ kind: "behind", lag_frames: 50 });
+    expect(s.__testCount()).toBe(1);
+    const text = parent.textContent ?? "";
+    expect(text).toContain("50");
+    expect(text).not.toContain("by 3 ");
+  });
+
+  it("coalesce bumps an item to the end so it survives the visibility cap (Codex P2 #2)", () => {
+    // A frequently-repeating warning that was inserted FIRST should
+    // not be evicted by shift() just because of insertion order —
+    // its repeated activity should keep it 'most recent'.
+    const parent = document.createElement("div");
+    const s = new WarningStrip(parent);
+    s.push({ kind: "agent_log_slow" }); // First pushed.
+    for (let i = 0; i < 10; i++) {
+      // Refresh the first warning between distinct warnings.
+      s.push({ kind: "agent_log_slow" });
+      s.push({ kind: "invalid_action", agent_id: `agent-${i}`, reason: "r" });
+    }
+    // Even though agent_log_slow was inserted first, its constant
+    // refresh means it must still be visible at the end.
+    expect(parent.textContent).toContain("slow");
+  });
 });
 
 describe("HeartbeatBadge", () => {

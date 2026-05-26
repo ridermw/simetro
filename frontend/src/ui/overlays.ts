@@ -156,7 +156,24 @@ export class WarningStrip {
     if (existing !== undefined) {
       existing.count += 1;
       existing.expiresAt = expiresAt;
-      existing.el.textContent = `${existing.baseText} × ${existing.count}`;
+      // Refresh baseText from the LATEST warning payload so escalating
+      // values (e.g. behind.lag_frames going 3 → 50) actually show in
+      // the pill, not just the multiplier (Codex P2 #1).
+      existing.baseText = baseText;
+      existing.el.textContent = `${baseText} × ${existing.count}`;
+      // Move the coalesced item to the end of the array so the
+      // visibility cap's shift() (which drops the array front) doesn't
+      // evict actively-refreshing warnings just because they were
+      // inserted first (Codex P2 #2). 'Oldest' should mean 'least
+      // recently touched', not 'first inserted'.
+      const idx = this.items.indexOf(existing);
+      if (idx !== -1 && idx !== this.items.length - 1) {
+        this.items.splice(idx, 1);
+        this.items.push(existing);
+        // Reflect the new order in the DOM so visual stacking matches
+        // recency: most-recent at the bottom of the column.
+        this.root.appendChild(existing.el);
+      }
       return;
     }
 
@@ -176,6 +193,8 @@ export class WarningStrip {
 
     // Cap visible pills — drop the OLDEST (front of the array) when
     // the cap is exceeded so the most recent warnings remain visible.
+    // Coalesced items get bumped to the end on each refresh (above),
+    // so 'front of the array' == 'least recently active'.
     while (this.items.length > WARNING_STRIP_MAX_VISIBLE) {
       const dropped = this.items.shift();
       if (dropped !== undefined) dropped.el.remove();
