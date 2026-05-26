@@ -59,10 +59,13 @@ describe("Sl1RoleLegend", () => {
     expect(legend.__testRoot().style.display).toBe("none");
   });
 
-  it("show() stays hidden when no known SL1 roles are present", () => {
+  it("show() with non-canonical roles still renders them (no hidden nodes)", () => {
     const legend = new Sl1RoleLegend(parent);
     legend.show(DEFAULT_THEME, new Set(["unknown_role"]));
-    expect(legend.__testRoot().style.display).toBe("none");
+    // Per Codex P1 fix: any role seen in sl1_places must appear in the
+    // legend (otherwise the viewer sees a node they cannot decode).
+    expect(legend.__testRoot().style.display).toBe("flex");
+    expect(legend.__testRoot().textContent).toContain("unknown_role");
   });
 
   it("show() with roles displays legend with rows for each role", () => {
@@ -132,5 +135,40 @@ describe("Sl1RoleLegend", () => {
     expect(text).toContain("dashboard");
     expect(text).not.toContain("source");
     expect(text).not.toContain("compute");
+  });
+
+  it("renders rows for non-canonical role strings using the raw role name", () => {
+    const legend = new Sl1RoleLegend(parent);
+    legend.show(DEFAULT_THEME, new Set(["source", "weird_custom_role"]));
+    const text = legend.__testRoot().textContent ?? "";
+    expect(text).toContain("source");
+    expect(text).toContain("weird_custom_role");
+  });
+
+  it("non-canonical roles render after canonical ones in stable order", () => {
+    const legend = new Sl1RoleLegend(parent);
+    legend.show(DEFAULT_THEME, new Set(["zeta_role", "source", "alpha_role"]));
+    const text = legend.__testRoot().textContent ?? "";
+    const sourceIdx = text.indexOf("source");
+    const alphaIdx = text.indexOf("alpha_role");
+    const zetaIdx = text.indexOf("zeta_role");
+    expect(sourceIdx).toBeGreaterThanOrEqual(0);
+    expect(alphaIdx).toBeGreaterThanOrEqual(0);
+    expect(zetaIdx).toBeGreaterThanOrEqual(0);
+    // Canonical first.
+    expect(sourceIdx).toBeLessThan(alphaIdx);
+    expect(sourceIdx).toBeLessThan(zetaIdx);
+    // Non-canonical in code-point order: alpha < zeta.
+    expect(alphaIdx).toBeLessThan(zetaIdx);
+  });
+
+  it("clamps palette index when the theme palette is shorter than the hint", () => {
+    const legend = new Sl1RoleLegend(parent);
+    // operator's canonical color index is 6; a 3-entry palette would
+    // be out of range and must clamp without throwing.
+    const shortTheme = { palette: ["#000", "#fff", "#aaa"], background_index: 0, font: "system-ui" };
+    expect(() => legend.show(shortTheme, new Set(["operator"]))).not.toThrow();
+    const root = legend.__testRoot();
+    expect(root.querySelector("canvas")).not.toBeNull();
   });
 });

@@ -52,10 +52,29 @@ export class Sl1RoleLegend {
   }
 
   /** Show the legend with rows for each role present in the scene,
-   *  using the scene theme so swatch colors match drawn nodes. */
+   *  using the scene theme so swatch colors match drawn nodes.
+   *  Iterates ALL roles in the scene (not just the canonical four)
+   *  so non-canonical roles still appear in the legend rather than
+   *  rendering nodes the viewer cannot decode (Codex P1). */
   show(theme: Theme, roles: ReadonlySet<string>): void {
     while (this.root.firstChild !== null) this.root.removeChild(this.root.firstChild);
     if (roles.size === 0) {
+      this.root.style.display = "none";
+      return;
+    }
+
+    // Canonical roles render first in this exact order; any other
+    // roles appear afterwards in stable (code-point) order.
+    const canonical = ["source", "compute_cluster", "dashboard", "operator"];
+    const others: string[] = [];
+    for (const r of roles) {
+      if (!canonical.includes(r)) others.push(r);
+    }
+    others.sort();
+    const presentCanonical = canonical.filter((r) => roles.has(r));
+    const orderedRoles = [...presentCanonical, ...others];
+
+    if (orderedRoles.length === 0) {
       this.root.style.display = "none";
       return;
     }
@@ -65,27 +84,24 @@ export class Sl1RoleLegend {
     heading.textContent = "legend";
     this.root.appendChild(heading);
 
-    // Always render in canonical role order so reordering scene JSON
-    // doesn't reshuffle the legend.
-    const orderedRoles: string[] = ["source", "compute_cluster", "dashboard", "operator"];
-    let renderedRows = 0;
+    const paletteLen = theme.palette.length;
     for (const role of orderedRoles) {
-      if (!roles.has(role)) continue;
-      const hint = SL1_ROLE_HINTS[role];
-      if (hint === undefined) continue;
+      // Use SL1_ROLE_HINTS when known; fall back to circle/foreground
+      // for unknown roles (matches synth's FALLBACK_HINT behavior).
+      const hint = SL1_ROLE_HINTS[role] ?? { shape: "circle", color: 1 };
+      // Clamp palette index the same way SL1 synth does so the legend
+      // swatch color matches what was actually painted on the node
+      // (Codex P2).
+      const colorIdx =
+        paletteLen > 0 ? Math.max(0, Math.min(paletteLen - 1, hint.color)) : 0;
       const row = document.createElement("div");
       row.style.cssText = "display: flex; align-items: center; gap: 8px;";
-      const swatch = makeSwatchCanvas(hint.shape, paletteColor(theme, hint.color));
+      const swatch = makeSwatchCanvas(hint.shape, paletteColor(theme, colorIdx));
       row.appendChild(swatch);
       const text = document.createElement("span");
       text.textContent = ROLE_LABELS[role] ?? role;
       row.appendChild(text);
       this.root.appendChild(row);
-      renderedRows += 1;
-    }
-    if (renderedRows === 0) {
-      this.root.style.display = "none";
-      return;
     }
     this.root.style.display = "flex";
   }
