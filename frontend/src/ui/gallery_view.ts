@@ -59,6 +59,8 @@ export class GalleryView {
     this.scenes = scenes;
     this.root = document.createElement("div");
     this.root.id = "simetro-gallery";
+    this.root.setAttribute("role", "region");
+    this.root.setAttribute("aria-label", "Scene gallery");
     this.root.style.cssText = `
       position: fixed; inset: 0; z-index: 1000; background: #0e1116;
       overflow-y: auto; display: none; padding: 40px;
@@ -77,10 +79,14 @@ export class GalleryView {
     const chips = document.createElement("div");
     chips.style.cssText = "display: flex; gap: 8px;";
     chips.dataset.role = "filter-chips";
+    chips.setAttribute("role", "radiogroup");
+    chips.setAttribute("aria-label", "Filter scenes by kind");
     for (const kind of ["all", "sl1_scenario", "transit_loop"] as const) {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.dataset.filter = kind;
+      chip.setAttribute("role", "radio");
+      chip.setAttribute("aria-checked", kind === "all" ? "true" : "false");
       chip.style.cssText = `
         padding: 4px 12px; border-radius: 16px; border: 1px solid #30363d;
         background: ${kind === "all" ? "#21262d" : "transparent"};
@@ -95,9 +101,12 @@ export class GalleryView {
       chip.addEventListener("click", () => {
         this.setFilter({ ...this.filter, world_kind: kind });
         for (const c of chips.children) {
-          (c as HTMLElement).style.background = "transparent";
+          const other = c as HTMLElement;
+          other.style.background = "transparent";
+          other.setAttribute("aria-checked", "false");
         }
         chip.style.background = "#21262d";
+        chip.setAttribute("aria-checked", "true");
       });
       chips.appendChild(chip);
     }
@@ -106,11 +115,18 @@ export class GalleryView {
 
     // Grid.
     this.grid = document.createElement("div");
+    // Do NOT set role="list" — buttons inside would need role="listitem"
+    // which overrides their native button role (Codex P1 on PR #51).
+    // Use a labelled group region instead for screen reader context.
+    this.grid.setAttribute("role", "group");
+    this.grid.setAttribute("aria-label", "Available scenes");
     this.grid.style.cssText = `
       max-width: 1200px; margin: 0 auto;
       display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 16px;
     `;
+    // Arrow-key navigation between cards.
+    this.grid.addEventListener("keydown", (ev) => this.handleGridKeydown(ev));
     this.root.appendChild(this.grid);
 
     container.appendChild(this.root);
@@ -218,6 +234,66 @@ export class GalleryView {
       for (const card of this.cards) {
         this.observer.observe(card.element);
       }
+    }
+  }
+
+  /** Arrow-key navigation between gallery cards. Moves focus through cards. */
+  private handleGridKeydown(ev: KeyboardEvent): void {
+    if (
+      ev.key !== "ArrowLeft" &&
+      ev.key !== "ArrowRight" &&
+      ev.key !== "ArrowUp" &&
+      ev.key !== "ArrowDown" &&
+      ev.key !== "Home" &&
+      ev.key !== "End"
+    ) {
+      return;
+    }
+    if (this.cards.length === 0) return;
+    const active = document.activeElement;
+    const currentIdx = this.cards.findIndex((c) => c.element === active);
+    if (currentIdx === -1) {
+      // Nothing focused yet — focus the first card.
+      this.cards[0]?.element.focus();
+      ev.preventDefault();
+      return;
+    }
+    // Estimate columns by comparing card offsetTop — cards in the same row
+    // share an offsetTop. This gives correct grid-arrow semantics across
+    // window widths without hardcoding column count.
+    const currentCard = this.cards[currentIdx];
+    if (currentCard === undefined) return;
+    const rowTop = currentCard.element.offsetTop;
+    let cols = 0;
+    for (const c of this.cards) {
+      if (c.element.offsetTop === rowTop) cols += 1;
+    }
+    cols = Math.max(1, cols);
+
+    let nextIdx = currentIdx;
+    switch (ev.key) {
+      case "ArrowLeft":
+        nextIdx = Math.max(0, currentIdx - 1);
+        break;
+      case "ArrowRight":
+        nextIdx = Math.min(this.cards.length - 1, currentIdx + 1);
+        break;
+      case "ArrowUp":
+        nextIdx = Math.max(0, currentIdx - cols);
+        break;
+      case "ArrowDown":
+        nextIdx = Math.min(this.cards.length - 1, currentIdx + cols);
+        break;
+      case "Home":
+        nextIdx = 0;
+        break;
+      case "End":
+        nextIdx = this.cards.length - 1;
+        break;
+    }
+    if (nextIdx !== currentIdx) {
+      this.cards[nextIdx]?.element.focus();
+      ev.preventDefault();
     }
   }
 }
