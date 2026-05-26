@@ -27,6 +27,9 @@ import type {
   Sl1DashboardView,
   Sl1GameOutcomeView,
   Sl1GamePhase,
+  Sl1ObjectiveRuntimeView,
+  Sl1ObjectiveStatusTag,
+  Sl1ObjectiveView,
 } from "../protocol/messages";
 
 // ────────────────────────────────────────────────────────────────────
@@ -437,11 +440,166 @@ function alertBorderColor(severity: string): string {
 }
 
 // ────────────────────────────────────────────────────────────────────
+//  Sl1ObjectivesPanel
+//
+//  Shows the scene's declared objectives (sorted by descending
+//  weight) and their runtime status (unknown / met / breached /
+//  unsupported). Answers "what is the AI trying to optimize?" in
+//  plain English so a viewer doesn't have to read the JSON.
+// ────────────────────────────────────────────────────────────────────
+
+interface ObjectiveRow {
+  id: string;
+  textEl: HTMLDivElement;
+  statusEl: HTMLSpanElement;
+  rowEl: HTMLDivElement;
+}
+
+const OBJECTIVE_STATUS_COLOR: Record<Sl1ObjectiveStatusTag, string> = {
+  unknown: "#8b949e",
+  met: "#9ece6a",
+  breached: "#f7768e",
+  unsupported: "#8b949e",
+};
+
+const OBJECTIVE_STATUS_LABEL: Record<Sl1ObjectiveStatusTag, string> = {
+  unknown: "—",
+  met: "met",
+  breached: "breached",
+  unsupported: "n/a",
+};
+
+export class Sl1ObjectivesPanel {
+  private root: HTMLDivElement;
+  private rowsContainer: HTMLDivElement;
+  private rowsById: Map<string, ObjectiveRow> = new Map();
+
+  constructor(parent: HTMLElement) {
+    this.root = document.createElement("div");
+    this.root.id = "simetro-sl1-objectives";
+    this.root.setAttribute("role", "region");
+    this.root.setAttribute("aria-label", "Scenario objectives");
+    this.root.style.cssText = [
+      "position: absolute",
+      "top: 12px",
+      "left: 240px",
+      "max-width: 380px",
+      "padding: 8px 12px",
+      "background: rgba(14, 17, 22, 0.85)",
+      "border: 1px solid #2a2e39",
+      "border-radius: 6px",
+      "color: #e8eaed",
+      "font: 12px ui-monospace, SFMono-Regular, monospace",
+      "z-index: 20",
+      "pointer-events: none",
+      "display: none",
+    ].join(";");
+
+    const heading = document.createElement("div");
+    heading.style.cssText =
+      "opacity: 0.65; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;";
+    heading.textContent = "objectives";
+    this.root.appendChild(heading);
+
+    this.rowsContainer = document.createElement("div");
+    this.rowsContainer.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
+    this.root.appendChild(this.rowsContainer);
+
+    parent.appendChild(this.root);
+  }
+
+  /** Replace the rendered objectives. Sorted by descending weight so
+   *  the most important objective is on top. */
+  setObjectives(objectives: ReadonlyArray<Sl1ObjectiveView>): void {
+    while (this.rowsContainer.firstChild !== null) {
+      this.rowsContainer.removeChild(this.rowsContainer.firstChild);
+    }
+    this.rowsById.clear();
+    if (objectives.length === 0) {
+      this.root.style.display = "none";
+      return;
+    }
+    const sorted = [...objectives].sort((a, b) => b.weight - a.weight);
+    for (const obj of sorted) {
+      const rowEl = document.createElement("div");
+      rowEl.dataset.objectiveId = obj.id;
+      rowEl.style.cssText = "display: flex; align-items: baseline; gap: 8px;";
+
+      const weightBadge = document.createElement("span");
+      weightBadge.style.cssText =
+        "min-width: 22px; padding: 1px 5px; border-radius: 3px; background: #21262d; color: #c0caf5; font-size: 10px; text-align: center;";
+      weightBadge.textContent = `w${obj.weight}`;
+      rowEl.appendChild(weightBadge);
+
+      const textEl = document.createElement("div");
+      textEl.style.cssText = "flex: 1;";
+      textEl.textContent = describeObjective(obj);
+      rowEl.appendChild(textEl);
+
+      const statusEl = document.createElement("span");
+      statusEl.style.cssText = "min-width: 60px; text-align: right; font-weight: 600;";
+      statusEl.textContent = OBJECTIVE_STATUS_LABEL.unknown;
+      statusEl.style.color = OBJECTIVE_STATUS_COLOR.unknown;
+      rowEl.appendChild(statusEl);
+
+      this.rowsContainer.appendChild(rowEl);
+      this.rowsById.set(obj.id, { id: obj.id, textEl, statusEl, rowEl });
+    }
+    this.root.style.display = "block";
+  }
+
+  /** Apply per-tick objective runtime states. Unknown objectives in
+   *  the input are ignored; rows for objectives not in the input keep
+   *  their previous status (no flicker on sparse updates). */
+  updateStates(states: ReadonlyArray<Sl1ObjectiveRuntimeView>): void {
+    for (const s of states) {
+      const row = this.rowsById.get(s.objective_id);
+      if (row === undefined) continue;
+      const label = OBJECTIVE_STATUS_LABEL[s.status] ?? OBJECTIVE_STATUS_LABEL.unknown;
+      const color = OBJECTIVE_STATUS_COLOR[s.status] ?? OBJECTIVE_STATUS_COLOR.unknown;
+      row.statusEl.textContent = label;
+      row.statusEl.style.color = color;
+    }
+  }
+
+  reset(): void {
+    while (this.rowsContainer.firstChild !== null) {
+      this.rowsContainer.removeChild(this.rowsContainer.firstChild);
+    }
+    this.rowsById.clear();
+    this.root.style.display = "none";
+  }
+
+  __testRoot(): HTMLElement {
+    return this.root;
+  }
+}
+
+/** Convert an objective into a short human-readable sentence.
+ *  Pure helper, exported for unit testing. */
+export function describeObjective(obj: Sl1ObjectiveView): string {
+  const p = obj.params;
+  switch (p.kind) {
+    case "keep_fresh":
+      return `Keep ${p.thing} fresh in ${p.place} (≤${p.max_stale_ticks} ticks stale)`;
+    case "complete_jobs_before_deadline":
+      return `Complete demand ${p.demand} (≤${p.max_missed} missed)`;
+    case "maintain_utilization":
+      return `Keep ${p.place} ${p.capacity} utilization between ${p.min_percent}% and ${p.max_percent}%`;
+    case "unsupported_in_this_pr":
+      return `Objective "${obj.id}" (${obj.type}) — not yet supported by this renderer`;
+    default:
+      return `Objective "${obj.id}" (${obj.type})`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
 //  Composite helper used by main.ts boot wiring
 // ────────────────────────────────────────────────────────────────────
 
 export interface Sl1Hud {
   status: Sl1StatusPanel;
+  objectives: Sl1ObjectivesPanel;
   milestones: Sl1MilestoneStrip;
   dashboards: Sl1DashboardChips;
   alerts: Sl1AlertStrip;
@@ -450,16 +608,19 @@ export interface Sl1Hud {
 
 export function createSl1Hud(parent: HTMLElement): Sl1Hud {
   const status = new Sl1StatusPanel(parent);
+  const objectives = new Sl1ObjectivesPanel(parent);
   const milestones = new Sl1MilestoneStrip(parent);
   const dashboards = new Sl1DashboardChips(parent);
   const alerts = new Sl1AlertStrip(parent);
   return {
     status,
+    objectives,
     milestones,
     dashboards,
     alerts,
     reset(): void {
       status.reset();
+      objectives.reset();
       milestones.reset();
       dashboards.reset();
       alerts.reset();
@@ -477,8 +638,10 @@ export function resetSl1Hud(hud: Sl1Hud): void {
 export function applySl1HudStatic(
   hud: Sl1Hud,
   staticDashboards: Sl1DashboardView[] | undefined,
-  staticAlerts: Sl1AlertView[] | undefined
+  staticAlerts: Sl1AlertView[] | undefined,
+  staticObjectives: Sl1ObjectiveView[] | undefined = undefined
 ): void {
   hud.dashboards.setDashboards(staticDashboards ?? []);
   hud.alerts.setAlerts(staticAlerts ?? []);
+  hud.objectives.setObjectives(staticObjectives ?? []);
 }
