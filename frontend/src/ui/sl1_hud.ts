@@ -831,7 +831,7 @@ export class Sl1MetricsPanel {
     this.root.setAttribute("role", "region");
     this.root.setAttribute("aria-label", "Observability metrics");
     this.root.style.cssText = [
-      "max-width: min(360px, calc(100vw - 264px))",
+      "max-width: 100%",
       "padding: 8px 12px",
       "background: rgba(14, 17, 22, 0.85)",
       "border: 1px solid #2a2e39",

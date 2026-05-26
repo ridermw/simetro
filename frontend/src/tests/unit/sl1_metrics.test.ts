@@ -237,7 +237,9 @@ describe("Sl1MetricsPanel", () => {
     const panel = new Sl1MetricsPanel(parent);
     const css = panel.__testRoot().style.cssText;
     expect(parent.contains(panel.__testRoot())).toBe(true);
-    expect(css).toContain("max-width: min(360px, calc(100vw - 264px))");
+    // Metrics panel now lives inside the flex stack — its max-width is
+    // stack-relative (100%) rather than viewport-relative.
+    expect(css).toContain("max-width: 100%");
     expect(css).toContain("background: rgba(14, 17, 22, 0.85)");
     expect(css).toContain("overflow-wrap: anywhere");
   });
