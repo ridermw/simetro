@@ -48,6 +48,11 @@ export interface PathView {
   from_pos: [number, number];
   to_pos: [number, number];
   color: number;
+  /** Optional direction hint for the renderer. When set, the renderer
+   *  draws an arrowhead at the `to_pos` end. `"bidirectional"` adds a
+   *  second arrowhead at the `from_pos` end. Undefined (legacy paths)
+   *  draws no arrowheads, preserving the existing transit aesthetic. */
+  arrow?: "forward" | "bidirectional";
 }
 
 export interface MoverState {

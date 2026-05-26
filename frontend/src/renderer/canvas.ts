@@ -28,7 +28,7 @@
 // not per frame. `activeBuckets` tracks which palette indices have
 // segments, so we never stroke empty buckets.
 
-import type { MoverState, NodeView, StaticPayload } from "../protocol/messages";
+import type { MoverState, NodeView, PathView, StaticPayload } from "../protocol/messages";
 import { backgroundColor, foregroundColor, paletteColor, type Theme } from "./theme";
 
 const NODE_RADIUS = 18;
@@ -207,6 +207,7 @@ export class Renderer {
     ctx.scale(this.viewport.scale, this.viewport.scale);
 
     this.drawPathsBatched(input.theme);
+    this.drawArrowheads(input.theme, input.scene.paths);
     this.drawNodes(input.theme, input.scene.nodes);
     this.drawMovers(input.theme, input.movers);
     if (input.scene.show_node_labels === true) {
@@ -400,6 +401,24 @@ export class Renderer {
     }
   }
 
+  /** Draw arrowheads for paths that carry a direction hint. The
+   *  arrowhead is placed at the `to_pos` end (inset by NODE_RADIUS so
+   *  it sits just outside the destination node), pointing along the
+   *  link. Bidirectional links get a second arrowhead at `from_pos`.
+   *  Legacy paths (arrow undefined) get nothing — preserves the
+   *  current transit aesthetic. */
+  private drawArrowheads(theme: Theme, paths: PathView[]): void {
+    const ctx = this.ctx;
+    for (const p of paths) {
+      if (p.arrow === undefined) continue;
+      const color = paletteColor(theme, p.color);
+      drawArrowAtEnd(ctx, p.from_pos, p.to_pos, color);
+      if (p.arrow === "bidirectional") {
+        drawArrowAtEnd(ctx, p.to_pos, p.from_pos, color);
+      }
+    }
+  }
+
   /** Draw the node id label below each named node. Counter-scales the
    *  font so text stays a consistent on-screen size regardless of
    *  zoom; the world-space transform is in effect when this is called.
@@ -486,4 +505,41 @@ function drawShape(
   }
   ctx.fill();
   ctx.stroke();
+}
+
+const ARROW_HEAD_LEN = 12;
+const ARROW_HEAD_HALF_WIDTH = 5;
+const ARROW_TIP_INSET = NODE_RADIUS + 2;
+
+/** Draw a filled triangular arrowhead at the `toPos` end of a segment
+ *  from `fromPos`. Tip is inset by `ARROW_TIP_INSET` so it sits just
+ *  outside the destination node circle. Exported for unit testing. */
+export function drawArrowAtEnd(
+  ctx: CanvasRenderingContext2D,
+  fromPos: readonly [number, number],
+  toPos: readonly [number, number],
+  fillStyle: string
+): void {
+  const dx = toPos[0] - fromPos[0];
+  const dy = toPos[1] - fromPos[1];
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return;
+  const ux = dx / len;
+  const uy = dy / len;
+  // Tip sits short of the destination node.
+  const tipX = toPos[0] - ux * ARROW_TIP_INSET;
+  const tipY = toPos[1] - uy * ARROW_TIP_INSET;
+  // Two base corners perpendicular to the segment direction.
+  const baseX = tipX - ux * ARROW_HEAD_LEN;
+  const baseY = tipY - uy * ARROW_HEAD_LEN;
+  // Perpendicular unit vector.
+  const px = -uy;
+  const py = ux;
+  ctx.fillStyle = fillStyle;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(baseX + px * ARROW_HEAD_HALF_WIDTH, baseY + py * ARROW_HEAD_HALF_WIDTH);
+  ctx.lineTo(baseX - px * ARROW_HEAD_HALF_WIDTH, baseY - py * ARROW_HEAD_HALF_WIDTH);
+  ctx.closePath();
+  ctx.fill();
 }

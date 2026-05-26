@@ -1,6 +1,6 @@
 // frontend/src/tests/unit/renderer.test.ts
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { Renderer, truncateLabel } from "../../renderer/canvas";
+import { Renderer, truncateLabel, drawArrowAtEnd } from "../../renderer/canvas";
 import {
   DEFAULT_THEME,
   paletteColor,
@@ -479,5 +479,65 @@ describe("truncateLabel", () => {
     // LABEL_MAX_CHARS is 28; a 28-char string should pass through.
     const exact = "x".repeat(28);
     expect(truncateLabel(exact)).toBe(exact);
+  });
+});
+
+describe("drawArrowAtEnd", () => {
+  function makeRecordingCtx(): {
+    ops: string[];
+    ctx: CanvasRenderingContext2D;
+  } {
+    const ops: string[] = [];
+    const ctx = {
+      beginPath: () => ops.push("beginPath"),
+      moveTo: (x: number, y: number) => ops.push(`moveTo(${x.toFixed(2)},${y.toFixed(2)})`),
+      lineTo: (x: number, y: number) => ops.push(`lineTo(${x.toFixed(2)},${y.toFixed(2)})`),
+      closePath: () => ops.push("closePath"),
+      fill: () => ops.push("fill"),
+      set fillStyle(_v: string) {
+        ops.push("fillStyle");
+      },
+    } as unknown as CanvasRenderingContext2D;
+    return { ops, ctx };
+  }
+
+  it("draws a triangle (moveTo + 2 lineTo + closePath + fill)", () => {
+    const { ops, ctx } = makeRecordingCtx();
+    drawArrowAtEnd(ctx, [0, 0], [100, 0], "#fff");
+    expect(ops.filter((o) => o.startsWith("moveTo")).length).toBe(1);
+    expect(ops.filter((o) => o.startsWith("lineTo")).length).toBe(2);
+    expect(ops).toContain("closePath");
+    expect(ops).toContain("fill");
+  });
+
+  it("no-ops when from and to are the same point (zero-length segment)", () => {
+    const { ops, ctx } = makeRecordingCtx();
+    drawArrowAtEnd(ctx, [50, 50], [50, 50], "#fff");
+    // No moveTo because we exit early on len === 0.
+    expect(ops.filter((o) => o.startsWith("moveTo")).length).toBe(0);
+  });
+
+  it("arrow tip is inset from the destination point (sits outside node)", () => {
+    const { ops, ctx } = makeRecordingCtx();
+    drawArrowAtEnd(ctx, [0, 0], [100, 0], "#fff");
+    const tip = ops.find((o) => o.startsWith("moveTo"))!;
+    // The tip x-coordinate should be less than 100 (inset by NODE_RADIUS + 2 = 20).
+    const m = tip.match(/moveTo\(([-\d.]+),/);
+    const tipX = parseFloat(m![1]!);
+    expect(tipX).toBeLessThan(100);
+    expect(tipX).toBeCloseTo(80, 0);
+  });
+
+  it("arrow points along the segment direction (vertical case)", () => {
+    const { ops, ctx } = makeRecordingCtx();
+    drawArrowAtEnd(ctx, [0, 0], [0, 100], "#fff");
+    const tip = ops.find((o) => o.startsWith("moveTo"))!;
+    const m = tip.match(/moveTo\(([-\d.]+),([-\d.]+)\)/);
+    const tipX = parseFloat(m![1]!);
+    const tipY = parseFloat(m![2]!);
+    // For a vertical segment, tip x ≈ 0 and tip y < 100 (inset upward toward source).
+    expect(tipX).toBeCloseTo(0, 0);
+    expect(tipY).toBeLessThan(100);
+    expect(tipY).toBeCloseTo(80, 0);
   });
 });
