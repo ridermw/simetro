@@ -233,11 +233,12 @@ describe("Sl1MetricsPanel", () => {
     expect(panel.__testRoot().querySelectorAll("[data-metric-id]").length).toBe(1);
   });
 
-  it("panel layout is bounded and wraps to avoid horizontal overflow", () => {
+  it("panel styling is bounded and wraps to avoid horizontal overflow", () => {
     const panel = new Sl1MetricsPanel(parent);
     const css = panel.__testRoot().style.cssText;
-    expect(css).toContain("left: 240px");
+    expect(parent.contains(panel.__testRoot())).toBe(true);
     expect(css).toContain("max-width: min(360px, calc(100vw - 264px))");
+    expect(css).toContain("background: rgba(14, 17, 22, 0.85)");
     expect(css).toContain("overflow-wrap: anywhere");
   });
 });
