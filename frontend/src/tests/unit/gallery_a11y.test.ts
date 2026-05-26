@@ -214,6 +214,14 @@ describe("GalleryCard accessibility", () => {
     card.element.dispatchEvent(new FocusEvent("blur"));
     expect(card.element.style.boxShadow).toBe("none");
   });
+
+  it("mouseleave does not clear focused border color", () => {
+    const card = new GalleryCard(makeScene("test"), () => {});
+    parent.appendChild(card.element);
+    card.element.focus();
+    card.element.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(card.element.style.borderColor).toBe("rgb(88, 166, 255)");
+  });
 });
 
 describe("SceneSwitcher accessibility", () => {

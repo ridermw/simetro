@@ -52,7 +52,9 @@ export class GalleryCard {
     });
     this.element.addEventListener("mouseleave", () => {
       this.element.style.transform = "scale(1)";
-      this.element.style.borderColor = "#30363d";
+      if (document.activeElement !== this.element) {
+        this.element.style.borderColor = "#30363d";
+      }
     });
     // Visible focus indicator for keyboard navigation.
     this.element.addEventListener("focus", () => {
