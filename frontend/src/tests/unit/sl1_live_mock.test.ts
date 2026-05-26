@@ -61,6 +61,7 @@ describe("computeSl1MockRuntime", () => {
       failure_condition_states: [],
       victory_condition_states: [],
       phase: "winning",
+      game_outcome: { state: "in_progress" },
     });
   });
 

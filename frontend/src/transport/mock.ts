@@ -82,6 +82,11 @@ export interface Sl1MockRuntime {
   failure_condition_states: Sl1FailureConditionRuntimeView[];
   victory_condition_states: Sl1VictoryConditionRuntimeView[];
   phase: Sl1GamePhase;
+  /** Always present so the status panel doesn't reset every tick when
+   *  Sl1StatusPanel.update(undefined, ...) is called. The metadata-
+   *  driven mock never reaches a terminal won/lost state — that's the
+   *  job of the real engine, not this demo. */
+  game_outcome: Sl1GameOutcomeView;
 }
 
 export function payloadHasNativeSl1(payload: StaticPayload): boolean {
@@ -201,6 +206,10 @@ export function computeSl1MockRuntime(rawTick: number, scene: Sl1SceneMeta): Sl1
       return state;
     }),
     phase: breachActive ? "losing" : "winning",
+    // The metadata-driven mock never reaches a terminal won/lost state.
+    // Always report 'in_progress' so the status panel stays visible
+    // (Sl1StatusPanel.update(undefined, ...) calls reset()).
+    game_outcome: { state: "in_progress" },
   };
 }
 
@@ -563,6 +572,7 @@ export class MockTransport implements Transport {
       payload.sl1_failure_condition_states = runtime.failure_condition_states;
       payload.sl1_victory_condition_states = runtime.victory_condition_states;
       payload.sl1_game_phase = runtime.phase;
+      payload.sl1_game_outcome = runtime.game_outcome;
     }
     if (this.sl1Mode && this.sl1Scene === null) {
       if (this.sl1LastOutcome !== undefined) payload.sl1_game_outcome = this.sl1LastOutcome;
