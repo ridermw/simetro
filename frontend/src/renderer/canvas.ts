@@ -38,6 +38,8 @@ const NODE_STROKE_WIDTH = 2;
 const FIT_PADDING = NODE_RADIUS + 20;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 8;
+const LABEL_FONT = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+const LABEL_PADDING_Y = 6;
 
 interface Viewport {
   scale: number;
@@ -198,6 +200,9 @@ export class Renderer {
     this.drawPathsBatched(input.theme);
     this.drawNodes(input.theme, input.scene.nodes);
     this.drawMovers(input.theme, input.movers);
+    if (input.scene.show_node_labels === true) {
+      this.drawNodeLabels(input.theme, input.scene.nodes, input.scene.node_names);
+    }
     if (input.overlay !== undefined) {
       input.overlay(ctx);
     }
@@ -377,6 +382,42 @@ export class Renderer {
       ctx.arc(m.pos[0], m.pos[1], MOVER_RADIUS, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /** Draw the node id label below each named node. Counter-scales the
+   *  font so text stays a consistent on-screen size regardless of
+   *  zoom; the world-space transform is in effect when this is called.
+   *  All label text comes from author-supplied `node_names` and is
+   *  rendered via the Canvas2D text API (fillText) — not via
+   *  innerHTML — preserving the safe-text policy. */
+  private drawNodeLabels(
+    theme: Theme,
+    nodes: NodeView[],
+    nodeNames: Record<number, string>
+  ): void {
+    const ctx = this.ctx;
+    const scale = this.viewport.scale;
+    if (scale === 0) return;
+    // Counter-scale font + offsets so labels look constant on screen.
+    const fontScale = 1 / scale;
+    ctx.save();
+    ctx.font = LABEL_FONT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = foregroundColor(theme);
+    const offsetY = (NODE_RADIUS + LABEL_PADDING_Y);
+    for (const n of nodes) {
+      const text = nodeNames[n.id];
+      if (text === undefined || text === "") continue;
+      // Translate to the node, then apply font scale so font size
+      // measurement happens at constant pixel size.
+      ctx.save();
+      ctx.translate(n.pos[0], n.pos[1] + offsetY);
+      ctx.scale(fontScale, fontScale);
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
   }
 }
 

@@ -13,6 +13,7 @@ import type { StaticPayload } from "../../protocol/messages";
 // jsdom does not implement Canvas2D or Path2D — stub both.
 beforeAll(() => {
   type StubCtx = Partial<CanvasRenderingContext2D>;
+  const fillTextCalls: { text: string; x: number; y: number }[] = [];
   const stub: StubCtx = {
     save: () => {},
     restore: () => {},
@@ -28,6 +29,9 @@ beforeAll(() => {
     stroke: () => {},
     translate: () => {},
     scale: () => {},
+    fillText: (text: string, x: number, y: number) => {
+      fillTextCalls.push({ text, x, y });
+    },
   };
   const proto = HTMLCanvasElement.prototype;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +41,8 @@ beforeAll(() => {
     moveTo(_x: number, _y: number) {}
     lineTo(_x: number, _y: number) {}
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__fillTextCalls = fillTextCalls;
 });
 
 function makeRenderer(): Renderer {
@@ -114,6 +120,81 @@ describe("Renderer", () => {
     // First call rebuilds; second is a no-op (no throw).
     expect(() => r.setScene(staticMsg.payload)).not.toThrow();
     expect(() => r.setScene(staticMsg.payload)).not.toThrow();
+  });
+
+  it("draws node labels when show_node_labels=true", () => {
+    const r = makeRenderer();
+    const scene: StaticPayload = {
+      name: "labeled",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [10, 20], shape: "circle", color: 2 },
+        { id: 2, pos: [30, 40], shape: "square", color: 1 },
+      ],
+      paths: [],
+      node_names: { 1: "place-alpha", 2: "place-beta" },
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    const labelTexts = calls.map((c) => c.text);
+    expect(labelTexts).toContain("place-alpha");
+    expect(labelTexts).toContain("place-beta");
+  });
+
+  it("does NOT draw node labels by default (legacy scenes have no labels)", () => {
+    const r = makeRenderer();
+    const scene: StaticPayload = {
+      name: "unlabeled",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [{ id: 1, pos: [10, 20], shape: "circle", color: 2 }],
+      paths: [],
+      node_names: { 1: "should-not-appear" },
+      path_names: {},
+      mover_names: {},
+      // show_node_labels intentionally omitted (default behavior)
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls.map((c) => c.text)).not.toContain("should-not-appear");
+  });
+
+  it("skips labels for nodes with no name entry, draws for the rest", () => {
+    const r = makeRenderer();
+    const scene: StaticPayload = {
+      name: "mixed",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [10, 20], shape: "circle", color: 2 },
+        { id: 2, pos: [30, 40], shape: "square", color: 1 },
+        { id: 3, pos: [50, 60], shape: "diamond", color: 2 },
+      ],
+      paths: [],
+      node_names: { 1: "named-1", 3: "named-3" }, // node 2 has no name
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    const labelTexts = calls.map((c) => c.text);
+    expect(labelTexts).toContain("named-1");
+    expect(labelTexts).toContain("named-3");
+    expect(labelTexts).toHaveLength(2);
   });
 });
 

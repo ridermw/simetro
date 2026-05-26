@@ -69,6 +69,13 @@ export interface StaticPayload {
   node_names: Record<number, string>;
   path_names: Record<number, string>;
   mover_names: Record<number, string>;
+  /** When true, the renderer should draw each node's name from
+   *  `node_names` as a label next to the node. Default false to
+   *  preserve the un-labeled aesthetic of legacy transit/kinetic
+   *  scenes that already convey meaning through shape and color.
+   *  SL1 scenes set this true via the synth pass so viewers can
+   *  identify each place at a glance. */
+  show_node_labels?: boolean;
   // --- scenario_language_v1 (SL1) static metadata (PR 12b) ---
   // All optional; non-SL1 scenes simply omit them.
   /** SL1 places — author-declared locations with role, position,

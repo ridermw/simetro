@@ -115,7 +115,14 @@ export function synthesizeSl1Geometry(payload: StaticPayload): StaticPayload {
     pathNames[id] = link.id;
   }
 
-  return { ...payload, nodes, paths, node_names: nodeNames, path_names: pathNames };
+  return {
+    ...payload,
+    nodes,
+    paths,
+    node_names: nodeNames,
+    path_names: pathNames,
+    show_node_labels: true,
+  };
 }
 
 function isNodeShapeTag(s: string): s is NodeShapeTag {
