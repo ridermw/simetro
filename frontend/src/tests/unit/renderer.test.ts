@@ -1,6 +1,6 @@
 // frontend/src/tests/unit/renderer.test.ts
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { Renderer } from "../../renderer/canvas";
+import { Renderer, truncateLabel } from "../../renderer/canvas";
 import {
   DEFAULT_THEME,
   paletteColor,
@@ -122,7 +122,7 @@ describe("Renderer", () => {
     expect(() => r.setScene(staticMsg.payload)).not.toThrow();
   });
 
-  it("draws node labels when show_node_labels=true", () => {
+  it("draws node labels in node draw order when show_node_labels=true", () => {
     const r = makeRenderer();
     const scene: StaticPayload = {
       name: "labeled",
@@ -143,9 +143,8 @@ describe("Renderer", () => {
     calls.length = 0;
     r.warm(themeFromStatic(scene));
     r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
-    const labelTexts = calls.map((c) => c.text);
-    expect(labelTexts).toContain("place-alpha");
-    expect(labelTexts).toContain("place-beta");
+    // Exact order assertion — labels must follow node draw order.
+    expect(calls.map((c) => c.text)).toEqual(["place-alpha", "place-beta"]);
   });
 
   it("does NOT draw node labels by default (legacy scenes have no labels)", () => {
@@ -191,10 +190,33 @@ describe("Renderer", () => {
     calls.length = 0;
     r.warm(themeFromStatic(scene));
     r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
-    const labelTexts = calls.map((c) => c.text);
-    expect(labelTexts).toContain("named-1");
-    expect(labelTexts).toContain("named-3");
-    expect(labelTexts).toHaveLength(2);
+    // Exact list — only named-1 and named-3 in node order.
+    expect(calls.map((c) => c.text)).toEqual(["named-1", "named-3"]);
+  });
+
+  it("truncates very long node names to avoid label overflow", () => {
+    const r = makeRenderer();
+    const longName = "a".repeat(200);
+    const scene: StaticPayload = {
+      name: "long",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [{ id: 1, pos: [10, 20], shape: "circle", color: 2 }],
+      paths: [],
+      node_names: { 1: longName },
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls).toHaveLength(1);
+    const drawn = calls[0]!.text;
+    expect(drawn.length).toBeLessThan(longName.length);
+    expect(drawn.endsWith("…")).toBe(true);
   });
 });
 
@@ -399,5 +421,31 @@ describe("theme", () => {
     const t = themeFromStatic(staticMsg.payload);
     expect(t.palette).toBe(staticMsg.payload.palette);
     expect(t.background_index).toBe(staticMsg.payload.background_index);
+  });
+});
+
+describe("truncateLabel", () => {
+  it("returns short strings unchanged", () => {
+    expect(truncateLabel("short")).toBe("short");
+    expect(truncateLabel("")).toBe("");
+  });
+
+  it("truncates strings longer than the limit and appends ellipsis", () => {
+    const long = "x".repeat(100);
+    const result = truncateLabel(long);
+    expect(result.length).toBeLessThan(long.length);
+    expect(result.endsWith("…")).toBe(true);
+  });
+
+  it("is idempotent (truncating already-truncated returns same result)", () => {
+    const once = truncateLabel("x".repeat(100));
+    const twice = truncateLabel(once);
+    expect(twice).toBe(once);
+  });
+
+  it("preserves a string at exactly the limit length", () => {
+    // LABEL_MAX_CHARS is 28; a 28-char string should pass through.
+    const exact = "x".repeat(28);
+    expect(truncateLabel(exact)).toBe(exact);
   });
 });

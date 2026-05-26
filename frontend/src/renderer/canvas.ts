@@ -40,6 +40,11 @@ const MIN_SCALE = 0.15;
 const MAX_SCALE = 8;
 const LABEL_FONT = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
 const LABEL_PADDING_Y = 6;
+/** Maximum on-screen label length. Author-supplied place ids that
+ *  exceed this are truncated with an ellipsis; the full id remains
+ *  available via hover tooltip / inspector. */
+const LABEL_MAX_CHARS = 28;
+const LABEL_ELLIPSIS = "…";
 
 interface Viewport {
   scale: number;
@@ -407,8 +412,9 @@ export class Renderer {
     ctx.fillStyle = foregroundColor(theme);
     const offsetY = (NODE_RADIUS + LABEL_PADDING_Y);
     for (const n of nodes) {
-      const text = nodeNames[n.id];
-      if (text === undefined || text === "") continue;
+      const raw = nodeNames[n.id];
+      if (raw === undefined || raw === "") continue;
+      const text = truncateLabel(raw);
       // Translate to the node, then apply font scale so font size
       // measurement happens at constant pixel size.
       ctx.save();
@@ -419,6 +425,14 @@ export class Renderer {
     }
     ctx.restore();
   }
+}
+
+/** Truncate label text to a safe on-screen length. Exported so unit
+ *  tests can verify the truncation contract directly without going
+ *  through the renderer. */
+export function truncateLabel(text: string): string {
+  if (text.length <= LABEL_MAX_CHARS) return text;
+  return text.slice(0, LABEL_MAX_CHARS - 1) + LABEL_ELLIPSIS;
 }
 
 function drawShape(
