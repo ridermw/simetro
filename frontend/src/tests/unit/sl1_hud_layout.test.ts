@@ -29,10 +29,13 @@ describe("createSl1Hud layout stacks", () => {
       expect(css).toContain("flex-direction: column");
       expect(css).toContain("max-height: calc(100vh - 24px)");
       expect(css).toContain("max-width: calc(50vw - 24px)");
-      // Stacks must not block canvas interaction — they're a layout
-      // wrapper only; individual panels can re-enable pointer-events
-      // if they need interactive controls.
-      expect(css).toContain("pointer-events: none");
+      // Stack hit-test must be bounded to actual panel area so it
+      // doesn't swallow canvas clicks in empty stack space.
+      expect(css).toContain("width: fit-content");
+      // Stack itself receives pointer events so the scrollbar works
+      // when content overflows max-height. Individual panels remain
+      // pointer-events: none (read-only display).
+      expect(css).toContain("pointer-events: auto");
     }
 
     // Each refactored panel must NOT carry stale absolute positioning

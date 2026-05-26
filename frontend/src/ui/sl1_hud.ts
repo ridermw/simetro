@@ -992,13 +992,22 @@ export function createSl1Hud(parent: HTMLElement): Sl1Hud {
     "position: absolute",
     "top: 12px",
     "left: 12px",
+    // fit-content keeps the stack's hit-test area limited to the
+    // widest visible panel rather than the full max-width box, so
+    // pointer-events: auto (needed for overflow-y scrolling on
+    // long HUDs) doesn't swallow canvas clicks in empty space.
+    "width: fit-content",
     "max-height: calc(100vh - 24px)",
     "max-width: calc(50vw - 24px)",
     "display: flex",
     "flex-direction: column",
     "gap: 8px",
     "overflow-y: auto",
-    "pointer-events: none",
+    // pointer-events: auto enables wheel/scrollbar interaction when
+    // the stack overflows. Individual panels remain pointer-events: none
+    // because they are read-only — this means canvas clicks pass
+    // through panel-shaped holes but the stack itself handles scroll.
+    "pointer-events: auto",
     "z-index: 20",
   ].join(";");
   parent.appendChild(leftStack);
@@ -1009,13 +1018,14 @@ export function createSl1Hud(parent: HTMLElement): Sl1Hud {
     "position: absolute",
     "top: 12px",
     "right: 12px",
+    "width: fit-content",
     "max-height: calc(100vh - 24px)",
     "max-width: calc(50vw - 24px)",
     "display: flex",
     "flex-direction: column",
     "gap: 8px",
     "overflow-y: auto",
-    "pointer-events: none",
+    "pointer-events: auto",
     "z-index: 20",
   ].join(";");
   parent.appendChild(rightStack);
