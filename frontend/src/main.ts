@@ -350,7 +350,9 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
           state.sl1,
           msg.payload.sl1_observability_dashboards,
           msg.payload.sl1_observability_alerts,
-          msg.payload.sl1_objectives
+          msg.payload.sl1_objectives,
+          msg.payload.sl1_failure_conditions,
+          msg.payload.sl1_victory_conditions
         );
         // Static block carries no live state — clear status until the
         // first snapshot lands.
@@ -395,6 +397,12 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
         }
         if (msg.payload.sl1_objective_states !== undefined) {
           state.sl1.objectives.updateStates(msg.payload.sl1_objective_states);
+        }
+        if (msg.payload.sl1_failure_condition_states !== undefined) {
+          state.sl1.conditions.updateFailureStates(msg.payload.sl1_failure_condition_states);
+        }
+        if (msg.payload.sl1_victory_condition_states !== undefined) {
+          state.sl1.conditions.updateVictoryStates(msg.payload.sl1_victory_condition_states);
         }
       }
       break;

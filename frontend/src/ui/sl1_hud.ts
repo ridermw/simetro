@@ -25,11 +25,15 @@ import type {
   Sl1AlertView,
   Sl1DashboardStateView,
   Sl1DashboardView,
+  Sl1FailureConditionRuntimeView,
+  Sl1FailureConditionView,
   Sl1GameOutcomeView,
   Sl1GamePhase,
   Sl1ObjectiveRuntimeView,
   Sl1ObjectiveStatusTag,
   Sl1ObjectiveView,
+  Sl1VictoryConditionRuntimeView,
+  Sl1VictoryConditionView,
 } from "../protocol/messages";
 
 // ────────────────────────────────────────────────────────────────────
@@ -440,6 +444,207 @@ function alertBorderColor(severity: string): string {
 }
 
 // ────────────────────────────────────────────────────────────────────
+//  Sl1ConditionsPanel
+//
+//  Shows the scene's declared loss and win conditions with their live
+//  runtime status. Answers "what are the stakes?" without requiring a
+//  viewer to read scenario JSON.
+// ────────────────────────────────────────────────────────────────────
+
+interface ConditionRow {
+  id: string;
+  statusEl: HTMLSpanElement;
+  rowEl: HTMLDivElement;
+}
+
+const CONDITION_PENDING_COLOR = "#8b949e";
+const CONDITION_FIRED_COLOR = "#f7768e";
+const CONDITION_ACHIEVED_COLOR = "#9ece6a";
+const CONDITION_STREAK_COLOR = "#e0af68";
+
+export class Sl1ConditionsPanel {
+  private root: HTMLDivElement;
+  private rowsContainer: HTMLDivElement;
+  private failureRowsById: Map<string, ConditionRow> = new Map();
+  private victoryRowsById: Map<string, ConditionRow> = new Map();
+
+  constructor(parent: HTMLElement) {
+    this.root = document.createElement("div");
+    this.root.id = "simetro-sl1-conditions";
+    this.root.setAttribute("role", "region");
+    this.root.setAttribute("aria-label", "Win and loss conditions");
+    this.root.style.cssText = [
+      "position: absolute",
+      "top: 12px",
+      "left: 640px",
+      "max-width: 360px",
+      "padding: 8px 12px",
+      "background: rgba(14, 17, 22, 0.85)",
+      "border: 1px solid #2a2e39",
+      "border-radius: 6px",
+      "color: #e8eaed",
+      "font: 12px ui-monospace, SFMono-Regular, monospace",
+      "z-index: 20",
+      "pointer-events: none",
+      "display: none",
+    ].join(";");
+
+    const heading = document.createElement("div");
+    heading.style.cssText =
+      "opacity: 0.65; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;";
+    heading.textContent = "conditions";
+    this.root.appendChild(heading);
+
+    this.rowsContainer = document.createElement("div");
+    this.rowsContainer.style.cssText = "display: flex; flex-direction: column; gap: 4px;";
+    this.root.appendChild(this.rowsContainer);
+
+    parent.appendChild(this.root);
+  }
+
+  setConditions(
+    failure: ReadonlyArray<Sl1FailureConditionView>,
+    victory: ReadonlyArray<Sl1VictoryConditionView>
+  ): void {
+    while (this.rowsContainer.firstChild !== null) {
+      this.rowsContainer.removeChild(this.rowsContainer.firstChild);
+    }
+    this.failureRowsById.clear();
+    this.victoryRowsById.clear();
+    if (failure.length === 0 && victory.length === 0) {
+      this.root.style.display = "none";
+      return;
+    }
+
+    for (const condition of failure) {
+      const row = this.createRow("failure", condition.id, "LOSS", describeFailureCondition(condition));
+      row.statusEl.textContent = "armed";
+      row.statusEl.style.color = CONDITION_PENDING_COLOR;
+      row.rowEl.dataset.failureConditionId = condition.id;
+      this.rowsContainer.appendChild(row.rowEl);
+      this.failureRowsById.set(condition.id, row);
+    }
+
+    for (const condition of victory) {
+      const row = this.createRow("victory", condition.id, "WIN", describeVictoryCondition(condition));
+      row.statusEl.textContent = "pending";
+      row.statusEl.style.color = CONDITION_PENDING_COLOR;
+      row.rowEl.dataset.victoryConditionId = condition.id;
+      this.rowsContainer.appendChild(row.rowEl);
+      this.victoryRowsById.set(condition.id, row);
+    }
+
+    this.root.style.display = "block";
+  }
+
+  updateFailureStates(states: ReadonlyArray<Sl1FailureConditionRuntimeView>): void {
+    for (const state of states) {
+      const row = this.failureRowsById.get(state.failure_condition_id);
+      if (row === undefined) continue;
+      if (state.fired_at_tick !== undefined) {
+        row.statusEl.textContent = `FIRED @ tick ${state.fired_at_tick}`;
+        row.statusEl.style.color = CONDITION_FIRED_COLOR;
+      } else if (state.breach_streak_ticks > 0) {
+        row.statusEl.textContent = `streak: ${state.breach_streak_ticks} ticks`;
+        row.statusEl.style.color = CONDITION_STREAK_COLOR;
+      } else {
+        row.statusEl.textContent = "armed";
+        row.statusEl.style.color = CONDITION_PENDING_COLOR;
+      }
+    }
+  }
+
+  updateVictoryStates(states: ReadonlyArray<Sl1VictoryConditionRuntimeView>): void {
+    for (const state of states) {
+      const row = this.victoryRowsById.get(state.victory_condition_id);
+      if (row === undefined) continue;
+      if (state.met_at_tick !== undefined) {
+        row.statusEl.textContent = `ACHIEVED @ tick ${state.met_at_tick}`;
+        row.statusEl.style.color = CONDITION_ACHIEVED_COLOR;
+      } else {
+        row.statusEl.textContent = "pending";
+        row.statusEl.style.color = CONDITION_PENDING_COLOR;
+      }
+    }
+  }
+
+  reset(): void {
+    while (this.rowsContainer.firstChild !== null) {
+      this.rowsContainer.removeChild(this.rowsContainer.firstChild);
+    }
+    this.failureRowsById.clear();
+    this.victoryRowsById.clear();
+    this.root.style.display = "none";
+  }
+
+  __testRoot(): HTMLElement {
+    return this.root;
+  }
+
+  private createRow(
+    kind: "failure" | "victory",
+    id: string,
+    badgeText: "LOSS" | "WIN",
+    description: string
+  ): ConditionRow {
+    const rowEl = document.createElement("div");
+    rowEl.dataset.conditionKind = kind;
+    rowEl.style.cssText = "display: flex; align-items: baseline; gap: 8px;";
+
+    const badge = document.createElement("span");
+    const badgeColor = kind === "failure" ? CONDITION_FIRED_COLOR : CONDITION_ACHIEVED_COLOR;
+    badge.style.cssText = [
+      "min-width: 34px",
+      "padding: 1px 5px",
+      "border-radius: 3px",
+      `background: ${badgeColor}`,
+      "color: #0e1116",
+      "font-size: 10px",
+      "font-weight: 700",
+      "text-align: center",
+    ].join(";");
+    badge.textContent = badgeText;
+    rowEl.appendChild(badge);
+
+    const textEl = document.createElement("div");
+    textEl.style.cssText = "flex: 1;";
+    textEl.textContent = description;
+    rowEl.appendChild(textEl);
+
+    const statusEl = document.createElement("span");
+    statusEl.dataset.conditionStatus = kind;
+    statusEl.style.cssText = "min-width: 112px; text-align: right; font-weight: 600;";
+    rowEl.appendChild(statusEl);
+
+    return { id, statusEl, rowEl };
+  }
+}
+
+export function describeFailureCondition(c: Sl1FailureConditionView): string {
+  const p = c.params;
+  switch (p.kind) {
+    case "stale_target":
+      return `${p.thing} in ${p.place} stale > ${p.threshold_ticks} ticks (grace ${p.grace_ticks})`;
+    case "place_state":
+      return `${p.place} in state ${p.state} (grace ${p.grace_ticks})`;
+    case "objective_breach_count":
+      return `Objective ${p.objective_id} breached > ${p.max_count} times`;
+    default:
+      return `Failure condition "${c.id}" (${c.type})`;
+  }
+}
+
+export function describeVictoryCondition(c: Sl1VictoryConditionView): string {
+  const p = c.params;
+  switch (p.kind) {
+    case "survive_until":
+      return `Survive until tick ${p.at_tick}`;
+    default:
+      return `Victory condition "${c.id}" (${c.type})`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
 //  Sl1ObjectivesPanel
 //
 //  Shows the scene's declared objectives (sorted by descending
@@ -600,6 +805,7 @@ export function describeObjective(obj: Sl1ObjectiveView): string {
 export interface Sl1Hud {
   status: Sl1StatusPanel;
   objectives: Sl1ObjectivesPanel;
+  conditions: Sl1ConditionsPanel;
   milestones: Sl1MilestoneStrip;
   dashboards: Sl1DashboardChips;
   alerts: Sl1AlertStrip;
@@ -609,18 +815,21 @@ export interface Sl1Hud {
 export function createSl1Hud(parent: HTMLElement): Sl1Hud {
   const status = new Sl1StatusPanel(parent);
   const objectives = new Sl1ObjectivesPanel(parent);
+  const conditions = new Sl1ConditionsPanel(parent);
   const milestones = new Sl1MilestoneStrip(parent);
   const dashboards = new Sl1DashboardChips(parent);
   const alerts = new Sl1AlertStrip(parent);
   return {
     status,
     objectives,
+    conditions,
     milestones,
     dashboards,
     alerts,
     reset(): void {
       status.reset();
       objectives.reset();
+      conditions.reset();
       milestones.reset();
       dashboards.reset();
       alerts.reset();
@@ -639,9 +848,12 @@ export function applySl1HudStatic(
   hud: Sl1Hud,
   staticDashboards: Sl1DashboardView[] | undefined,
   staticAlerts: Sl1AlertView[] | undefined,
-  staticObjectives: Sl1ObjectiveView[] | undefined = undefined
+  staticObjectives: Sl1ObjectiveView[] | undefined = undefined,
+  staticFailure: Sl1FailureConditionView[] | undefined = undefined,
+  staticVictory: Sl1VictoryConditionView[] | undefined = undefined
 ): void {
   hud.dashboards.setDashboards(staticDashboards ?? []);
   hud.alerts.setAlerts(staticAlerts ?? []);
   hud.objectives.setObjectives(staticObjectives ?? []);
+  hud.conditions.setConditions(staticFailure ?? [], staticVictory ?? []);
 }
