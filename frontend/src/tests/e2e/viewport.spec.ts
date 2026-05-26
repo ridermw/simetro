@@ -62,8 +62,26 @@ async function canvasCentre(
 test.describe("renderer viewport", () => {
   test("scene is visibly drawn on canvas after load (auto-fit)", async ({ page }) => {
     await page.goto("/?scene=demo-paths");
-    // Wait for MockTransport's first snapshot + rAF frame.
-    await page.waitForTimeout(400);
+
+    // Wait until the renderer has drawn at least one non-background pixel.
+    // Using waitForFunction instead of a fixed timeout makes this robust to
+    // CI's variable fetch + rAF latency when serving static payloads.
+    await page.waitForFunction(
+      () => {
+        const c = document.getElementById("scene") as HTMLCanvasElement | null;
+        if (c === null || c.width === 0) return false;
+        const ctx = c.getContext("2d");
+        if (ctx === null) return false;
+        const data = ctx.getImageData(0, 0, c.width, c.height).data;
+        // Sample every 64th pixel; background is #0e1116 (14, 17, 22).
+        for (let i = 0; i < data.length; i += 256) {
+          if (data[i] !== 14 || data[i + 1] !== 17 || data[i + 2] !== 22) return true;
+        }
+        return false;
+      },
+      undefined,
+      { timeout: 6000 }
+    );
 
     const vp = await readViewport(page);
     expect(vp).not.toBeNull();
@@ -72,7 +90,7 @@ test.describe("renderer viewport", () => {
     // auto-fit produces a scale above 1. Regardless, the viewport must be set.
     expect(vp!.scale).toBeGreaterThan(0);
 
-    // Confirm node id=1 (world 420,120 in demo-paths) is rendered at a non-background pixel.
+    // Confirm node at world (420, 120) in demo-paths is at a non-background pixel.
     const isVisible = await page.evaluate(
       ({ scale, offsetX, offsetY }) => {
         const c = document.getElementById("scene") as HTMLCanvasElement | null;
@@ -80,7 +98,7 @@ test.describe("renderer viewport", () => {
         const ctx = c.getContext("2d");
         if (ctx === null) return false;
         const dpr = window.devicePixelRatio || 1;
-        // Node id=1 in demo-paths is at world position (420, 120).
+        // Node "b" in demo-paths is at world position (420, 120).
         const sx = Math.round((420 * scale + offsetX) * dpr);
         const sy = Math.round((120 * scale + offsetY) * dpr);
         // Clamp to canvas bounds.
