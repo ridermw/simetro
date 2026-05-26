@@ -38,6 +38,13 @@ const NODE_STROKE_WIDTH = 2;
 const FIT_PADDING = NODE_RADIUS + 20;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 8;
+const LABEL_FONT = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+const LABEL_PADDING_Y = 6;
+/** Maximum on-screen label length. Author-supplied place ids that
+ *  exceed this are truncated with an ellipsis; the full id remains
+ *  available via hover tooltip / inspector. */
+const LABEL_MAX_CHARS = 28;
+const LABEL_ELLIPSIS = "…";
 
 interface Viewport {
   scale: number;
@@ -78,6 +85,9 @@ export class Renderer {
   // World-space bounding box from the last setScene().
   private worldMinX = 0;
   private worldMinY = 0;
+  /** True when the active scene wants labels drawn — used to widen
+   *  the bottom fit padding so labels never clip on auto-fit. */
+  private hasNodeLabels = false;
   private worldMaxX = 0;
   private worldMaxY = 0;
   private hasWorldBounds = false;
@@ -165,6 +175,7 @@ export class Renderer {
     } else {
       this.hasWorldBounds = false;
     }
+    this.hasNodeLabels = scene.show_node_labels === true;
 
     const fit = this.computeFit();
     this.fitViewport = fit;
@@ -198,6 +209,9 @@ export class Renderer {
     this.drawPathsBatched(input.theme);
     this.drawNodes(input.theme, input.scene.nodes);
     this.drawMovers(input.theme, input.movers);
+    if (input.scene.show_node_labels === true) {
+      this.drawNodeLabels(input.theme, input.scene.nodes, input.scene.node_names);
+    }
     if (input.overlay !== undefined) {
       input.overlay(ctx);
     }
@@ -332,8 +346,12 @@ export class Renderer {
       return { scale: 1, offsetX: 0, offsetY: 0 };
     }
 
+    // When labels are visible, add extra bottom padding so the
+    // label text below the bottom row of nodes never clips into the
+    // canvas border. Approximation: 12px font + 6px gap = ~22px.
+    const labelPadding = this.hasNodeLabels ? 22 : 0;
     const availW = cssW - FIT_PADDING * 2;
-    const availH = cssH - FIT_PADDING * 2;
+    const availH = cssH - FIT_PADDING * 2 - labelPadding;
     const rawScale = Math.min(availW / worldW, availH / worldH);
     const scale = Math.max(
       MIN_SCALE,
@@ -341,7 +359,10 @@ export class Renderer {
     );
 
     const offsetX = cssW / 2 - (this.worldMinX + worldW / 2) * scale;
-    const offsetY = cssH / 2 - (this.worldMinY + worldH / 2) * scale;
+    // Shift the geometry slightly upward so the extra label padding
+    // shows at the bottom rather than equally on both sides.
+    const offsetY =
+      cssH / 2 - (this.worldMinY + worldH / 2) * scale - labelPadding / 2;
 
     return { scale, offsetX, offsetY };
   }
@@ -378,6 +399,51 @@ export class Renderer {
       ctx.fill();
     }
   }
+
+  /** Draw the node id label below each named node. Counter-scales the
+   *  font so text stays a consistent on-screen size regardless of
+   *  zoom; the world-space transform is in effect when this is called.
+   *  All label text comes from author-supplied `node_names` and is
+   *  rendered via the Canvas2D text API (fillText) — not via
+   *  innerHTML — preserving the safe-text policy. */
+  private drawNodeLabels(
+    theme: Theme,
+    nodes: NodeView[],
+    nodeNames: Record<number, string>
+  ): void {
+    const ctx = this.ctx;
+    const scale = this.viewport.scale;
+    if (scale === 0) return;
+    // Counter-scale font + offsets so labels look constant on screen.
+    const fontScale = 1 / scale;
+    ctx.save();
+    ctx.font = LABEL_FONT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = foregroundColor(theme);
+    const offsetY = (NODE_RADIUS + LABEL_PADDING_Y);
+    for (const n of nodes) {
+      const raw = nodeNames[n.id];
+      if (raw === undefined || raw === "") continue;
+      const text = truncateLabel(raw);
+      // Translate to the node, then apply font scale so font size
+      // measurement happens at constant pixel size.
+      ctx.save();
+      ctx.translate(n.pos[0], n.pos[1] + offsetY);
+      ctx.scale(fontScale, fontScale);
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+
+/** Truncate label text to a safe on-screen length. Exported so unit
+ *  tests can verify the truncation contract directly without going
+ *  through the renderer. */
+export function truncateLabel(text: string): string {
+  if (text.length <= LABEL_MAX_CHARS) return text;
+  return text.slice(0, LABEL_MAX_CHARS - 1) + LABEL_ELLIPSIS;
 }
 
 function drawShape(

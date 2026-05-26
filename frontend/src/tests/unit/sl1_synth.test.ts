@@ -270,6 +270,24 @@ describe("synthesizeSl1Geometry", () => {
     expect(result.nodes[0]!.color).toBe(0);
   });
 
+  it("sets show_node_labels=true so the renderer draws place names", () => {
+    const payload = emptyPayload({
+      sl1_places: [{ id: "a", role: "source", pos: [0, 0] }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.show_node_labels).toBe(true);
+  });
+
+  it("does not set show_node_labels on pass-through (non-SL1) scenes", () => {
+    const payload = emptyPayload({
+      nodes: [{ id: 1, pos: [10, 20], shape: "circle", color: 2 }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    // Pass-through returns the original payload, so the flag is
+    // unchanged (undefined here).
+    expect(result.show_node_labels).toBeUndefined();
+  });
+
   it("handles large coordinates without truncation or precision loss", () => {
     const payload = emptyPayload({
       sl1_places: [

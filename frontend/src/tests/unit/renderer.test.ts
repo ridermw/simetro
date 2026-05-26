@@ -1,6 +1,6 @@
 // frontend/src/tests/unit/renderer.test.ts
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { Renderer } from "../../renderer/canvas";
+import { Renderer, truncateLabel } from "../../renderer/canvas";
 import {
   DEFAULT_THEME,
   paletteColor,
@@ -13,6 +13,7 @@ import type { StaticPayload } from "../../protocol/messages";
 // jsdom does not implement Canvas2D or Path2D — stub both.
 beforeAll(() => {
   type StubCtx = Partial<CanvasRenderingContext2D>;
+  const fillTextCalls: { text: string; x: number; y: number }[] = [];
   const stub: StubCtx = {
     save: () => {},
     restore: () => {},
@@ -28,6 +29,9 @@ beforeAll(() => {
     stroke: () => {},
     translate: () => {},
     scale: () => {},
+    fillText: (text: string, x: number, y: number) => {
+      fillTextCalls.push({ text, x, y });
+    },
   };
   const proto = HTMLCanvasElement.prototype;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +41,8 @@ beforeAll(() => {
     moveTo(_x: number, _y: number) {}
     lineTo(_x: number, _y: number) {}
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__fillTextCalls = fillTextCalls;
 });
 
 function makeRenderer(): Renderer {
@@ -114,6 +120,135 @@ describe("Renderer", () => {
     // First call rebuilds; second is a no-op (no throw).
     expect(() => r.setScene(staticMsg.payload)).not.toThrow();
     expect(() => r.setScene(staticMsg.payload)).not.toThrow();
+  });
+
+  it("draws node labels in node draw order when show_node_labels=true", () => {
+    const r = makeRenderer();
+    const scene: StaticPayload = {
+      name: "labeled",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [10, 20], shape: "circle", color: 2 },
+        { id: 2, pos: [30, 40], shape: "square", color: 1 },
+      ],
+      paths: [],
+      node_names: { 1: "place-alpha", 2: "place-beta" },
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    // Exact order assertion — labels must follow node draw order.
+    expect(calls.map((c) => c.text)).toEqual(["place-alpha", "place-beta"]);
+  });
+
+  it("does NOT draw node labels by default (legacy scenes have no labels)", () => {
+    const r = makeRenderer();
+    const scene: StaticPayload = {
+      name: "unlabeled",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [{ id: 1, pos: [10, 20], shape: "circle", color: 2 }],
+      paths: [],
+      node_names: { 1: "should-not-appear" },
+      path_names: {},
+      mover_names: {},
+      // show_node_labels intentionally omitted (default behavior)
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls.map((c) => c.text)).not.toContain("should-not-appear");
+  });
+
+  it("skips labels for nodes with no name entry, draws for the rest", () => {
+    const r = makeRenderer();
+    const scene: StaticPayload = {
+      name: "mixed",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [10, 20], shape: "circle", color: 2 },
+        { id: 2, pos: [30, 40], shape: "square", color: 1 },
+        { id: 3, pos: [50, 60], shape: "diamond", color: 2 },
+      ],
+      paths: [],
+      node_names: { 1: "named-1", 3: "named-3" }, // node 2 has no name
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    // Exact list — only named-1 and named-3 in node order.
+    expect(calls.map((c) => c.text)).toEqual(["named-1", "named-3"]);
+  });
+
+  it("auto-fit reserves extra bottom padding when show_node_labels=true (labels do not clip)", () => {
+    const r = makeRenderer();
+    const sceneWithLabels: StaticPayload = {
+      name: "labeled",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [-200, -200], shape: "circle", color: 2 },
+        { id: 2, pos: [200, 200], shape: "square", color: 1 },
+      ],
+      paths: [],
+      node_names: { 1: "a", 2: "b" },
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    const sceneWithoutLabels: StaticPayload = {
+      ...sceneWithLabels,
+      show_node_labels: false,
+    };
+    r.warm(themeFromStatic(sceneWithLabels));
+    r.setScene(sceneWithoutLabels);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fitNoLabels = (r as any).fitViewport;
+    r.setScene(sceneWithLabels);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fitWithLabels = (r as any).fitViewport;
+    // Labeled scene must fit at smaller-or-equal scale to make room
+    // for label text below the bottom row of nodes.
+    expect(fitWithLabels.scale).toBeLessThanOrEqual(fitNoLabels.scale);
+  });
+
+  it("truncates very long node names to avoid label overflow", () => {
+    const r = makeRenderer();
+    const longName = "a".repeat(200);
+    const scene: StaticPayload = {
+      name: "long",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [{ id: 1, pos: [10, 20], shape: "circle", color: 2 }],
+      paths: [],
+      node_names: { 1: longName },
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { text: string; x: number; y: number }[] = (globalThis as any).__fillTextCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls).toHaveLength(1);
+    const drawn = calls[0]!.text;
+    expect(drawn.length).toBeLessThan(longName.length);
+    expect(drawn.endsWith("…")).toBe(true);
   });
 });
 
@@ -318,5 +453,31 @@ describe("theme", () => {
     const t = themeFromStatic(staticMsg.payload);
     expect(t.palette).toBe(staticMsg.payload.palette);
     expect(t.background_index).toBe(staticMsg.payload.background_index);
+  });
+});
+
+describe("truncateLabel", () => {
+  it("returns short strings unchanged", () => {
+    expect(truncateLabel("short")).toBe("short");
+    expect(truncateLabel("")).toBe("");
+  });
+
+  it("truncates strings longer than the limit and appends ellipsis", () => {
+    const long = "x".repeat(100);
+    const result = truncateLabel(long);
+    expect(result.length).toBeLessThan(long.length);
+    expect(result.endsWith("…")).toBe(true);
+  });
+
+  it("is idempotent (truncating already-truncated returns same result)", () => {
+    const once = truncateLabel("x".repeat(100));
+    const twice = truncateLabel(once);
+    expect(twice).toBe(once);
+  });
+
+  it("preserves a string at exactly the limit length", () => {
+    // LABEL_MAX_CHARS is 28; a 28-char string should pass through.
+    const exact = "x".repeat(28);
+    expect(truncateLabel(exact)).toBe(exact);
   });
 });
