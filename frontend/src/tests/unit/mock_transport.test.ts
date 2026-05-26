@@ -57,6 +57,22 @@ const GPU_LAUNCH_WEEK_STATIC_PAYLOAD: StaticPayload = {
       source: { kind: "dashboard_freshness", dashboard: "exec-report" },
     },
   ],
+  sl1_milestones: [
+    {
+      id: "dashboard-storm",
+      label: "Dashboard storm",
+      trigger_kind: "pressure_activated",
+      trigger: { type: "pressure_activated", pressure: "dashboard-storm" },
+      camera_focus: ["gpu-platform"],
+      highlight: "exec-dashboard",
+    },
+    {
+      id: "gpu-storm",
+      label: "GPU storm",
+      trigger_kind: "pressure_activated",
+      trigger: { type: "pressure_activated", pressure: "gpu-storm" },
+    },
+  ],
 };
 
 afterEach(() => {
@@ -283,6 +299,35 @@ describe("MockTransport", () => {
     expect(secondSnapshot.payload.sl1_game_phase).toBe("winning");
   });
 
+  it("emits metadata-driven SL1 milestone events for external SL1 scenes", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ schema_version: SCHEMA_VERSION, payload: GPU_LAUNCH_WEEK_STATIC_PAYLOAD }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const t = new MockTransport({ sceneId: "gpu-launch-week" });
+    const received: SimMessage[] = [];
+    t.connect((m) => received.push(m));
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(500);
+    t.disconnect();
+
+    const milestoneIds = new Set(GPU_LAUNCH_WEEK_STATIC_PAYLOAD.sl1_milestones?.map((milestone) => milestone.id));
+    const milestoneEvent = received
+      .filter((m): m is Extract<SimMessage, { kind: "events" }> => m.kind === "events")
+      .flatMap((m) => m.payload)
+      .find((event) => event.kind === "sl1_milestone_fired");
+    expect(milestoneEvent).toBeDefined();
+    expect(milestoneIds.has(milestoneEvent?.kind === "sl1_milestone_fired" ? milestoneEvent.milestone_id : "")).toBe(
+      true
+    );
+  });
+
   it("external SL1 scene runtime phase stays consistent with objective state when sl1Mode is also true", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockResolvedValue(
@@ -311,6 +356,22 @@ describe("MockTransport", () => {
 });
 
 describe("payloadHasNativeSl1", () => {
+  it("returns true for milestones-only payloads", () => {
+    expect(
+      payloadHasNativeSl1({
+        ...EXTERNAL_STATIC_PAYLOAD,
+        sl1_milestones: [
+          {
+            id: "dashboard-storm",
+            label: "Dashboard storm",
+            trigger_kind: "pressure_activated",
+            trigger: { type: "pressure_activated", pressure: "dashboard-storm" },
+          },
+        ],
+      })
+    ).toBe(true);
+  });
+
   it("returns true for objectives-only payloads", () => {
     expect(
       payloadHasNativeSl1({

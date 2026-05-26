@@ -74,6 +74,15 @@ export interface Sl1SceneMeta {
   objectives: Sl1ObjectiveView[];
   failures: Sl1FailureConditionView[];
   victories: Sl1VictoryConditionView[];
+  milestones: Sl1MilestoneView[];
+}
+
+export interface Sl1MilestoneFireEvent {
+  milestone_id: string;
+  label: string;
+  trigger_kind: string;
+  camera_focus?: string[];
+  highlight?: string;
 }
 
 export interface Sl1MockRuntime {
@@ -95,13 +104,35 @@ export function payloadHasNativeSl1(payload: StaticPayload): boolean {
     (payload.sl1_observability_metrics?.length ?? 0) > 0 ||
     (payload.sl1_objectives?.length ?? 0) > 0 ||
     (payload.sl1_failure_conditions?.length ?? 0) > 0 ||
-    (payload.sl1_victory_conditions?.length ?? 0) > 0
+    (payload.sl1_victory_conditions?.length ?? 0) > 0 ||
+    (payload.sl1_milestones?.length ?? 0) > 0
   );
 }
 
 export function safeTick(t: number): number {
   if (!Number.isFinite(t)) return 0;
   return ((t % 100000) + 100000) % 100000;
+}
+
+const SL1_MOCK_MILESTONE_BASE_TICK = 10;
+const SL1_MOCK_MILESTONE_INTERVAL_TICKS = 30;
+
+export function computeSl1MockMilestoneEvents(tick: number, scene: Sl1SceneMeta): Sl1MilestoneFireEvent[] {
+  if (!Number.isFinite(tick)) return [];
+
+  return scene.milestones.flatMap((milestone, index) => {
+    const scheduledTick = SL1_MOCK_MILESTONE_BASE_TICK + index * SL1_MOCK_MILESTONE_INTERVAL_TICKS;
+    if (tick !== scheduledTick) return [];
+
+    const event: Sl1MilestoneFireEvent = {
+      milestone_id: milestone.id,
+      label: milestone.label,
+      trigger_kind: milestone.trigger_kind,
+    };
+    if (milestone.camera_focus !== undefined) event.camera_focus = milestone.camera_focus;
+    if (milestone.highlight !== undefined) event.highlight = milestone.highlight;
+    return [event];
+  });
 }
 
 const SL1_MOCK_BREACH_START_TICK = 60;
@@ -493,6 +524,7 @@ export class MockTransport implements Transport {
             objectives: payload.sl1_objectives ?? [],
             failures: payload.sl1_failure_conditions ?? [],
             victories: payload.sl1_victory_conditions ?? [],
+            milestones: payload.sl1_milestones ?? [],
           }
         : null;
       const shouldApplyLegacySl1Decoration = this.sl1Mode && !hasSl1Scene;
@@ -618,6 +650,21 @@ export class MockTransport implements Transport {
           from_node: departedPath.fromNode,
           path: m.pathId,
         });
+      }
+    }
+
+    if (this.sl1Scene !== null) {
+      for (const milestone of computeSl1MockMilestoneEvents(this.tick, this.sl1Scene)) {
+        const event: SimEvent = {
+          kind: "sl1_milestone_fired",
+          milestone_id: milestone.milestone_id,
+          label: milestone.label,
+          trigger_kind: milestone.trigger_kind,
+          tick: this.tick,
+        };
+        if (milestone.camera_focus !== undefined) event.camera_focus = milestone.camera_focus;
+        if (milestone.highlight !== undefined) event.highlight = milestone.highlight;
+        events.push(event);
       }
     }
 

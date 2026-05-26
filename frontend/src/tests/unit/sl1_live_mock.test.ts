@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeSl1MockRuntime, safeTick, type Sl1SceneMeta } from "../../transport/mock";
+import {
+  computeSl1MockMilestoneEvents,
+  computeSl1MockRuntime,
+  safeTick,
+  type Sl1SceneMeta,
+} from "../../transport/mock";
 
 const SCENE: Sl1SceneMeta = {
   metrics: [
@@ -44,6 +49,28 @@ const SCENE: Sl1SceneMeta = {
       params: { kind: "survive_until", at_tick: 2800 },
     },
   ],
+  milestones: [
+    {
+      id: "dashboard-storm",
+      label: "Dashboard storm <verbatim>",
+      trigger_kind: "pressure_activated",
+      trigger: { type: "pressure_activated", pressure: "dashboard-storm" },
+      camera_focus: ["gpu-platform", "exec-dashboard"],
+      highlight: "exec-dashboard",
+    },
+    {
+      id: "gpu-storm",
+      label: "GPU storm",
+      trigger_kind: "pressure_activated",
+      trigger: { type: "pressure_activated", pressure: "gpu-storm" },
+    },
+    {
+      id: "exec-dashboard-went-stale",
+      label: "Executive dashboard went stale",
+      trigger_kind: "dashboard_state",
+      trigger: { type: "dashboard_state", dashboard: "exec-dashboard", state: "stale" },
+    },
+  ],
 };
 
 function stateForMetric(tick: number, metricId: string) {
@@ -54,7 +81,7 @@ function stateForMetric(tick: number, metricId: string) {
 
 describe("computeSl1MockRuntime", () => {
   it("returns empty runtime arrays for an empty SL1 scene", () => {
-    const runtime = computeSl1MockRuntime(0, { metrics: [], objectives: [], failures: [], victories: [] });
+    const runtime = computeSl1MockRuntime(0, { metrics: [], objectives: [], failures: [], victories: [], milestones: [] });
     expect(runtime).toEqual({
       metric_states: [],
       objective_states: [],
@@ -186,5 +213,66 @@ describe("computeSl1MockRuntime", () => {
         expect(Number.isFinite(state.value)).toBe(true);
       }
     }
+  });
+});
+
+describe("computeSl1MockMilestoneEvents", () => {
+  it("returns an empty array before the first milestone tick", () => {
+    expect(computeSl1MockMilestoneEvents(0, SCENE)).toEqual([]);
+  });
+
+  it("returns one event when tick matches the first milestone schedule", () => {
+    expect(computeSl1MockMilestoneEvents(10, SCENE)).toEqual([
+      {
+        milestone_id: "dashboard-storm",
+        label: "Dashboard storm <verbatim>",
+        trigger_kind: "pressure_activated",
+        camera_focus: ["gpu-platform", "exec-dashboard"],
+        highlight: "exec-dashboard",
+      },
+    ]);
+  });
+
+  it("returns one event at the scheduled tick for each milestone in turn", () => {
+    expect(computeSl1MockMilestoneEvents(10, SCENE).map((event) => event.milestone_id)).toEqual([
+      "dashboard-storm",
+    ]);
+    expect(computeSl1MockMilestoneEvents(40, SCENE).map((event) => event.milestone_id)).toEqual([
+      "gpu-storm",
+    ]);
+    expect(computeSl1MockMilestoneEvents(70, SCENE).map((event) => event.milestone_id)).toEqual([
+      "exec-dashboard-went-stale",
+    ]);
+  });
+
+  it("returns empty arrays between milestone schedule boundaries", () => {
+    for (const tick of [9, 11, 39, 41, 69, 71]) {
+      expect(computeSl1MockMilestoneEvents(tick, SCENE)).toEqual([]);
+    }
+  });
+
+  it("returns an empty array for a scene without milestones", () => {
+    expect(
+      computeSl1MockMilestoneEvents(10, { metrics: [], objectives: [], failures: [], victories: [], milestones: [] })
+    ).toEqual([]);
+  });
+
+  it("is deterministic for the same scene and tick", () => {
+    expect(computeSl1MockMilestoneEvents(40, SCENE)).toEqual(computeSl1MockMilestoneEvents(40, SCENE));
+  });
+
+  it("returns empty arrays for non-finite ticks", () => {
+    expect(computeSl1MockMilestoneEvents(Number.NaN, SCENE)).toEqual([]);
+    expect(computeSl1MockMilestoneEvents(Number.POSITIVE_INFINITY, SCENE)).toEqual([]);
+  });
+
+  it("uses milestone metadata verbatim without synthesis", () => {
+    expect(computeSl1MockMilestoneEvents(10, SCENE)[0]).toEqual({
+      milestone_id: "dashboard-storm",
+      label: "Dashboard storm <verbatim>",
+      trigger_kind: "pressure_activated",
+      camera_focus: ["gpu-platform", "exec-dashboard"],
+      highlight: "exec-dashboard",
+    });
   });
 });
