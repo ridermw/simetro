@@ -148,8 +148,9 @@ describe("scene catalog", () => {
     expect(new Set(pack.map((scene) => scene.id)).size).toBe(40);
     expect(pack.filter((scene) => scene.world_kind === "sl1_scenario")).toHaveLength(20);
     expect(pack.filter((scene) => scene.world_kind === "transit_loop")).toHaveLength(20);
-    expect(pack.filter((scene) => scene.status === "draft")).toHaveLength(20);
-    expect(pack.filter((scene) => scene.status === "ready")).toHaveLength(20);
+    // All scenes promoted to ready for gallery visibility.
+    expect(pack.filter((scene) => scene.status === "draft")).toHaveLength(0);
+    expect(pack.filter((scene) => scene.status === "ready")).toHaveLength(40);
 
     for (const difficulty of ["intro", "easy", "medium", "hard"] as const) {
       expect(pack.filter((scene) => scene.difficulty === difficulty)).toHaveLength(10);
