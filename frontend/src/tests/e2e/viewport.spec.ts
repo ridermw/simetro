@@ -61,7 +61,7 @@ async function canvasCentre(
 
 test.describe("renderer viewport", () => {
   test("scene is visibly drawn on canvas after load (auto-fit)", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     // Wait for MockTransport's first snapshot + rAF frame.
     await page.waitForTimeout(400);
 
@@ -72,7 +72,7 @@ test.describe("renderer viewport", () => {
     // auto-fit produces a scale above 1. Regardless, the viewport must be set.
     expect(vp!.scale).toBeGreaterThan(0);
 
-    // Confirm node id=1 (world 200,200) is rendered at a non-background pixel.
+    // Confirm node id=1 (world 420,120 in demo-paths) is rendered at a non-background pixel.
     const isVisible = await page.evaluate(
       ({ scale, offsetX, offsetY }) => {
         const c = document.getElementById("scene") as HTMLCanvasElement | null;
@@ -80,8 +80,9 @@ test.describe("renderer viewport", () => {
         const ctx = c.getContext("2d");
         if (ctx === null) return false;
         const dpr = window.devicePixelRatio || 1;
-        const sx = Math.round((200 * scale + offsetX) * dpr);
-        const sy = Math.round((200 * scale + offsetY) * dpr);
+        // Node id=1 in demo-paths is at world position (420, 120).
+        const sx = Math.round((420 * scale + offsetX) * dpr);
+        const sy = Math.round((120 * scale + offsetY) * dpr);
         // Clamp to canvas bounds.
         if (sx < 0 || sy < 0 || sx >= c.width || sy >= c.height) return false;
         const px = ctx.getImageData(sx, sy, 1, 1).data;
@@ -94,7 +95,7 @@ test.describe("renderer viewport", () => {
   });
 
   test("wheel zoom changes viewport scale and canvas pixels", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     await page.waitForTimeout(400);
 
     const vpBefore = await readViewport(page);
@@ -119,7 +120,7 @@ test.describe("renderer viewport", () => {
   });
 
   test("drag pan shifts viewport offsets and canvas pixels", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     await page.waitForTimeout(400);
 
     const vpBefore = await readViewport(page);
@@ -146,7 +147,7 @@ test.describe("renderer viewport", () => {
   });
 
   test("double-click reset returns viewport to the scene fit", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     await page.waitForTimeout(400);
 
     // Capture the auto-fit viewport.

@@ -77,13 +77,13 @@ test.describe("simetro smoke", () => {
       let sx: number, sy: number;
       if (r?.viewportForTest !== undefined) {
         const vp: { scale: number; offsetX: number; offsetY: number } = r.viewportForTest;
-        // Node id=1 is at world position (200, 200) in the demo scene.
-        sx = Math.round((200 * vp.scale + vp.offsetX) * dpr);
-        sy = Math.round((200 * vp.scale + vp.offsetY) * dpr);
+        // Node id=1 in demo-paths is at world position (420, 120).
+        sx = Math.round((420 * vp.scale + vp.offsetX) * dpr);
+        sy = Math.round((120 * vp.scale + vp.offsetY) * dpr);
       } else {
-        // Fallback if renderer not exposed: sample original demo position.
-        sx = Math.round(200 * dpr);
-        sy = Math.round(200 * dpr);
+        // Fallback if renderer not exposed.
+        sx = Math.round(420 * dpr);
+        sy = Math.round(120 * dpr);
       }
       const px = ctx.getImageData(sx, sy, 1, 1).data;
       // Background color is #0e1116 (14, 17, 22).
