@@ -34,8 +34,9 @@ import { fallbackArrivalTone, toneForShape } from "./audio/mappings";
 import { InspectorPanel } from "./inspector/panel";
 import { HoverTooltip } from "./inspector/hover";
 import { ControlsBar, type ControlIntent } from "./ui/controls";
-import { SceneBrowser, type SceneSelectIntent } from "./ui/scene_browser";
+import { GalleryView } from "./ui/gallery_view";
 import { FaultOverlay, HeartbeatBadge, PerfOverlay, WarningStrip } from "./ui/overlays";
+import { SceneSwitcher } from "./ui/scene_switcher";
 import {
   applySl1HudStatic,
   createSl1Hud,
@@ -60,7 +61,8 @@ interface AppState {
   inspector: InspectorPanel | null;
   hover: HoverTooltip | null;
   controls: ControlsBar | null;
-  sceneBrowser: SceneBrowser | null;
+  gallery: GalleryView | null;
+  switcher: SceneSwitcher | null;
   selectedSceneId: string | null;
   fault: FaultOverlay | null;
   warnings: WarningStrip | null;
@@ -75,6 +77,10 @@ interface AppState {
   /** Scratch buffer reused every frame for interpolated movers. */
   moverScratch: MoverState[];
   rafHandle: number | null;
+  /** Current view: "gallery" (landing) or "sim" (running scene). */
+  currentView: "gallery" | "sim";
+  /** Active transport — null in gallery view, created on scene entry. */
+  transport: Transport | null;
 }
 
 const TARGET_SNAPSHOT_HZ = 20; // wire-protocol contract — snapshots at 20Hz
@@ -89,8 +95,9 @@ function createAppState(): AppState {
     inspector: null,
     hover: null,
     controls: null,
-    sceneBrowser: null,
-    selectedSceneId: SCENE_CATALOG[0]?.id ?? null,
+    gallery: null,
+    switcher: null,
+    selectedSceneId: null,
     fault: null,
     warnings: null,
     heartbeat: null,
@@ -102,7 +109,140 @@ function createAppState(): AppState {
     snapshotPeriodMs: 1000 / TARGET_SNAPSHOT_HZ,
     moverScratch: [],
     rafHandle: null,
+    currentView: "gallery",
+    transport: null,
   };
+}
+
+class ViewRouter {
+  private canvas: HTMLCanvasElement;
+  private state: AppState;
+  private renderer: Renderer;
+  private transitioning = false;
+  /** Monotonic counter — each transition increments. Async callbacks
+   *  capture the token at start and bail if a newer transition began. */
+  private transitionToken = 0;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    _appRoot: HTMLElement,
+    state: AppState,
+    renderer: Renderer
+  ) {
+    this.canvas = canvas;
+    this.state = state;
+    this.renderer = renderer;
+  }
+
+  /** Switch to gallery view — disconnect transport, show gallery. */
+  showGallery(): void {
+    this.transitionToken += 1;
+    if (this.state.currentView === "gallery") return;
+    this.state.currentView = "gallery";
+
+    if (this.state.rafHandle !== null) {
+      cancelAnimationFrame(this.state.rafHandle);
+      this.state.rafHandle = null;
+    }
+
+    if (this.state.transport !== null) {
+      this.state.transport.disconnect();
+      this.state.transport = null;
+    }
+
+    this.canvas.style.display = "none";
+    this.state.controls?.hide();
+    this.state.switcher?.hide();
+    this.state.inspector?.hide();
+    this.state.fault?.hide();
+    this.state.gallery?.show();
+
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("scene");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
+
+  /** Switch to sim view — create transport for scene, show canvas. */
+  showSim(sceneId: string): void {
+    if (this.transitioning) return;
+    this.transitioning = true;
+    this.transitionToken += 1;
+    const myToken = this.transitionToken;
+
+    try {
+      const previousSceneId = this.state.selectedSceneId;
+      this.state.currentView = "sim";
+      this.state.selectedSceneId = sceneId;
+
+      this.state.gallery?.hide();
+      this.state.gallery?.releaseMemory();
+
+      this.canvas.style.display = "";
+      this.state.controls?.show();
+      this.state.inspector?.show();
+      this.state.switcher?.setSelected(sceneId);
+      this.state.switcher?.show();
+
+      resetLocalSceneState(this.state);
+      this.state.scene = null;
+      this.state.lastSnapshotAt = 0;
+      this.state.paused = false;
+      this.state.controls?.setPaused(false);
+
+      if (this.state.transport !== null) {
+        this.state.transport.disconnect();
+        this.state.transport = null;
+      }
+
+      const transport = createTransport(sceneId);
+      this.state.transport = transport;
+      transport.connect((msg) => handleMessage(msg, this.state, this.renderer));
+
+      if (isTauri() && previousSceneId !== sceneId) {
+        void routeSceneToTauri(sceneId).then((result) => {
+          // Guard against stale callback — if a newer transition has
+          // started, do not mutate state on behalf of this stale one.
+          if (myToken !== this.transitionToken) return;
+          if (!result.ok) {
+            this.state.selectedSceneId = previousSceneId;
+            this.state.switcher?.setSelected(previousSceneId ?? "");
+            this.state.fault?.show({
+              kind: "load_error",
+              message: `Failed to switch scene: ${result.error}`,
+              line: null,
+              col: null,
+            });
+            if (previousSceneId === null) this.showGallery();
+          }
+        });
+      }
+
+      if (this.state.rafHandle === null) {
+        this.state.rafHandle = requestAnimationFrame(() => frame(this.state, this.renderer));
+      }
+
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("scene", sceneId);
+        window.history.replaceState(null, "", url.toString());
+      }
+    } catch (error) {
+      console.error("simetro: failed to enter sim view", error);
+      this.state.fault?.show({
+        kind: "load_error",
+        message: `Failed to load scene: ${errorMessage(error)}`,
+        line: null,
+        col: null,
+      });
+      this.showGallery();
+    } finally {
+      setTimeout(() => {
+        this.transitioning = false;
+      }, 300);
+    }
+  }
 }
 
 function findArrivalNode(scene: StaticPayload, nodeId: number): NodeView | undefined {
@@ -143,48 +283,16 @@ function handleControl(intent: ControlIntent, state: AppState): void {
   }
 }
 
-function handleSceneSelect(intent: SceneSelectIntent, state: AppState): void {
-  const scene = findSceneById(intent.scene_id);
-  if (scene === undefined) {
-    state.fault?.show({
-      kind: "load_error",
-      message: `Unknown scene_id: ${intent.scene_id}`,
-      line: null,
-      col: null,
-    });
-    return;
-  }
-
-  const previousSceneId = state.selectedSceneId;
-  state.sceneBrowser?.setSelected(intent.scene_id);
-  state.selectedSceneId = intent.scene_id;
-
-  if (previousSceneId === intent.scene_id) return;
-
-  if (isTauri()) {
-    void routeSceneToTauri(intent.scene_id, previousSceneId, state);
-  } else {
-    console.info(`simetro: scene ${scene.id} selected (mock — no backend switch)`);
-  }
-}
 
 async function routeSceneToTauri(
-  scene_id: string,
-  previousSceneId: string | null,
-  state: AppState
-): Promise<void> {
+  scene_id: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invokeSetScene(invoke, scene_id);
+    return { ok: true };
   } catch (error) {
-    state.selectedSceneId = previousSceneId;
-    state.sceneBrowser?.setSelected(previousSceneId);
-    state.fault?.show({
-      kind: "load_error",
-      message: `Failed to switch scene: ${errorMessage(error)}`,
-      line: null,
-      col: null,
-    });
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -344,7 +452,7 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function createTransport(): Transport {
+function createTransport(sceneId: string | null): Transport {
   if (isTauri()) {
     return new TauriTransport();
   }
@@ -356,7 +464,16 @@ function createTransport(): Transport {
     typeof window !== "undefined" && window.location !== undefined
       ? window.location.search
       : undefined;
-  return new MockTransport({ sl1Mode: sl1ModeFromLocation(search) });
+  return new MockTransport({
+    sl1Mode: sl1ModeFromLocation(search),
+    ...(sceneId !== null ? { sceneId } : {}),
+  });
+}
+
+function sceneFromLocation(): string | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("scene");
 }
 
 function resize(canvas: HTMLCanvasElement): void {
@@ -384,35 +501,50 @@ function boot(): void {
   const state = createAppState();
 
   const appRoot = document.getElementById("app");
-  if (appRoot !== null) {
-    state.inspector = new InspectorPanel(appRoot);
-    state.hover = new HoverTooltip(appRoot);
-    state.hover.attach(canvas, (x, y) => renderer.screenToWorld(x, y));
-    state.fault = new FaultOverlay(appRoot);
-    state.warnings = new WarningStrip(appRoot);
-    state.heartbeat = new HeartbeatBadge(appRoot);
-    state.perf = new PerfOverlay(appRoot);
-    state.sl1 = createSl1Hud(appRoot);
-    state.controls = new ControlsBar(appRoot, (intent: ControlIntent) => {
-      handleControl(intent, state);
-    });
-    state.sceneBrowser = new SceneBrowser(
-      appRoot,
-      SCENE_CATALOG,
-      (intent: SceneSelectIntent) => handleSceneSelect(intent, state),
-      state.selectedSceneId
-    );
+  if (appRoot === null) {
+    console.error("app root missing");
+    return;
+  }
 
-    // ?perf=1 turns on the perf overlay; 'P' key toggles.
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("perf") === "1") state.perf.setEnabled(true);
-      window.addEventListener("keydown", (ev) => {
-        if (ev.key === "p" || ev.key === "P") {
-          if (state.perf !== null) state.perf.toggle();
-        }
-      });
-    }
+  state.inspector = new InspectorPanel(appRoot);
+  state.hover = new HoverTooltip(appRoot);
+  state.hover.attach(canvas, (x, y) => renderer.screenToWorld(x, y));
+  state.fault = new FaultOverlay(appRoot);
+  state.warnings = new WarningStrip(appRoot);
+  state.heartbeat = new HeartbeatBadge(appRoot);
+  state.perf = new PerfOverlay(appRoot);
+  state.sl1 = createSl1Hud(appRoot);
+  state.controls = new ControlsBar(appRoot, (intent: ControlIntent) => {
+    handleControl(intent, state);
+  });
+
+  let router: ViewRouter;
+  const readyCatalog = SCENE_CATALOG.filter((scene) => scene.status === "ready");
+  state.gallery = new GalleryView(appRoot, readyCatalog, (intent) => {
+    router.showSim(intent.scene_id);
+  });
+  state.switcher = new SceneSwitcher(appRoot, readyCatalog, {
+    onPrev: () => {
+      const id = state.switcher?.getAdjacentId("prev");
+      if (id !== null && id !== undefined) router.showSim(id);
+    },
+    onNext: () => {
+      const id = state.switcher?.getAdjacentId("next");
+      if (id !== null && id !== undefined) router.showSim(id);
+    },
+    onGallery: () => router.showGallery(),
+  });
+  router = new ViewRouter(canvas, appRoot, state, renderer);
+
+  // ?perf=1 turns on the perf overlay; 'P' key toggles.
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("perf") === "1") state.perf.setEnabled(true);
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key === "p" || ev.key === "P") {
+        if (state.perf !== null) state.perf.toggle();
+      }
+    });
   }
 
   window.addEventListener("resize", () => {
@@ -427,7 +559,7 @@ function boot(): void {
         cancelAnimationFrame(state.rafHandle);
         state.rafHandle = null;
       }
-    } else {
+    } else if (state.currentView === "sim") {
       state.snapshots.markStale();
       state.lastSnapshotAt = nowMs();
       if (state.rafHandle === null) {
@@ -436,16 +568,31 @@ function boot(): void {
     }
   });
 
-  const transport: Transport = createTransport();
-  transport.connect((msg) => handleMessage(msg, state, renderer));
-
   // Tone.js / WebAudio cannot start without a user gesture; wire
   // the consent listener to the canvas + body so the first click or
   // key press initializes audio.
   state.audio.attachConsent(canvas);
   state.audio.attachConsent(document.body);
 
-  state.rafHandle = requestAnimationFrame(() => frame(state, renderer));
+  const requestedScene = sceneFromLocation();
+  const requestedSceneEntry =
+    requestedScene !== null ? findSceneById(requestedScene) : undefined;
+  if (requestedScene !== null && requestedSceneEntry === undefined) {
+    console.error(
+      `simetro: unknown scene "${requestedScene}" in URL param, ignoring`
+    );
+  }
+
+  if (requestedSceneEntry !== undefined && requestedScene !== null) {
+    router.showSim(requestedScene);
+  } else {
+    canvas.style.display = "none";
+    state.controls?.hide();
+    state.switcher?.hide();
+    state.inspector?.hide();
+    state.fault?.hide();
+    state.gallery?.show();
+  }
 }
 
 if (typeof document !== "undefined") {

@@ -47,7 +47,11 @@ export class InspectorPanel {
     this.handles = buildDom(parent);
   }
 
-  show(report: AgentReport): void {
+  show(): void;
+  show(report: AgentReport): void;
+  show(report?: AgentReport): void {
+    this.handles.root.style.display = "block";
+    if (report === undefined) return;
     this.recent.push(report);
     if (this.recent.length > TIMELINE_CAP) this.recent.shift();
     this.render();
@@ -66,6 +70,10 @@ export class InspectorPanel {
 
   setVisible(visible: boolean): void {
     this.handles.root.style.display = visible ? "block" : "none";
+  }
+
+  hide(): void {
+    this.handles.root.style.display = "none";
   }
 
   /** Test-only accessor; do not rely on in production code. */

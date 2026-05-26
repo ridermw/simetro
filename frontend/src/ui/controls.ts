@@ -48,6 +48,14 @@ export class ControlsBar {
     this.refresh();
   }
 
+  show(): void {
+    this.root.style.display = "flex";
+  }
+
+  hide(): void {
+    this.root.style.display = "none";
+  }
+
   __testRoot(): HTMLElement {
     return this.root;
   }

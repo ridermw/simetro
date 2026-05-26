@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("simetro animation", () => {
   test("movers change position over time", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     // Wait for the first snapshot to render (MockTransport emits at t=0
     // then every 50ms; the rAF loop draws on the next frame).
     await page.waitForTimeout(300);
@@ -26,7 +26,7 @@ test.describe("simetro animation", () => {
   });
 
   test("heartbeat badge stays green (receiving snapshots)", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     await page.waitForTimeout(500);
     const hb = page.locator("#simetro-heartbeat");
     await expect(hb).toBeVisible();

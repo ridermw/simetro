@@ -6,7 +6,7 @@
   "description": "simetro frontend — Vite + TypeScript + Canvas2D + Tone.js. Per PLAN §3.1 / §4.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run emit-static && tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "emit-static": "cd .. && cargo run -q -p simetro-headless -- emit-static --scenes-dir games --output-dir frontend/public/static-payloads"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

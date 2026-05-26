@@ -318,7 +318,7 @@ export const SCENE_CATALOG = [
       "Four SL1 places form a wide pipeline silhouette: source telemetry upper-left, central gpu-platform cluster, kusto dashboard upper-right, incident-room operator overlay below.",
       "Place roles (source / compute_cluster / dashboard / operator) act as the SL1 node language and will drive future render hints.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   // ── Complex scenario pack (40 scenes) ──────────────────────────────────────
   defineScene({
@@ -338,7 +338,7 @@ export const SCENE_CATALOG = [
       "Dark background with amber and blue accent paths marking active taxi routes.",
       "Node shapes distinguish gate types from runway hold positions.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "archive-index-table",
@@ -395,7 +395,7 @@ export const SCENE_CATALOG = [
       "Warm amber and rose accent paths on a dark background highlight active batch routing.",
       "Circle and square nodes distinguish ingredient stores from process stations.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "bioreactor-balance",
@@ -433,7 +433,7 @@ export const SCENE_CATALOG = [
       "Cool blue and violet accent paths on a dark background mark wafer routing lanes.",
       "Hexagon and diamond shapes distinguish process chambers from inspection and analytics nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "circuit-garden",
@@ -490,7 +490,7 @@ export const SCENE_CATALOG = [
       "Soft blue and coral accent paths on a dark background mark patient routing through care stages.",
       "Circle nodes mark triage points; diamond nodes mark discharge coordination stages.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "crystal-growth-rig",
@@ -528,7 +528,7 @@ export const SCENE_CATALOG = [
       "Cool blue and red accent paths on a dark background contrast active cooling with heat load.",
       "Square nodes mark racks; hexagon nodes mark chiller plants; triangle nodes mark distribution points.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "deep-sea-habitat-grid",
@@ -623,7 +623,7 @@ export const SCENE_CATALOG = [
       "Warm amber and green accent paths on a dark background mark donation intake and dispatch routes.",
       "Triangle intake nodes and hexagon cold-storage nodes stand out against square packing station nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "forge-heat-map",
@@ -661,7 +661,7 @@ export const SCENE_CATALOG = [
       "Electric blue and gold accent paths on a dark background mark active laser and ignition routes.",
       "Diamond nodes mark alignment checkpoints; hexagon nodes mark the ignition chamber.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "greenhouse-water-watch",
@@ -680,7 +680,7 @@ export const SCENE_CATALOG = [
       "Leaf-green and sky-blue accent paths on a dark background mark active irrigation and sensor routes.",
       "Circle sensor nodes and square pump nodes contrast with hexagon grow-bed nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "hospital-bed-command",
@@ -699,7 +699,7 @@ export const SCENE_CATALOG = [
       "Calm blue and amber accent paths on a dark background distinguish admission flows from discharge planning.",
       "Hexagon ward nodes and triangle discharge nodes stand out against circle admission and transfer nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "kitchen-prep-board",
@@ -737,7 +737,7 @@ export const SCENE_CATALOG = [
       "Warm amber and teal accent paths on a dark background mark the book-return and shelving flows.",
       "Circle return nodes and square shelf nodes contrast with diamond report publication nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "microgrid-starter",
@@ -756,7 +756,7 @@ export const SCENE_CATALOG = [
       "Yellow and blue accent paths on a dark background mark generation and load distribution routes.",
       "Diamond nodes mark inverter stages; hexagon nodes mark battery banks; circle nodes mark load endpoints.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "museum-conservation-bench",
@@ -794,7 +794,7 @@ export const SCENE_CATALOG = [
       "Deep indigo and gold accent paths on a dark background mark telescope pointing and data archiving routes.",
       "Circle mount nodes and hexagon archive nodes contrast with square CCD and diamond reduction nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "pandemic-supply-web",
@@ -813,7 +813,7 @@ export const SCENE_CATALOG = [
       "Clinical blue and amber accent paths on a dark background mark supply flow and cold-chain routing.",
       "Square manufacturing nodes and triangle cold-chain nodes contrast with hexagon distribution nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "planetary-defense-array",
@@ -870,7 +870,7 @@ export const SCENE_CATALOG = [
       "Green and amber accent paths on a dark background mark sorting flow and contaminant quarantine routes.",
       "Triangle quarantine nodes and hexagon baling nodes contrast with circle intake and dispatch nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "reef-nursery",
@@ -908,7 +908,7 @@ export const SCENE_CATALOG = [
       "Electric yellow and deep blue accent paths on a dark background mark energization sequence and feeder routing.",
       "Hexagon cranking nodes and square feeder nodes contrast with circle and triangle load-zone nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "robot-arm-workbench",
@@ -946,7 +946,7 @@ export const SCENE_CATALOG = [
       "Electric blue and gold accent paths on a dark background mark RF contact flow and archive routing.",
       "Circle antenna nodes and diamond archive nodes contrast with square demodulation and hexagon telemetry nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "security-alert-fusion",
@@ -965,7 +965,7 @@ export const SCENE_CATALOG = [
       "Red and cyan accent paths on a dark background mark alert intake and incident publication routes.",
       "Triangle SIEM nodes and hexagon reporting nodes contrast with circle enrichment and square triage nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "seed-bank-vault",
@@ -1003,7 +1003,7 @@ export const SCENE_CATALOG = [
       "Neutral grey and blue accent paths on a dark background mark calibration flow and reference standard routing.",
       "Diamond reference nodes and circle input nodes contrast with square correction and hexagon certification nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "stormwater-pump-room",
@@ -1022,7 +1022,7 @@ export const SCENE_CATALOG = [
       "Slate blue and green accent paths on a dark background mark drainage flow and compliance monitoring routes.",
       "Hexagon retention basin nodes and circle lift station nodes contrast with triangle filter and square discharge nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "warehouse-cold-chain",
@@ -1041,7 +1041,7 @@ export const SCENE_CATALOG = [
       "Ice blue and amber accent paths on a dark background distinguish cold-zone routing from dispatch lanes.",
       "Circle dock nodes and hexagon chill nodes contrast with square pick and diamond QC dispatch nodes.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "weather-balloon-yard",
@@ -1098,7 +1098,7 @@ export const SCENE_CATALOG = [
       "Warm cream and deep teal cafe palette; toasted orange bread, herb green veggies, mustard condiments.",
       "Three-place horizontal flow with a single operator overlay for the queue.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "theme-park-day",
@@ -1117,7 +1117,7 @@ export const SCENE_CATALOG = [
       "Sun-bleached cream and ink navy with cherry-red coaster and marigold popcorn accents.",
       "Four places form a Y silhouette with a guest-services operator overlay below.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "school-lunch-line",
@@ -1136,7 +1136,7 @@ export const SCENE_CATALOG = [
       "Bright cafeteria white on slate with tomato-red trays and broccoli-green salad accents.",
       "Three production places plus a hall-monitor overlay watching the bell countdown.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "coffee-roastery",
@@ -1155,7 +1155,7 @@ export const SCENE_CATALOG = [
       "Toasted cream and espresso brown with saddle bean tones and copper roaster glow.",
       "Y-shaped layout: silo to roaster to dock, with QA branching down from the roaster.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "library-checkout",
@@ -1174,7 +1174,7 @@ export const SCENE_CATALOG = [
       "Parchment cream on ink black with library-stamp crimson and leather-spine ochre.",
       "Linear flow from return bin to shelf with a reference-librarian operator overlay.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "farmers-market",
@@ -1193,7 +1193,7 @@ export const SCENE_CATALOG = [
       "Lemon-yellow awning over slate cobblestones with tomato-red ripe stock and basil-green produce.",
       "Three production places with a market-manager operator overlay below.",
     ],
-    status: "draft",
+    status: "ready",
   }),
   defineScene({
     id: "bicycle-repair-shop",
@@ -1212,7 +1212,7 @@ export const SCENE_CATALOG = [
       "Mint workshop walls on graphite floor with brake-light red and chain-lube amber accents.",
       "Linear flow from drop-off to pickup wall with a front-desk operator overlay.",
     ],
-    status: "draft",
+    status: "ready",
   }),
 ] as const satisfies readonly SceneCatalogEntry[];
 
