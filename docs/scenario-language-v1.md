@@ -11,7 +11,7 @@
 > panels, stacked layout, live mock snapshots) make every SL1 scene
 > visually communicate "what is the AI operating, what's wrong, did
 > the latest tick help" within 30 seconds. See the
-> ["SL1 canvas + HUD visible-stakes layer"](#sl1-canvas--hud-visible-stakes-layer-prs-5260)
+> ["SL1 canvas + HUD visible-stakes layer"](#sl1-canvas--hud-visible-stakes-layer-prs-52-60)
 > section below for the full inventory.
 >
 > **Authoritative spec:**
@@ -730,13 +730,15 @@ get a second arrowhead at the source end.
 ### Canvas: role legend overlay (PR #55)
 
 `Sl1RoleLegend` (`frontend/src/ui/sl1_legend.ts`) renders a small
-floating overlay in the bottom-left corner that decodes the shape
-vocabulary for the current scene. Data-driven from `SL1_ROLE_HINTS`
-(same table the synth uses), so the legend cannot drift from the
-rendered shapes. Only shows rows for roles present in the scene.
-Non-canonical roles appear after the canonical four in code-point
-order so non-standard SL1 scenes don't hide nodes the viewer
-can't decode.
+floating overlay in the bottom-left corner that decodes the default
+role-shape vocabulary for the current scene. It is data-driven from
+`SL1_ROLE_HINTS` (the same default hint table the synth uses before
+per-place `shape`/`color` overrides), so the legend stays aligned
+with role defaults while still allowing scenes to render explicit
+per-place hints differently. Only shows rows for roles present in
+the scene. Non-canonical roles appear after the canonical four in
+code-point order so non-standard SL1 scenes don't hide nodes the
+viewer can't decode.
 
 ### HUD: objectives panel (PR #56)
 
