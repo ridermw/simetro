@@ -1,6 +1,12 @@
 // frontend/src/tests/unit/renderer.test.ts
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { Renderer, truncateLabel, drawArrowAtEnd } from "../../renderer/canvas";
+import {
+  Renderer,
+  truncateLabel,
+  drawArrowAtEnd,
+  computeParticlePosition,
+  computeParticleProgress,
+} from "../../renderer/canvas";
 import {
   DEFAULT_THEME,
   paletteColor,
@@ -14,6 +20,7 @@ import type { StaticPayload } from "../../protocol/messages";
 beforeAll(() => {
   type StubCtx = Partial<CanvasRenderingContext2D>;
   const fillTextCalls: { text: string; x: number; y: number }[] = [];
+  const arcCalls: { x: number; y: number; radius: number }[] = [];
   const stub: StubCtx = {
     save: () => {},
     restore: () => {},
@@ -22,7 +29,9 @@ beforeAll(() => {
     beginPath: () => {},
     moveTo: () => {},
     lineTo: () => {},
-    arc: () => {},
+    arc: (x: number, y: number, radius: number) => {
+      arcCalls.push({ x, y, radius });
+    },
     rect: () => {},
     closePath: () => {},
     fill: () => {},
@@ -43,6 +52,8 @@ beforeAll(() => {
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).__fillTextCalls = fillTextCalls;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).__arcCalls = arcCalls;
 });
 
 function makeRenderer(): Renderer {
@@ -428,6 +439,107 @@ describe("Renderer viewport", () => {
 
     expect(setPointerCapture).toHaveBeenCalledWith(7);
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
+  });
+});
+
+describe("flow particles", () => {
+  function flowScene(arrow?: "forward" | "bidirectional"): StaticPayload {
+    const path = { id: 3, from_pos: [0, 0], to_pos: [100, 0], color: 2 } as StaticPayload["paths"][number];
+    if (arrow !== undefined) path.arrow = arrow;
+    return {
+      name: "flow",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [0, 0], shape: "circle", color: 1 },
+        { id: 2, pos: [100, 0], shape: "circle", color: 1 },
+      ],
+      paths: [path],
+      node_names: {},
+      path_names: {},
+      mover_names: {},
+    };
+  }
+
+  it("positions progress=0 near fromPos inset by the node radius", () => {
+    const pos = computeParticlePosition([0, 0], [100, 0], 0);
+    expect(pos).toEqual([18, 0]);
+  });
+
+  it("positions progress=1 near toPos inset by the node radius", () => {
+    const pos = computeParticlePosition([0, 0], [100, 0], 1);
+    expect(pos).toEqual([82, 0]);
+  });
+
+  it("positions progress=0.5 at the segment midpoint", () => {
+    const pos = computeParticlePosition([0, 0], [100, 0], 0.5);
+    expect(pos).toEqual([50, 0]);
+  });
+
+  it("wraps progress from near one back toward zero every four seconds", () => {
+    const pathId = 0;
+    const beforeWrap = computeParticleProgress(3_960, pathId, "forward");
+    const afterWrap = computeParticleProgress(4_040, pathId, "forward");
+    expect(beforeWrap).toBeCloseTo(0.99, 2);
+    expect(afterWrap).toBeCloseTo(0.01, 2);
+  });
+
+  it("returns opposite-direction progress for bidirectional particles", () => {
+    const nowMs = 1_000;
+    const forward = computeParticleProgress(nowMs, 2, "forward");
+    const reverse = computeParticleProgress(nowMs, 2, "reverse");
+    expect(reverse).toBeCloseTo(1 - forward, 6);
+    expect(computeParticlePosition([0, 0], [100, 0], forward)).not.toEqual(
+      computeParticlePosition([0, 0], [100, 0], reverse)
+    );
+  });
+
+  it("handles degenerate segments without throwing", () => {
+    expect(() => computeParticlePosition([0, 0], [10, 0], 0.5)).not.toThrow();
+    expect(computeParticlePosition([0, 0], [10, 0], 0.5)).toBeUndefined();
+  });
+
+  it("stagger-phases multiple paths at the same time", () => {
+    const nowMs = 0;
+    expect(computeParticleProgress(nowMs, 1, "forward")).not.toBe(
+      computeParticleProgress(nowMs, 2, "forward")
+    );
+  });
+
+  it("draws one particle arc for a forward SL1 path", () => {
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    const r = makeRenderer();
+    const scene = flowScene("forward");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { x: number; y: number; radius: number }[] = (globalThis as any).__arcCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls.filter((c) => c.radius === 4)).toHaveLength(1);
+  });
+
+  it("draws two particle arcs for a bidirectional SL1 path", () => {
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    const r = makeRenderer();
+    const scene = flowScene("bidirectional");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { x: number; y: number; radius: number }[] = (globalThis as any).__arcCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls.filter((c) => c.radius === 4)).toHaveLength(2);
+  });
+
+  it("does not draw particles for legacy paths with arrow undefined", () => {
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    const r = makeRenderer();
+    const scene = flowScene(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calls: { x: number; y: number; radius: number }[] = (globalThis as any).__arcCalls;
+    calls.length = 0;
+    r.warm(themeFromStatic(scene));
+    r.draw({ theme: themeFromStatic(scene), scene, movers: [] });
+    expect(calls.filter((c) => c.radius === 4)).toHaveLength(0);
   });
 });
 

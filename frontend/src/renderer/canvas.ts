@@ -33,6 +33,9 @@ import { backgroundColor, foregroundColor, paletteColor, type Theme } from "./th
 
 const NODE_RADIUS = 18;
 const MOVER_RADIUS = 8;
+const FLOW_PARTICLE_RADIUS = 4;
+const FLOW_PARTICLE_SPEED = 0.25;
+const FLOW_PARTICLE_PHASE_OFFSET = 0.37;
 const PATH_WIDTH = 4;
 const NODE_STROKE_WIDTH = 2;
 const FIT_PADDING = NODE_RADIUS + 20;
@@ -208,6 +211,7 @@ export class Renderer {
 
     this.drawPathsBatched(input.theme);
     this.drawArrowheads(input.theme, input.scene.paths);
+    this.drawFlowParticles(input.theme, input.scene.paths);
     this.drawNodes(input.theme, input.scene.nodes);
     this.drawMovers(input.theme, input.movers);
     if (input.scene.show_node_labels === true) {
@@ -419,6 +423,22 @@ export class Renderer {
     }
   }
 
+  /** Draw purely visual data-flow particles for directed SL1 paths.
+   *  Legacy paths (arrow undefined) get no particles so transit scenes
+   *  keep their existing mover-dot aesthetic. */
+  private drawFlowParticles(theme: Theme, paths: PathView[]): void {
+    const ctx = this.ctx;
+    const nowMs = performance.now();
+    for (const p of paths) {
+      if (p.arrow === undefined) continue;
+      ctx.fillStyle = paletteColor(theme, p.color);
+      drawParticleAtProgress(ctx, p.from_pos, p.to_pos, computeParticleProgress(nowMs, p.id, "forward"));
+      if (p.arrow === "bidirectional") {
+        drawParticleAtProgress(ctx, p.from_pos, p.to_pos, computeParticleProgress(nowMs, p.id, "reverse"));
+      }
+    }
+  }
+
   /** Draw the node id label below each named node. Counter-scales the
    *  font so text stays a consistent on-screen size regardless of
    *  zoom; the world-space transform is in effect when this is called.
@@ -463,6 +483,42 @@ export class Renderer {
 export function truncateLabel(text: string): string {
   if (text.length <= LABEL_MAX_CHARS) return text;
   return text.slice(0, LABEL_MAX_CHARS - 1) + LABEL_ELLIPSIS;
+}
+
+export function computeParticleProgress(
+  nowMs: number,
+  pathId: number,
+  direction: "forward" | "reverse"
+): number {
+  const progress = (((nowMs / 1000) * FLOW_PARTICLE_SPEED + pathId * FLOW_PARTICLE_PHASE_OFFSET) % 1 + 1) % 1;
+  return direction === "reverse" ? 1 - progress : progress;
+}
+
+export function computeParticlePosition(
+  fromPos: readonly [number, number],
+  toPos: readonly [number, number],
+  progress: number
+): [number, number] | undefined {
+  const dx = toPos[0] - fromPos[0];
+  const dy = toPos[1] - fromPos[1];
+  const len = Math.hypot(dx, dy);
+  if (len < NODE_RADIUS * 2) return undefined;
+  const inset = NODE_RADIUS / len;
+  const clamped = Math.max(inset, Math.min(1 - inset, progress));
+  return [fromPos[0] + clamped * dx, fromPos[1] + clamped * dy];
+}
+
+function drawParticleAtProgress(
+  ctx: CanvasRenderingContext2D,
+  fromPos: readonly [number, number],
+  toPos: readonly [number, number],
+  progress: number
+): void {
+  const pos = computeParticlePosition(fromPos, toPos, progress);
+  if (pos === undefined) return;
+  ctx.beginPath();
+  ctx.arc(pos[0], pos[1], FLOW_PARTICLE_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawShape(
