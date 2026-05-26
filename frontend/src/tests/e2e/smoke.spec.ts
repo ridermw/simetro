@@ -8,13 +8,13 @@ import { test, expect } from "@playwright/test";
 
 test.describe("simetro smoke", () => {
   test("canvas is visible", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     const canvas = page.locator("#scene");
     await expect(canvas).toBeVisible();
   });
 
   test("controls bar renders with toolbar role", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     const bar = page.locator("#simetro-controls");
     await expect(bar).toBeVisible();
     await expect(bar).toHaveAttribute("role", "toolbar");
@@ -24,14 +24,14 @@ test.describe("simetro smoke", () => {
   });
 
   test("inspector panel mounts and is reachable as a region", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     const panel = page.locator("#simetro-inspector");
     await expect(panel).toBeVisible();
     await expect(panel).toHaveAttribute("role", "region");
   });
 
   test("perf overlay turns on with ?perf=1", async ({ page }) => {
-    await page.goto("/?perf=1");
+    await page.goto("/?scene=demo-paths&perf=1");
     const perf = page.locator("#simetro-perf");
     await expect(perf).toBeVisible();
     // Wait for at least one fps sample (>= 500ms window).
@@ -40,7 +40,7 @@ test.describe("simetro smoke", () => {
   });
 
   test("play/pause button toggles aria-label", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     const btn = page.locator("#simetro-play-pause");
     await expect(btn).toHaveAttribute("aria-label", "Pause");
     await btn.click();
@@ -50,13 +50,13 @@ test.describe("simetro smoke", () => {
   });
 
   test("heartbeat badge mounts", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     const hb = page.locator("#simetro-heartbeat");
     await expect(hb).toBeVisible();
   });
 
   test("canvas has rendered content (not blank)", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     await page.waitForTimeout(300); // Allow first rAF frame + mock transport tick.
     // Use the viewport transform to compute where node id=1 (world 200,200)
     // actually lands on screen after auto-fit, then check that pixel is non-background.

@@ -49,6 +49,8 @@ export interface MockTransportOptions {
    * exactly like the non-SL1 demo so legacy tests stay stable.
    */
   sl1Mode?: boolean;
+  /** When set, mock fetches /static-payloads/{sceneId}.json instead of using DEMO_STATIC. */
+  sceneId?: string;
 }
 
 /** Read URL query string and decide whether to enable SL1 mock mode. */
@@ -208,14 +210,13 @@ const SL1_MILESTONES: Sl1MilestoneView[] = [
   },
 ];
 
-function sl1StaticMessage(): SimMessage {
-  // Augment DEMO_STATIC with SL1 metadata. We rebuild the payload to
-  // avoid mutating the shared constant (other tests rely on it).
-  const base = DEMO_STATIC.payload as StaticPayload;
+function sl1StaticMessage(basePayload: StaticPayload = DEMO_STATIC.payload as StaticPayload): SimMessage {
+  // Augment the chosen static payload with SL1 metadata. We rebuild
+  // the payload to avoid mutating shared constants or fetched objects.
   return {
     kind: "static",
     payload: {
-      ...base,
+      ...basePayload,
       sl1_observability_dashboards: SL1_DASHBOARDS,
       sl1_observability_alerts: SL1_ALERTS,
       sl1_milestones: SL1_MILESTONES,
@@ -296,7 +297,8 @@ export class MockTransport implements Transport {
   private movers: MockMover[] = [];
   private tick = 0;
   private snapshotCount = 0;
-  private sl1Mode: boolean;
+  private readonly sl1Mode: boolean;
+  private readonly sceneId: string | undefined;
   private sl1LastOutcome: Sl1GameOutcomeView | undefined;
   private sl1LastPhase: string | undefined;
   private sl1LastDashboardStates: Sl1DashboardStateView[] | undefined;
@@ -304,6 +306,32 @@ export class MockTransport implements Transport {
 
   constructor(options: MockTransportOptions = {}) {
     this.sl1Mode = options.sl1Mode === true;
+    this.sceneId = options.sceneId;
+  }
+
+  private async loadExternalStatic(sceneId: string, handler: MessageHandler): Promise<void> {
+    try {
+      const resp = await fetch(`/static-payloads/${sceneId}.json`);
+      if (!resp.ok) {
+        console.warn(
+          `simetro: static payload fetch failed for ${sceneId} (${resp.status}), using demo`
+        );
+        handler(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+        return;
+      }
+      const envelope = (await resp.json()) as { schema_version: number; payload: StaticPayload };
+      if (envelope.schema_version !== SCHEMA_VERSION) {
+        console.warn(
+          `simetro: schema mismatch for ${sceneId} (got ${envelope.schema_version}, want ${SCHEMA_VERSION}), using demo`
+        );
+        handler(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+        return;
+      }
+      handler(this.sl1Mode ? sl1StaticMessage(envelope.payload) : { kind: "static", payload: envelope.payload });
+    } catch (e) {
+      console.warn(`simetro: failed to load static for ${sceneId}`, e);
+      handler(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+    }
   }
 
   connect(handler: MessageHandler): void {
@@ -320,10 +348,22 @@ export class MockTransport implements Transport {
     // before first dispatch — matches the real transport's async surface.
     this.initTimer = setTimeout(() => {
       this.initTimer = null;
+      const emitInitialSnapshot = () => {
+        if (this.handler === null) return;
+        this.handler(this.encodeSnapshot(0));
+        // Start the animation loop after emitting initial state.
+        this.interval = setInterval(() => this.step(), TICK_INTERVAL_MS);
+      };
+      if (this.sceneId !== undefined) {
+        void this.loadExternalStatic(this.sceneId, (msg) => {
+          if (this.handler === null) return;
+          this.handler(msg);
+          emitInitialSnapshot();
+        });
+        return;
+      }
       this.handler?.(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
-      this.handler?.(this.encodeSnapshot(0));
-      // Start the animation loop after emitting initial state.
-      this.interval = setInterval(() => this.step(), TICK_INTERVAL_MS);
+      emitInitialSnapshot();
     }, 0);
   }
 

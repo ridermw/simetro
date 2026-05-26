@@ -1,7 +1,8 @@
 // frontend/src/tests/e2e/sl1_hud.spec.ts
 //
 // scenario_language_v1 (SL1) HUD E2E. Boots the vite preview with
-// `?sl1demo=1` so MockTransport emits SL1 metadata + a scripted
+// `?scene=demo-paths&sl1demo=1` so MockTransport emits SL1 metadata +
+// a scripted
 // timeline. Verifies the 30-second viewer-litmus answers are visible:
 //
 //   * Status panel mounts (what is the AI trying to save).
@@ -14,8 +15,8 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("SL1 HUD viewer litmus", () => {
-  test("status panel + dashboards + alerts mount under ?sl1demo=1", async ({ page }) => {
-    await page.goto("/?sl1demo=1");
+  test("status panel + dashboards + alerts mount under ?scene=demo-paths&sl1demo=1", async ({ page }) => {
+    await page.goto("/?scene=demo-paths&sl1demo=1");
 
     await expect(page.locator("#simetro-sl1-status")).toHaveAttribute("role", "status");
     await expect(page.locator("#simetro-sl1-milestones")).toHaveAttribute("role", "list");
@@ -31,7 +32,7 @@ test.describe("SL1 HUD viewer litmus", () => {
   });
 
   test("scripted timeline drives alert pill and milestone chips", async ({ page }) => {
-    await page.goto("/?sl1demo=1");
+    await page.goto("/?scene=demo-paths&sl1demo=1");
 
     // Milestone chip 1 fires at scripted tick 2 (≈100ms at 50ms/tick).
     // Allow generous time for the deferred init + script schedule.
@@ -58,7 +59,7 @@ test.describe("SL1 HUD viewer litmus", () => {
   });
 
   test("dashboard chip reflects ok / stale state via data-state", async ({ page }) => {
-    await page.goto("/?sl1demo=1");
+    await page.goto("/?scene=demo-paths&sl1demo=1");
     const chip = page
       .locator("#simetro-sl1-dashboards .simetro-sl1-dashboard-chip")
       .first();
@@ -72,7 +73,7 @@ test.describe("SL1 HUD viewer litmus", () => {
   });
 
   test("SL1 panels are absent on non-SL1 default scene", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?scene=demo-paths");
     // Status panel exists in DOM but stays hidden (display: none).
     const status = page.locator("#simetro-sl1-status");
     await expect(status).toBeHidden();

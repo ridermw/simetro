@@ -344,7 +344,7 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function createTransport(): Transport {
+function createTransport(sceneId: string | null): Transport {
   if (isTauri()) {
     return new TauriTransport();
   }
@@ -356,7 +356,16 @@ function createTransport(): Transport {
     typeof window !== "undefined" && window.location !== undefined
       ? window.location.search
       : undefined;
-  return new MockTransport({ sl1Mode: sl1ModeFromLocation(search) });
+  return new MockTransport({
+    sl1Mode: sl1ModeFromLocation(search),
+    ...(sceneId !== null ? { sceneId } : {}),
+  });
+}
+
+function sceneFromLocation(): string | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("scene");
 }
 
 function resize(canvas: HTMLCanvasElement): void {
@@ -436,7 +445,13 @@ function boot(): void {
     }
   });
 
-  const transport: Transport = createTransport();
+  const requestedScene = sceneFromLocation();
+  const requestedSceneEntry = requestedScene !== null ? findSceneById(requestedScene) : undefined;
+  if (requestedScene !== null && requestedSceneEntry === undefined) {
+    console.error(`simetro: unknown scene "${requestedScene}" in URL param, ignoring`);
+  }
+  const validScene = requestedSceneEntry !== undefined ? requestedScene : null;
+  const transport: Transport = createTransport(validScene);
   transport.connect((msg) => handleMessage(msg, state, renderer));
 
   // Tone.js / WebAudio cannot start without a user gesture; wire

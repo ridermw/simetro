@@ -1,7 +1,24 @@
 // frontend/src/tests/unit/mock_transport.test.ts
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { MockTransport, sl1ModeFromLocation } from "../../transport/mock";
-import type { SimMessage } from "../../protocol/messages";
+import type { SimMessage, StaticPayload } from "../../protocol/messages";
+import { SCHEMA_VERSION } from "../../protocol/messages";
+
+const EXTERNAL_STATIC_PAYLOAD: StaticPayload = {
+  name: "external-scene",
+  palette: ["#101820", "#f2aa4c"],
+  background_index: 0,
+  nodes: [{ id: 1, pos: [10, 20], shape: "circle", color: 1 }],
+  paths: [],
+  node_names: { 1: "entry" },
+  path_names: {},
+  mover_names: {},
+};
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("MockTransport", () => {
   it("emits static then snapshot to the handler", async () => {
@@ -29,6 +46,78 @@ describe("MockTransport", () => {
 
   it("identifies itself as mock", () => {
     expect(new MockTransport().name).toBe("mock");
+  });
+
+  it("fetches external static payloads when sceneId is provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ schema_version: SCHEMA_VERSION, payload: EXTERNAL_STATIC_PAYLOAD }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const t = new MockTransport({ sceneId: "gpu-launch-week" });
+    const received: SimMessage[] = [];
+    t.connect((m) => received.push(m));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(fetchMock).toHaveBeenCalledWith("/static-payloads/gpu-launch-week.json");
+    expect(received[0]).toEqual({ kind: "static", payload: EXTERNAL_STATIC_PAYLOAD });
+    expect(received[1]?.kind).toBe("snapshot");
+    t.disconnect();
+  });
+
+  it("falls back to demo static when fetched external payload schema mismatches", async () => {
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ schema_version: SCHEMA_VERSION + 1, payload: EXTERNAL_STATIC_PAYLOAD }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const t = new MockTransport({ sceneId: "gpu-launch-week" });
+    const received: SimMessage[] = [];
+    t.connect((m) => received.push(m));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(fetchMock).toHaveBeenCalledWith("/static-payloads/gpu-launch-week.json");
+    expect(received[0]?.kind).toBe("static");
+    if (received[0]?.kind === "static") {
+      expect(received[0].payload.name).toBe("demo-paths");
+    }
+    expect(consoleWarn).toHaveBeenCalled();
+    t.disconnect();
+  });
+
+  it("preserves SL1 mock metadata when external static loads under sl1Mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ schema_version: SCHEMA_VERSION, payload: EXTERNAL_STATIC_PAYLOAD }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const t = new MockTransport({ sceneId: "demo-paths", sl1Mode: true });
+    const received: SimMessage[] = [];
+    t.connect((m) => received.push(m));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const stat = received[0];
+    expect(stat?.kind).toBe("static");
+    if (stat?.kind === "static") {
+      expect(stat.payload.name).toBe("external-scene");
+      expect(stat.payload.sl1_observability_dashboards?.length).toBeGreaterThan(0);
+      expect(stat.payload.sl1_observability_alerts?.length).toBeGreaterThan(0);
+      expect(stat.payload.sl1_milestones?.length).toBeGreaterThan(0);
+    }
+    t.disconnect();
   });
 
   it("sl1Mode=false omits SL1 fields from static (legacy behavior)", async () => {
