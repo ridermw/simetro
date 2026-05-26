@@ -119,6 +119,9 @@ class ViewRouter {
   private state: AppState;
   private renderer: Renderer;
   private transitioning = false;
+  /** Monotonic counter — each transition increments. Async callbacks
+   *  capture the token at start and bail if a newer transition began. */
+  private transitionToken = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -133,6 +136,7 @@ class ViewRouter {
 
   /** Switch to gallery view — disconnect transport, show gallery. */
   showGallery(): void {
+    this.transitionToken += 1;
     if (this.state.currentView === "gallery") return;
     this.state.currentView = "gallery";
 
@@ -164,6 +168,8 @@ class ViewRouter {
   showSim(sceneId: string): void {
     if (this.transitioning) return;
     this.transitioning = true;
+    this.transitionToken += 1;
+    const myToken = this.transitionToken;
 
     try {
       const previousSceneId = this.state.selectedSceneId;
@@ -195,8 +201,21 @@ class ViewRouter {
       transport.connect((msg) => handleMessage(msg, this.state, this.renderer));
 
       if (isTauri() && previousSceneId !== sceneId) {
-        void routeSceneToTauri(sceneId, previousSceneId, this.state).then((ok) => {
-          if (!ok && previousSceneId === null) this.showGallery();
+        void routeSceneToTauri(sceneId).then((result) => {
+          // Guard against stale callback — if a newer transition has
+          // started, do not mutate state on behalf of this stale one.
+          if (myToken !== this.transitionToken) return;
+          if (!result.ok) {
+            this.state.selectedSceneId = previousSceneId;
+            this.state.switcher?.setSelected(previousSceneId ?? "");
+            this.state.fault?.show({
+              kind: "load_error",
+              message: `Failed to switch scene: ${result.error}`,
+              line: null,
+              col: null,
+            });
+            if (previousSceneId === null) this.showGallery();
+          }
         });
       }
 
@@ -266,24 +285,14 @@ function handleControl(intent: ControlIntent, state: AppState): void {
 
 
 async function routeSceneToTauri(
-  scene_id: string,
-  previousSceneId: string | null,
-  state: AppState
-): Promise<boolean> {
+  scene_id: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invokeSetScene(invoke, scene_id);
-    return true;
+    return { ok: true };
   } catch (error) {
-    state.selectedSceneId = previousSceneId;
-    state.switcher?.setSelected(previousSceneId ?? "");
-    state.fault?.show({
-      kind: "load_error",
-      message: `Failed to switch scene: ${errorMessage(error)}`,
-      line: null,
-      col: null,
-    });
-    return false;
+    return { ok: false, error: errorMessage(error) };
   }
 }
 

@@ -366,7 +366,9 @@ export class MockTransport implements Transport {
         void this.loadExternalStatic(this.sceneId, (msg) => {
           if (this.handler === null) return;
           this.handler(msg);
-          emitInitialSnapshot();
+          // Only start snapshot stream if the static actually loaded.
+          // On load_error the world has no geometry to interpolate against.
+          if (msg.kind === "static") emitInitialSnapshot();
         });
         return;
       }
