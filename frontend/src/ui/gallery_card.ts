@@ -128,6 +128,7 @@ export class GalleryCard {
       canvas.width = 0;
       canvas.height = 0;
     }
+    this.thumbContainer.replaceChildren();
     this.loaded = false;
   }
 }

@@ -155,7 +155,7 @@ export class GalleryView {
 
   private render(): void {
     this.observer.disconnect();
-    this.grid.innerHTML = "";
+    this.grid.replaceChildren();
     this.cards = [];
 
     const filtered = this.scenes.filter((s) => {
