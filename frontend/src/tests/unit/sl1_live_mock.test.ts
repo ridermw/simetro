@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSl1MockRuntime, type Sl1SceneMeta } from "../../transport/mock";
+import { computeSl1MockRuntime, safeTick, type Sl1SceneMeta } from "../../transport/mock";
 
 const SCENE: Sl1SceneMeta = {
   metrics: [
@@ -139,13 +139,28 @@ describe("computeSl1MockRuntime", () => {
     });
   });
 
-  it("never fires failure conditions in the mock runtime", () => {
-    expect(computeSl1MockRuntime(75, SCENE).failure_condition_states[0]?.fired_at_tick).toBeUndefined();
+  it("sets failure fired_at_tick during the breach window and clears it after reset", () => {
+    expect(computeSl1MockRuntime(75, SCENE).failure_condition_states[0]).toEqual({
+      failure_condition_id: "refresh-objective-breached",
+      breach_streak_ticks: 16,
+    });
+    expect(computeSl1MockRuntime(80, SCENE).failure_condition_states[0]).toEqual({
+      failure_condition_id: "refresh-objective-breached",
+      breach_streak_ticks: 21,
+      fired_at_tick: 80,
+    });
+    expect(computeSl1MockRuntime(120, SCENE).failure_condition_states[0]).toEqual({
+      failure_condition_id: "refresh-objective-breached",
+      breach_streak_ticks: 0,
+    });
   });
 
-  it("returns pending victory condition states using met_at_tick only when met", () => {
+  it("returns victory condition states with met_at_tick only when survive_until is reached", () => {
     expect(computeSl1MockRuntime(100, SCENE).victory_condition_states).toEqual([
       { victory_condition_id: "survive-launch-week" },
+    ]);
+    expect(computeSl1MockRuntime(2800, SCENE).victory_condition_states).toEqual([
+      { victory_condition_id: "survive-launch-week", met_at_tick: 2800 },
     ]);
   });
 
@@ -155,8 +170,17 @@ describe("computeSl1MockRuntime", () => {
     expect(computeSl1MockRuntime(120, SCENE).phase).toBe("winning");
   });
 
+  it("safeTick normalizes non-finite and huge ticks", () => {
+    expect(safeTick(Number.NaN)).toBe(0);
+    expect(safeTick(Number.POSITIVE_INFINITY)).toBe(0);
+    const hugeTick = safeTick(Number.MAX_SAFE_INTEGER);
+    expect(Number.isFinite(hugeTick)).toBe(true);
+    expect(hugeTick).toBeGreaterThanOrEqual(0);
+    expect(hugeTick).toBeLessThan(100000);
+  });
+
   it("all metric values are finite", () => {
-    for (const tick of [0, 50, 100, 150]) {
+    for (const tick of [0, 50, 100, 150, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER]) {
       for (const state of computeSl1MockRuntime(tick, SCENE).metric_states) {
         expect(Number.isFinite(state.value)).toBe(true);
       }

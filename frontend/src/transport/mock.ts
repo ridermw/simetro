@@ -84,6 +84,21 @@ export interface Sl1MockRuntime {
   phase: Sl1GamePhase;
 }
 
+export function payloadHasNativeSl1(payload: StaticPayload): boolean {
+  return (
+    (payload.sl1_places?.length ?? 0) > 0 ||
+    (payload.sl1_observability_metrics?.length ?? 0) > 0 ||
+    (payload.sl1_objectives?.length ?? 0) > 0 ||
+    (payload.sl1_failure_conditions?.length ?? 0) > 0 ||
+    (payload.sl1_victory_conditions?.length ?? 0) > 0
+  );
+}
+
+export function safeTick(t: number): number {
+  if (!Number.isFinite(t)) return 0;
+  return ((t % 100000) + 100000) % 100000;
+}
+
 const SL1_MOCK_BREACH_START_TICK = 60;
 const SL1_MOCK_BREACH_END_TICK = 100;
 
@@ -118,7 +133,22 @@ function sl1MockBreachFailureId(scene: Sl1SceneMeta, breachObjectiveId: string |
   return scene.failures[0]?.id;
 }
 
-export function computeSl1MockRuntime(tick: number, scene: Sl1SceneMeta): Sl1MockRuntime {
+function sl1FailureFireThreshold(failure: Sl1FailureConditionView): number {
+  const rawThreshold = (() => {
+    switch (failure.params.kind) {
+      case "stale_target":
+        return failure.params.threshold_ticks;
+      case "place_state":
+        return failure.params.grace_ticks;
+      case "objective_breach_count":
+        return failure.params.max_count;
+    }
+  })();
+  return Math.min(Math.max(Math.floor(rawThreshold), 20), 30);
+}
+
+export function computeSl1MockRuntime(rawTick: number, scene: Sl1SceneMeta): Sl1MockRuntime {
+  const tick = safeTick(rawTick);
   const breachObjectiveId = sl1MockBreachObjectiveId(scene);
   const breachFailureId = sl1MockBreachFailureId(scene, breachObjectiveId);
   const breachCount = sl1MockBreachTickCount(tick);
@@ -152,13 +182,24 @@ export function computeSl1MockRuntime(tick: number, scene: Sl1SceneMeta): Sl1Moc
       status: breachActive && objective.id === breachObjectiveId ? "breached" : "met",
       breach_tick_count: breachActive && objective.id === breachObjectiveId ? breachCount : 0,
     })),
-    failure_condition_states: scene.failures.map((failure) => ({
-      failure_condition_id: failure.id,
-      breach_streak_ticks: breachActive && failure.id === breachFailureId ? breachCount : 0,
-    })),
-    victory_condition_states: scene.victories.map((victory) => ({
-      victory_condition_id: victory.id,
-    })),
+    failure_condition_states: scene.failures.map((failure) => {
+      const breachStreakTicks = breachActive && failure.id === breachFailureId ? breachCount : 0;
+      const state: Sl1FailureConditionRuntimeView = {
+        failure_condition_id: failure.id,
+        breach_streak_ticks: breachStreakTicks,
+      };
+      if (breachStreakTicks > sl1FailureFireThreshold(failure)) {
+        state.fired_at_tick = tick;
+      }
+      return state;
+    }),
+    victory_condition_states: scene.victories.map((victory) => {
+      const state: Sl1VictoryConditionRuntimeView = { victory_condition_id: victory.id };
+      if (victory.params.kind === "survive_until" && tick >= victory.params.at_tick) {
+        state.met_at_tick = victory.params.at_tick;
+      }
+      return state;
+    }),
     phase: breachActive ? "losing" : "winning",
   };
 }
@@ -436,8 +477,7 @@ export class MockTransport implements Transport {
         return;
       }
       const payload = envelope.payload;
-      const hasSl1Scene =
-        (payload.sl1_places?.length ?? 0) > 0 || (payload.sl1_observability_metrics?.length ?? 0) > 0;
+      const hasSl1Scene = payloadHasNativeSl1(payload);
       this.sl1Scene = hasSl1Scene
         ? {
             metrics: payload.sl1_observability_metrics ?? [],
@@ -446,7 +486,8 @@ export class MockTransport implements Transport {
             victories: payload.sl1_victory_conditions ?? [],
           }
         : null;
-      handler(this.sl1Mode ? sl1StaticMessage(payload) : { kind: "static", payload });
+      const shouldApplyLegacySl1Decoration = this.sl1Mode && !hasSl1Scene;
+      handler(shouldApplyLegacySl1Decoration ? sl1StaticMessage(payload) : { kind: "static", payload });
     } catch (e) {
       const msg = `failed to load static for ${sceneId}: ${e instanceof Error ? e.message : String(e)}`;
       console.error(`simetro: ${msg}`);
