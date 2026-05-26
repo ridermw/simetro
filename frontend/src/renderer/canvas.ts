@@ -523,7 +523,7 @@ export function drawArrowAtEnd(
   const dx = toPos[0] - fromPos[0];
   const dy = toPos[1] - fromPos[1];
   const len = Math.hypot(dx, dy);
-  if (len === 0) return;
+  if (len === 0 || len < ARROW_TIP_INSET + ARROW_HEAD_LEN) return;
   const ux = dx / len;
   const uy = dy / len;
   // Tip sits short of the destination node.

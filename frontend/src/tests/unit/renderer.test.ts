@@ -517,6 +517,12 @@ describe("drawArrowAtEnd", () => {
     expect(ops.filter((o) => o.startsWith("moveTo")).length).toBe(0);
   });
 
+  it("no-ops on very short segments", () => {
+    const { ops, ctx } = makeRecordingCtx();
+    drawArrowAtEnd(ctx, [0, 0], [20, 0], "#fff");
+    expect(ops.filter((o) => o.startsWith("moveTo")).length).toBe(0);
+  });
+
   it("arrow tip is inset from the destination point (sits outside node)", () => {
     const { ops, ctx } = makeRecordingCtx();
     drawArrowAtEnd(ctx, [0, 0], [100, 0], "#fff");
