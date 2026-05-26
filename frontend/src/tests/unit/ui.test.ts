@@ -44,6 +44,17 @@ describe("ControlsBar", () => {
     bar.setPaused(false);
     expect(btn?.getAttribute("aria-label")).toBe("Pause");
   });
+
+  it("show() and hide() toggle toolbar visibility", () => {
+    const parent = document.createElement("div");
+    const bar = new ControlsBar(parent, () => {});
+
+    bar.hide();
+    expect(bar.__testRoot().style.display).toBe("none");
+
+    bar.show();
+    expect(bar.__testRoot().style.display).toBe("flex");
+  });
 });
 
 describe("FaultOverlay", () => {

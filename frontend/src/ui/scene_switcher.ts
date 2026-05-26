@@ -11,8 +11,8 @@
 import type { SceneCatalogEntry } from "../catalog/scenes";
 
 export interface SwitcherHandler {
-  onPrev(): void;
-  onNext(): void;
+  onPrev(sceneId: string): void;
+  onNext(sceneId: string): void;
   onGallery(): void;
 }
 
@@ -47,7 +47,10 @@ export class SceneSwitcher {
     prevBtn.textContent = "\u25C0";
     prevBtn.style.cssText =
       "background: none; border: none; color: #e6edf3; cursor: pointer; font-size: 14px;";
-    prevBtn.addEventListener("click", () => this.handler.onPrev());
+    prevBtn.addEventListener("click", () => {
+      const sceneId = this.getAdjacentId("prev");
+      if (sceneId !== null) this.handler.onPrev(sceneId);
+    });
     this.root.appendChild(prevBtn);
 
     this.titleEl = document.createElement("span");
@@ -60,7 +63,10 @@ export class SceneSwitcher {
     nextBtn.textContent = "\u25B6";
     nextBtn.style.cssText =
       "background: none; border: none; color: #e6edf3; cursor: pointer; font-size: 14px;";
-    nextBtn.addEventListener("click", () => this.handler.onNext());
+    nextBtn.addEventListener("click", () => {
+      const sceneId = this.getAdjacentId("next");
+      if (sceneId !== null) this.handler.onNext(sceneId);
+    });
     this.root.appendChild(nextBtn);
 
     const galleryBtn = document.createElement("button");

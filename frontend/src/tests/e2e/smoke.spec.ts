@@ -7,6 +7,12 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("simetro smoke", () => {
+  test("gallery is the default landing view", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("#simetro-gallery")).toBeVisible();
+    await expect(page.locator("#scene")).toBeHidden();
+  });
+
   test("canvas is visible", async ({ page }) => {
     await page.goto("/?scene=demo-paths");
     const canvas = page.locator("#scene");

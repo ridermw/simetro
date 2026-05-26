@@ -2,12 +2,11 @@
 //
 // PR 15a — Daily-life delights showcase. End-to-end coverage that the
 // 7 new SL1 scenes added in this PR are surfaced through the live
-// UI: they appear in the scene browser with their human-readable
-// titles, are selectable without script execution (XSS-safe text),
-// flip aria-pressed on click, and never leak their backend
-// `games/*.json` path into the DOM. This validates the catalog →
-// SceneBrowser → user-visible affordance chain end-to-end against
-// the production-built bundle (Vite preview).
+// UI: they appear in the gallery with their human-readable titles,
+// are selectable without script execution (XSS-safe text), and never
+// leak their backend `games/*.json` path into the DOM. This validates
+// the catalog → GalleryView → user-visible affordance chain end-to-end
+// against the production-built bundle (Vite preview).
 //
 // The HUD/snapshot path for these scenes is exercised by
 // `crates/engine/tests/showcase_daily_life.rs` (engine + protocol
@@ -32,47 +31,43 @@ const SHOWCASE_SCENES: ReadonlyArray<{
 ];
 
 test.describe("SL1 showcase — daily-life delights", () => {
-  test("every showcase scene mounts in the scene browser with safe text", async ({
+  test("every showcase scene mounts in the gallery with safe text", async ({
     page,
   }) => {
     await page.goto("/");
 
-    const list = page.locator("#simetro-scene-list");
-    await expect(list).toBeVisible();
+    const gallery = page.locator("#simetro-gallery");
+    await expect(gallery).toBeVisible();
 
     for (const scene of SHOWCASE_SCENES) {
-      const button = page.locator(`#simetro-scene-${scene.id}`);
-      await expect(button).toBeVisible();
-      await expect(button).toContainText(scene.title);
-      // Backend path never leaks into the DOM (scene_id-only contract).
-      const html = await button.evaluate((el) => el.innerHTML);
+      const card = page.locator(`button[data-scene-id="${scene.id}"]`);
+      await expect(card).toBeVisible();
+      await expect(card).toContainText(scene.title);
+      const html = await card.evaluate((el) => el.innerHTML);
       expect(html).not.toContain(`games/${scene.id}.json`);
       expect(html).not.toContain("<script");
     }
   });
 
-  test("clicking each showcase scene flips aria-pressed", async ({ page }) => {
+  test("clicking a showcase scene enters sim view and updates the URL", async ({ page }) => {
     await page.goto("/");
 
     for (const scene of SHOWCASE_SCENES) {
-      const button = page.locator(`#simetro-scene-${scene.id}`);
-      await button.click();
-      await expect(button).toHaveAttribute("aria-pressed", "true");
-      // Selecting the next scene unsets the previous one — verified
-      // implicitly on the next loop iteration via the first scene's
-      // button starting as not-pressed once any other is selected.
+      await page.goto("/");
+      const card = page.locator(`button[data-scene-id="${scene.id}"]`);
+      await card.click();
+      await expect(page.locator("#scene")).toBeVisible();
+      await expect(page.locator("#simetro-switcher")).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`\\?scene=${scene.id}$`));
     }
   });
 
-  test("scene browser exposes the catalog as a list with stable ids", async ({
-    page,
-  }) => {
+  test("gallery exposes showcase cards with stable scene ids", async ({ page }) => {
     await page.goto("/");
-    const list = page.locator("#simetro-scene-list");
+    const gallery = page.locator("#simetro-gallery");
     for (const scene of SHOWCASE_SCENES) {
-      const button = list.locator(`#simetro-scene-${scene.id}`);
-      await expect(button).toHaveCount(1);
-      await expect(button).toHaveAttribute("aria-pressed", /^(true|false)$/);
+      const card = gallery.locator(`button[data-scene-id="${scene.id}"]`);
+      await expect(card).toHaveCount(1);
     }
   });
 });

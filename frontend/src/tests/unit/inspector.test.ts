@@ -44,12 +44,12 @@ describe("InspectorPanel", () => {
     expect(root.querySelector("img")).toBeNull();
   });
 
-  it("setVisible toggles display", () => {
+  it("show() and hide() toggle display without needing a report", () => {
     const parent = document.createElement("div");
     const panel = new InspectorPanel(parent);
-    panel.setVisible(false);
+    panel.hide();
     expect(panel.__testRoot().style.display).toBe("none");
-    panel.setVisible(true);
+    panel.show();
     expect(panel.__testRoot().style.display).toBe("block");
   });
 
