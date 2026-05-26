@@ -182,4 +182,104 @@ describe("synthesizeSl1Geometry", () => {
     expect(result.palette).toEqual(payload.palette);
     expect(result.name).toEqual(payload.name);
   });
+
+  it("populates node_names with SL1 place ids so hover shows real names", () => {
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "mycroft-telemetry", role: "source", pos: [0, 0] },
+        { id: "gpu-platform", role: "compute_cluster", pos: [100, 0] },
+      ],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    const namesByValue = Object.values(result.node_names);
+    expect(namesByValue).toContain("mycroft-telemetry");
+    expect(namesByValue).toContain("gpu-platform");
+  });
+
+  it("populates path_names with SL1 link ids", () => {
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "a", role: "source", pos: [0, 0] },
+        { id: "b", role: "dashboard", pos: [100, 0] },
+      ],
+      sl1_links: [
+        { id: "telemetry-feed", from: "a", to: "b", direction: "forward" },
+      ],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(Object.values(result.path_names)).toContain("telemetry-feed");
+  });
+
+  it("preserves pre-existing entries in node_names / path_names", () => {
+    const payload = emptyPayload({
+      node_names: { 99: "preexisting" },
+      path_names: { 88: "preexisting-path" },
+      sl1_places: [{ id: "a", role: "source", pos: [0, 0] }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.node_names[99]).toBe("preexisting");
+    expect(result.path_names[88]).toBe("preexisting-path");
+  });
+
+  it("skips duplicate place ids — first occurrence wins", () => {
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "dup", role: "source", pos: [0, 0] },
+        { id: "dup", role: "dashboard", pos: [100, 100] },
+      ],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.nodes).toHaveLength(1);
+    // First by sorted id ('dup' === 'dup') — first appearance after
+    // sort wins; both have same id so result is just one node.
+    expect(result.nodes[0]!.pos).toEqual([0, 0]);
+  });
+
+  it("uses locale-independent comparator (id ordering not affected by locale)", () => {
+    // Non-ASCII ids that would compare differently under some locale
+    // collations. Plain code-point comparison is what we want.
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "Z", role: "source", pos: [0, 0] },
+        { id: "a", role: "dashboard", pos: [100, 0] },
+      ],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    // ASCII code-point ordering: "Z" (0x5A) < "a" (0x61), so "Z" gets id 1.
+    expect(result.node_names[1]).toBe("Z");
+    expect(result.node_names[2]).toBe("a");
+  });
+
+  it("handles self-loop link (place linked to itself) by drawing degenerate path", () => {
+    const payload = emptyPayload({
+      sl1_places: [{ id: "a", role: "source", pos: [50, 50] }],
+      sl1_links: [{ id: "self", from: "a", to: "a", direction: "forward" }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.paths).toHaveLength(1);
+    expect(result.paths[0]!.from_pos).toEqual([50, 50]);
+    expect(result.paths[0]!.to_pos).toEqual([50, 50]);
+  });
+
+  it("works with empty palette (clamps colors to 0)", () => {
+    const payload = emptyPayload({
+      palette: [],
+      sl1_places: [{ id: "a", role: "source", pos: [0, 0] }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.nodes[0]!.color).toBe(0);
+  });
+
+  it("handles large coordinates without truncation or precision loss", () => {
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "a", role: "source", pos: [1e6, -1e6] },
+        { id: "b", role: "dashboard", pos: [2e6, 3e6] },
+      ],
+      sl1_links: [{ id: "l1", from: "a", to: "b", direction: "forward" }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.nodes[0]!.pos).toEqual([1e6, -1e6]);
+    expect(result.paths[0]!.to_pos).toEqual([2e6, 3e6]);
+  });
 });
