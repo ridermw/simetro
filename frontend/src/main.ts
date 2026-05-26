@@ -349,7 +349,8 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
         applySl1HudStatic(
           state.sl1,
           msg.payload.sl1_observability_dashboards,
-          msg.payload.sl1_observability_alerts
+          msg.payload.sl1_observability_alerts,
+          msg.payload.sl1_objectives
         );
         // Static block carries no live state — clear status until the
         // first snapshot lands.
@@ -391,6 +392,9 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
         }
         if (msg.payload.sl1_alert_states !== undefined) {
           state.sl1.alerts.updateStates(msg.payload.sl1_alert_states);
+        }
+        if (msg.payload.sl1_objective_states !== undefined) {
+          state.sl1.objectives.updateStates(msg.payload.sl1_objective_states);
         }
       }
       break;
