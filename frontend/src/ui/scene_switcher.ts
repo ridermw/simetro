@@ -22,6 +22,7 @@ export class SceneSwitcher {
   private hideTimer: number | null = null;
   private scenes: readonly SceneCatalogEntry[];
   private currentIndex = 0;
+  private abortController = new AbortController();
 
   constructor(
     parent: HTMLElement,
@@ -74,13 +75,17 @@ export class SceneSwitcher {
     parent.appendChild(this.root);
 
     // Show on mouse near top-right.
-    document.addEventListener("mousemove", (e) => {
-      if (this.root.style.display === "none") return;
-      if (e.clientX > window.innerWidth - 300 && e.clientY < 80) {
-        this.root.style.opacity = "1";
-        this.resetHideTimer();
-      }
-    });
+    document.addEventListener(
+      "mousemove",
+      (e) => {
+        if (this.root.style.display === "none") return;
+        if (e.clientX > window.innerWidth - 300 && e.clientY < 80) {
+          this.root.style.opacity = "1";
+          this.resetHideTimer();
+        }
+      },
+      { signal: this.abortController.signal }
+    );
   }
 
   show(): void {
@@ -95,6 +100,13 @@ export class SceneSwitcher {
       clearTimeout(this.hideTimer);
       this.hideTimer = null;
     }
+  }
+
+  /** Remove from the DOM and release all event listeners. */
+  destroy(): void {
+    this.hide();
+    this.abortController.abort();
+    this.root.remove();
   }
 
   setSelected(sceneId: string): void {
