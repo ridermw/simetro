@@ -11,6 +11,7 @@
 //!   simetro-headless policy-search --scene PATH [--baseline-policy PATH]
 //!                                  --candidate-policy PATH [--candidate-policy PATH...]
 //!                                  --ticks N --seed S --out PATH
+//!   simetro-headless emit-static [--scenes-dir DIR] [--output-dir DIR]
 //! ```
 //!
 //! Exits non-zero on load failures (LoadError surfaces as a printed
@@ -136,6 +137,16 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Generate StaticPayload JSON for all scenes in a directory.
+    /// Used as a build step for frontend gallery thumbnails.
+    EmitStatic {
+        /// Directory containing games/*.json scene files.
+        #[arg(long, default_value = "games")]
+        scenes_dir: PathBuf,
+        /// Output directory for static payload JSON files.
+        #[arg(long, default_value = "frontend/public/static-payloads")]
+        output_dir: PathBuf,
+    },
 }
 
 fn main() {
@@ -182,6 +193,10 @@ fn main() {
             ticks,
             &out,
         ),
+        Cmd::EmitStatic {
+            scenes_dir,
+            output_dir,
+        } => cmd_emit_static(&scenes_dir, &output_dir),
     };
     std::process::exit(code);
 }
@@ -199,6 +214,107 @@ fn load(path: &std::path::Path, seed: u64) -> Result<simetro_engine::LoadedScene
         eprintln!("LoadError: {e}");
         2
     })
+}
+
+#[derive(Serialize)]
+struct StaticEnvelope {
+    schema_version: u32,
+    payload: simetro_protocol::StaticPayload,
+}
+
+fn cmd_emit_static(scenes_dir: &std::path::Path, output_dir: &std::path::Path) -> i32 {
+    use simetro_engine::encode_static;
+
+    if let Err(e) = std::fs::create_dir_all(output_dir) {
+        eprintln!(
+            "emit-static: failed to create output dir {}: {e}",
+            output_dir.display()
+        );
+        return 3;
+    }
+
+    let entries = match std::fs::read_dir(scenes_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!(
+                "emit-static: failed to read scenes dir {}: {e}",
+                scenes_dir.display()
+            );
+            return 3;
+        }
+    };
+
+    let mut scene_paths = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!(
+                    "emit-static: failed to read entry in {}: {e}",
+                    scenes_dir.display()
+                );
+                return 3;
+            }
+        };
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+            scene_paths.push(path);
+        }
+    }
+    scene_paths.sort();
+
+    let mut total = 0u32;
+    let mut failed = 0u32;
+
+    for path in scene_paths {
+        let scene_id = match path.file_stem().and_then(|stem| stem.to_str()) {
+            Some(scene_id) => scene_id.to_string(),
+            None => continue,
+        };
+
+        total += 1;
+        eprintln!("emit-static: generating {scene_id}...");
+
+        let loaded = match load(&path, DEFAULT_SEED) {
+            Ok(loaded) => loaded,
+            Err(_) => {
+                eprintln!("emit-static: FAILED {scene_id}");
+                failed += 1;
+                continue;
+            }
+        };
+
+        let envelope = StaticEnvelope {
+            schema_version: simetro_protocol::SCHEMA_VERSION,
+            payload: encode_static(&loaded),
+        };
+
+        let json = match serde_json::to_string(&envelope) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("emit-static: serialize failed for {scene_id}: {e}");
+                failed += 1;
+                continue;
+            }
+        };
+
+        let out_path = output_dir.join(format!("{scene_id}.json"));
+        if let Err(e) = std::fs::write(&out_path, json) {
+            eprintln!("emit-static: write failed for {scene_id}: {e}");
+            failed += 1;
+            continue;
+        }
+    }
+
+    eprintln!(
+        "emit-static: {}/{total} payloads generated ({failed} failed)",
+        total - failed
+    );
+    if failed > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 fn cmd_run(scene: &std::path::Path, ticks: u64, seed: u64) -> i32 {
@@ -1131,5 +1247,52 @@ mod tests {
         }
         builder.into_inner()?.sync_all()?;
         Ok(())
+    }
+
+    #[test]
+    fn emit_static_generates_valid_payloads() {
+        let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/emit-static-test-output")
+            .join(format!("pid-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let out_dir = scratch.join("out");
+        let scenes_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../games");
+        let code = cmd_emit_static(&scenes_dir, &out_dir);
+        assert_eq!(code, 0, "emit-static should succeed for all scenes");
+
+        let demo = out_dir.join("demo-paths.json");
+        assert!(demo.exists(), "demo-paths.json should be generated");
+
+        let content = std::fs::read_to_string(&demo).unwrap();
+        let envelope: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(envelope["schema_version"], simetro_protocol::SCHEMA_VERSION);
+        assert_eq!(envelope["payload"]["name"], "demo-paths");
+        assert!(!envelope["payload"]["nodes"].as_array().unwrap().is_empty());
+
+        let expected = std::fs::read_dir(&scenes_dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .map(|entry| {
+                        entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+                    })
+                    .unwrap_or(false)
+            })
+            .count();
+        let count = std::fs::read_dir(&out_dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .map(|entry| {
+                        entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+                    })
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(count, expected, "should generate payloads for all scenes");
+
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 }
