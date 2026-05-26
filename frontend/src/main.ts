@@ -42,6 +42,8 @@ import {
   createSl1Hud,
   type Sl1Hud,
 } from "./ui/sl1_hud";
+import { Sl1RoleLegend, rolesInScene } from "./ui/sl1_legend";
+import { themeFromStatic } from "./renderer/theme";
 import { SCENE_CATALOG, findSceneById } from "./catalog/scenes";
 import { invokeSetScene } from "./app/scene_commands";
 import {
@@ -69,6 +71,7 @@ interface AppState {
   heartbeat: HeartbeatBadge | null;
   perf: PerfOverlay | null;
   sl1: Sl1Hud | null;
+  sl1Legend: Sl1RoleLegend | null;
   paused: boolean;
   speedFactor: number;
   lastSnapshotAt: number;
@@ -103,6 +106,7 @@ function createAppState(): AppState {
     heartbeat: null,
     perf: null,
     sl1: null,
+    sl1Legend: null,
     paused: false,
     speedFactor: 1,
     lastSnapshotAt: 0,
@@ -155,6 +159,7 @@ class ViewRouter {
     this.state.switcher?.hide();
     this.state.inspector?.hide();
     this.state.fault?.hide();
+    this.state.sl1Legend?.hide();
     this.state.gallery?.show();
 
     if (typeof window !== "undefined") {
@@ -350,6 +355,14 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
         // first snapshot lands.
         state.sl1.status.update(undefined, undefined);
       }
+      if (state.sl1Legend !== null) {
+        const places = msg.payload.sl1_places ?? [];
+        if (places.length > 0) {
+          state.sl1Legend.show(themeFromStatic(msg.payload), rolesInScene(places));
+        } else {
+          state.sl1Legend.hide();
+        }
+      }
       break;
     }
     case "snapshot": {
@@ -514,6 +527,7 @@ function boot(): void {
   state.heartbeat = new HeartbeatBadge(appRoot);
   state.perf = new PerfOverlay(appRoot);
   state.sl1 = createSl1Hud(appRoot);
+  state.sl1Legend = new Sl1RoleLegend(appRoot);
   state.controls = new ControlsBar(appRoot, (intent: ControlIntent) => {
     handleControl(intent, state);
   });
@@ -591,6 +605,7 @@ function boot(): void {
     state.switcher?.hide();
     state.inspector?.hide();
     state.fault?.hide();
+    state.sl1Legend?.hide();
     state.gallery?.show();
   }
 }
