@@ -29,6 +29,10 @@ import type {
   Sl1FailureConditionView,
   Sl1GameOutcomeView,
   Sl1GamePhase,
+  Sl1MetricSourceView,
+  Sl1MetricState,
+  Sl1MetricStateView,
+  Sl1MetricView,
   Sl1ObjectiveRuntimeView,
   Sl1ObjectiveStatusTag,
   Sl1ObjectiveView,
@@ -805,12 +809,195 @@ export function describeObjective(obj: Sl1ObjectiveView): string {
 }
 
 // ────────────────────────────────────────────────────────────────────
+//  Sl1MetricsPanel
+//
+//  Shows scene-declared observability metrics with their live runtime
+//  values. Answers "what is going wrong?" with concrete signals like
+//  dashboard freshness, backlog counts, and utilization.
+// ────────────────────────────────────────────────────────────────────
+
+interface MetricRow {
+  id: string;
+  source: Sl1MetricSourceView;
+  valueEl: HTMLSpanElement;
+  stateEl: HTMLSpanElement;
+  rowEl: HTMLDivElement;
+}
+
+const METRIC_STATE_COLOR: Record<Sl1MetricState, string> = {
+  ok: "#9ece6a",
+  no_data: "#8b949e",
+};
+
+const METRIC_STATE_LABEL: Record<Sl1MetricState, string> = {
+  ok: "ok",
+  no_data: "no data",
+};
+
+const METRIC_EMPTY_VALUE_COLOR = "#8b949e";
+const METRIC_VALUE_COLOR = "#e8eaed";
+
+export class Sl1MetricsPanel {
+  private root: HTMLDivElement;
+  private rowsContainer: HTMLDivElement;
+  private rowsById: Map<string, MetricRow> = new Map();
+
+  constructor(parent: HTMLElement) {
+    this.root = document.createElement("div");
+    this.root.id = "simetro-sl1-metrics";
+    this.root.setAttribute("role", "region");
+    this.root.setAttribute("aria-label", "Observability metrics");
+    this.root.style.cssText = [
+      "position: absolute",
+      "top: 220px",
+      "left: 240px",
+      "max-width: min(360px, calc(100vw - 264px))",
+      "padding: 8px 12px",
+      "background: rgba(14, 17, 22, 0.85)",
+      "border: 1px solid #2a2e39",
+      "border-radius: 6px",
+      "color: #e8eaed",
+      "font: 12px ui-monospace, SFMono-Regular, monospace",
+      "z-index: 20",
+      "pointer-events: none",
+      "display: none",
+      "overflow-wrap: anywhere",
+      "word-break: break-word",
+    ].join(";");
+
+    const heading = document.createElement("div");
+    heading.style.cssText =
+      "opacity: 0.65; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;";
+    heading.textContent = "metrics";
+    this.root.appendChild(heading);
+
+    this.rowsContainer = document.createElement("div");
+    this.rowsContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px;";
+    this.root.appendChild(this.rowsContainer);
+
+    parent.appendChild(this.root);
+  }
+
+  setMetrics(metrics: ReadonlyArray<Sl1MetricView>): void {
+    while (this.rowsContainer.firstChild !== null) {
+      this.rowsContainer.removeChild(this.rowsContainer.firstChild);
+    }
+    this.rowsById.clear();
+    if (metrics.length === 0) {
+      this.root.style.display = "none";
+      return;
+    }
+
+    for (const metric of metrics) {
+      const row = this.createRow(metric);
+      this.rowsContainer.appendChild(row.rowEl);
+      this.rowsById.set(metric.id, row);
+    }
+    this.root.style.display = "block";
+  }
+
+  updateStates(states: ReadonlyArray<Sl1MetricStateView>): void {
+    for (const state of states) {
+      const row = this.rowsById.get(state.metric_id);
+      if (row === undefined) continue;
+      this.applyState(row, state.state, state.value);
+    }
+  }
+
+  reset(): void {
+    while (this.rowsContainer.firstChild !== null) {
+      this.rowsContainer.removeChild(this.rowsContainer.firstChild);
+    }
+    this.rowsById.clear();
+    this.root.style.display = "none";
+  }
+
+  __testRoot(): HTMLElement {
+    return this.root;
+  }
+
+  private createRow(metric: Sl1MetricView): MetricRow {
+    const rowEl = document.createElement("div");
+    rowEl.dataset.metricId = metric.id;
+    rowEl.style.cssText = "display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline;";
+
+    const textEl = document.createElement("div");
+    textEl.style.cssText = "min-width: 0;";
+
+    const nameEl = document.createElement("div");
+    nameEl.style.cssText = "font-weight: 600; color: #c0caf5;";
+    nameEl.textContent = metric.id;
+    textEl.appendChild(nameEl);
+
+    const sourceEl = document.createElement("div");
+    sourceEl.style.cssText = "opacity: 0.78; font-size: 11px;";
+    sourceEl.textContent = describeMetricSource(metric.source);
+    textEl.appendChild(sourceEl);
+    rowEl.appendChild(textEl);
+
+    const valueStateEl = document.createElement("div");
+    valueStateEl.style.cssText = "display: flex; align-items: baseline; gap: 6px; min-width: 96px; justify-content: flex-end;";
+
+    const valueEl = document.createElement("span");
+    valueEl.dataset.metricValue = metric.id;
+    valueStateEl.appendChild(valueEl);
+
+    const stateEl = document.createElement("span");
+    stateEl.dataset.metricState = metric.id;
+    stateEl.style.cssText = "font-size: 10px; font-weight: 700; text-transform: uppercase;";
+    valueStateEl.appendChild(stateEl);
+
+    rowEl.appendChild(valueStateEl);
+
+    const row = { id: metric.id, source: metric.source, valueEl, stateEl, rowEl };
+    this.applyState(row, "no_data", undefined);
+    return row;
+  }
+
+  private applyState(row: MetricRow, state: Sl1MetricState, value: number | undefined): void {
+    // Treat non-finite values (NaN, Infinity) the same as no_data to
+    // avoid showing "NaN%" or "Infinity" as a legitimate metric value
+    // (Codex non-blocking #2 on PR #58).
+    const isFinite = value !== undefined && Number.isFinite(value);
+    const hasValue = state !== "no_data" && isFinite;
+    row.valueEl.textContent = hasValue
+      ? formatMetricValue(row.source, value as number)
+      : "—";
+    row.valueEl.style.color = hasValue ? METRIC_VALUE_COLOR : METRIC_EMPTY_VALUE_COLOR;
+    row.stateEl.textContent = METRIC_STATE_LABEL[state] ?? METRIC_STATE_LABEL.no_data;
+    row.stateEl.style.color = METRIC_STATE_COLOR[state] ?? METRIC_STATE_COLOR.no_data;
+  }
+}
+
+export function describeMetricSource(source: Sl1MetricSourceView): string {
+  switch (source.kind) {
+    case "place_capacity_used_percent":
+      return `${source.place}.${source.capacity} capacity %`;
+    case "place_inventory_count":
+      return `${source.place}: count of ${source.thing}`;
+    case "dashboard_freshness":
+      return `${source.dashboard} freshness (ticks)`;
+    default:
+      return "unknown metric";
+  }
+}
+
+/** Format a finite metric value for display. Pure helper, exported
+ *  for testing. Callers must guard non-finite values upstream — this
+ *  function assumes `Number.isFinite(value) === true`. */
+export function formatMetricValue(source: Sl1MetricSourceView, value: number): string {
+  const formatted = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return source.kind === "place_capacity_used_percent" ? `${formatted}%` : formatted;
+}
+
+// ────────────────────────────────────────────────────────────────────
 //  Composite helper used by main.ts boot wiring
 // ────────────────────────────────────────────────────────────────────
 
 export interface Sl1Hud {
   status: Sl1StatusPanel;
   objectives: Sl1ObjectivesPanel;
+  metrics: Sl1MetricsPanel;
   conditions: Sl1ConditionsPanel;
   milestones: Sl1MilestoneStrip;
   dashboards: Sl1DashboardChips;
@@ -821,6 +1008,7 @@ export interface Sl1Hud {
 export function createSl1Hud(parent: HTMLElement): Sl1Hud {
   const status = new Sl1StatusPanel(parent);
   const objectives = new Sl1ObjectivesPanel(parent);
+  const metrics = new Sl1MetricsPanel(parent);
   const conditions = new Sl1ConditionsPanel(parent);
   const milestones = new Sl1MilestoneStrip(parent);
   const dashboards = new Sl1DashboardChips(parent);
@@ -828,6 +1016,7 @@ export function createSl1Hud(parent: HTMLElement): Sl1Hud {
   return {
     status,
     objectives,
+    metrics,
     conditions,
     milestones,
     dashboards,
@@ -835,6 +1024,7 @@ export function createSl1Hud(parent: HTMLElement): Sl1Hud {
     reset(): void {
       status.reset();
       objectives.reset();
+      metrics.reset();
       conditions.reset();
       milestones.reset();
       dashboards.reset();
@@ -855,11 +1045,13 @@ export function applySl1HudStatic(
   staticDashboards: Sl1DashboardView[] | undefined,
   staticAlerts: Sl1AlertView[] | undefined,
   staticObjectives: Sl1ObjectiveView[] | undefined = undefined,
+  staticMetrics: Sl1MetricView[] | undefined = undefined,
   staticFailure: Sl1FailureConditionView[] | undefined = undefined,
   staticVictory: Sl1VictoryConditionView[] | undefined = undefined
 ): void {
   hud.dashboards.setDashboards(staticDashboards ?? []);
   hud.alerts.setAlerts(staticAlerts ?? []);
   hud.objectives.setObjectives(staticObjectives ?? []);
+  hud.metrics.setMetrics(staticMetrics ?? []);
   hud.conditions.setConditions(staticFailure ?? [], staticVictory ?? []);
 }
