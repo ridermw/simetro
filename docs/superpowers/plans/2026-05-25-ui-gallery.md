@@ -1,5 +1,14 @@
 # UI Gallery & Scene Visibility Implementation Plan
 
+> **Status: HISTORICAL / AS-PLANNED.** This document captures the
+> plan that drove PR #47. The final implementation diverged in
+> small ways during execution (file paths normalized to
+> `frontend/src/tests/unit/`, fault overlay uses
+> `#simetro-fault` element check rather than `[data-fault]`
+> attribute, scene count is 59 not 52 — 7 new scenes from PR #45
+> landed mid-implementation). The merged code is the source of
+> truth; this plan is preserved for design-rationale traceability.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make all 52 scenes (especially 21 SL1 scenarios) visible and discoverable in the UI via a gallery-first experience with pre-rendered thumbnails.
@@ -534,6 +543,9 @@ test.describe("per-scene render verification", () => {
       await page.waitForTimeout(300);
 
       // No fault overlay should be visible.
+      // (Note: actual implementation uses `#simetro-fault` element
+      // with `style.display === "none"` when hidden — see
+      // `frontend/src/tests/e2e/scene_renders.spec.ts`.)
       const faultCount = await page.locator("[data-fault]").count();
       expect(faultCount).toBe(0);
 
@@ -608,12 +620,13 @@ the 21 SL1 scenarios from `draft` to `ready`.
 
 - [ ] **Step 1: Write the unit test first**
 
-Create `frontend/src/tests/gallery.test.ts`:
+Create `frontend/src/tests/unit/gallery.test.ts` (note: actual path
+under `unit/` per vitest config; the implementation uses this path):
 
 ```typescript
-// frontend/src/tests/gallery.test.ts
+// frontend/src/tests/unit/gallery.test.ts
 import { describe, test, expect } from "vitest";
-import { SCENE_CATALOG } from "../catalog/scenes";
+import { SCENE_CATALOG } from "../../catalog/scenes";
 
 describe("scene catalog", () => {
   test("no SL1 scenes remain in draft status", () => {
