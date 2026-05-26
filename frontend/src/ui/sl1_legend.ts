@@ -68,6 +68,7 @@ export class Sl1RoleLegend {
     // Always render in canonical role order so reordering scene JSON
     // doesn't reshuffle the legend.
     const orderedRoles: string[] = ["source", "compute_cluster", "dashboard", "operator"];
+    let renderedRows = 0;
     for (const role of orderedRoles) {
       if (!roles.has(role)) continue;
       const hint = SL1_ROLE_HINTS[role];
@@ -80,6 +81,11 @@ export class Sl1RoleLegend {
       text.textContent = ROLE_LABELS[role] ?? role;
       row.appendChild(text);
       this.root.appendChild(row);
+      renderedRows += 1;
+    }
+    if (renderedRows === 0) {
+      this.root.style.display = "none";
+      return;
     }
     this.root.style.display = "flex";
   }

@@ -59,6 +59,12 @@ describe("Sl1RoleLegend", () => {
     expect(legend.__testRoot().style.display).toBe("none");
   });
 
+  it("show() stays hidden when no known SL1 roles are present", () => {
+    const legend = new Sl1RoleLegend(parent);
+    legend.show(DEFAULT_THEME, new Set(["unknown_role"]));
+    expect(legend.__testRoot().style.display).toBe("none");
+  });
+
   it("show() with roles displays legend with rows for each role", () => {
     const legend = new Sl1RoleLegend(parent);
     legend.show(DEFAULT_THEME, new Set(["source", "compute_cluster"]));
