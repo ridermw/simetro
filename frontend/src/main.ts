@@ -351,6 +351,7 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
           msg.payload.sl1_observability_dashboards,
           msg.payload.sl1_observability_alerts,
           msg.payload.sl1_objectives,
+          msg.payload.sl1_observability_metrics,
           msg.payload.sl1_failure_conditions,
           msg.payload.sl1_victory_conditions
         );
@@ -397,6 +398,9 @@ function handleMessage(msg: SimMessage, state: AppState, renderer: Renderer): vo
         }
         if (msg.payload.sl1_objective_states !== undefined) {
           state.sl1.objectives.updateStates(msg.payload.sl1_objective_states);
+        }
+        if (msg.payload.sl1_metric_states !== undefined) {
+          state.sl1.metrics.updateStates(msg.payload.sl1_metric_states);
         }
         if (msg.payload.sl1_failure_condition_states !== undefined) {
           state.sl1.conditions.updateFailureStates(msg.payload.sl1_failure_condition_states);
