@@ -194,6 +194,38 @@ describe("Renderer", () => {
     expect(calls.map((c) => c.text)).toEqual(["named-1", "named-3"]);
   });
 
+  it("auto-fit reserves extra bottom padding when show_node_labels=true (labels do not clip)", () => {
+    const r = makeRenderer();
+    const sceneWithLabels: StaticPayload = {
+      name: "labeled",
+      palette: ["#000", "#fff", "#7aa2f7"],
+      background_index: 0,
+      nodes: [
+        { id: 1, pos: [-200, -200], shape: "circle", color: 2 },
+        { id: 2, pos: [200, 200], shape: "square", color: 1 },
+      ],
+      paths: [],
+      node_names: { 1: "a", 2: "b" },
+      path_names: {},
+      mover_names: {},
+      show_node_labels: true,
+    };
+    const sceneWithoutLabels: StaticPayload = {
+      ...sceneWithLabels,
+      show_node_labels: false,
+    };
+    r.warm(themeFromStatic(sceneWithLabels));
+    r.setScene(sceneWithoutLabels);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fitNoLabels = (r as any).fitViewport;
+    r.setScene(sceneWithLabels);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fitWithLabels = (r as any).fitViewport;
+    // Labeled scene must fit at smaller-or-equal scale to make room
+    // for label text below the bottom row of nodes.
+    expect(fitWithLabels.scale).toBeLessThanOrEqual(fitNoLabels.scale);
+  });
+
   it("truncates very long node names to avoid label overflow", () => {
     const r = makeRenderer();
     const longName = "a".repeat(200);

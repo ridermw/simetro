@@ -85,6 +85,9 @@ export class Renderer {
   // World-space bounding box from the last setScene().
   private worldMinX = 0;
   private worldMinY = 0;
+  /** True when the active scene wants labels drawn — used to widen
+   *  the bottom fit padding so labels never clip on auto-fit. */
+  private hasNodeLabels = false;
   private worldMaxX = 0;
   private worldMaxY = 0;
   private hasWorldBounds = false;
@@ -172,6 +175,7 @@ export class Renderer {
     } else {
       this.hasWorldBounds = false;
     }
+    this.hasNodeLabels = scene.show_node_labels === true;
 
     const fit = this.computeFit();
     this.fitViewport = fit;
@@ -342,8 +346,12 @@ export class Renderer {
       return { scale: 1, offsetX: 0, offsetY: 0 };
     }
 
+    // When labels are visible, add extra bottom padding so the
+    // label text below the bottom row of nodes never clips into the
+    // canvas border. Approximation: 12px font + 6px gap = ~22px.
+    const labelPadding = this.hasNodeLabels ? 22 : 0;
     const availW = cssW - FIT_PADDING * 2;
-    const availH = cssH - FIT_PADDING * 2;
+    const availH = cssH - FIT_PADDING * 2 - labelPadding;
     const rawScale = Math.min(availW / worldW, availH / worldH);
     const scale = Math.max(
       MIN_SCALE,
@@ -351,7 +359,10 @@ export class Renderer {
     );
 
     const offsetX = cssW / 2 - (this.worldMinX + worldW / 2) * scale;
-    const offsetY = cssH / 2 - (this.worldMinY + worldH / 2) * scale;
+    // Shift the geometry slightly upward so the extra label padding
+    // shows at the bottom rather than equally on both sides.
+    const offsetY =
+      cssH / 2 - (this.worldMinY + worldH / 2) * scale - labelPadding / 2;
 
     return { scale, offsetX, offsetY };
   }
