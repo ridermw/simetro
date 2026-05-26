@@ -34,7 +34,7 @@ describe("GalleryView", () => {
     });
   });
 
-  it("calls onSelect with the clicked scene id", () => {
+  it("calls onSelect with a SelectScene intent", () => {
     const parent = document.createElement("div");
     const onSelect = vi.fn();
     const scenes = READY_SCENES.slice(0, 3);
@@ -43,30 +43,36 @@ describe("GalleryView", () => {
     gallery.show();
     parent.querySelector<HTMLButtonElement>(`button[data-scene-id="${scenes[1]?.id ?? ""}"]`)?.click();
 
-    expect(onSelect).toHaveBeenCalledWith(scenes[1]?.id);
+    expect(onSelect).toHaveBeenCalledWith({
+      kind: "SelectScene",
+      scene_id: scenes[1]?.id ?? "",
+    });
   });
 });
 
 describe("SceneSwitcher", () => {
-  it("passes adjacent scene ids to prev/next callbacks", () => {
+  it("invokes no-arg callbacks and leaves adjacent id lookup to callers", () => {
     const parent = document.createElement("div");
     const scenes = READY_SCENES.slice(0, 3);
     const handler = {
-      onPrev: vi.fn<(sceneId: string) => void>(),
-      onNext: vi.fn<(sceneId: string) => void>(),
+      onPrev: vi.fn(),
+      onNext: vi.fn(),
       onGallery: vi.fn(),
     };
     const switcher = new SceneSwitcher(parent, scenes, handler);
 
     switcher.setSelected(scenes[1]?.id ?? "");
+    expect(switcher.getAdjacentId("prev")).toBe(scenes[0]?.id ?? null);
+    expect(switcher.getAdjacentId("next")).toBe(scenes[2]?.id ?? null);
+
     switcher.show();
     const buttons = parent.querySelectorAll<HTMLButtonElement>("#simetro-switcher button");
     buttons[0]?.click();
     buttons[1]?.click();
     buttons[2]?.click();
 
-    expect(handler.onPrev).toHaveBeenCalledWith(scenes[0]?.id);
-    expect(handler.onNext).toHaveBeenCalledWith(scenes[2]?.id);
+    expect(handler.onPrev).toHaveBeenCalledWith();
+    expect(handler.onNext).toHaveBeenCalledWith();
     expect(handler.onGallery).toHaveBeenCalledTimes(1);
   });
 });

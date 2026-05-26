@@ -24,7 +24,12 @@ import type {
 } from "../catalog/scenes";
 import { GalleryCard } from "./gallery_card";
 
-export type SceneSelectHandler = (sceneId: string) => void;
+export interface SceneSelectIntent {
+  readonly kind: "SelectScene";
+  readonly scene_id: string;
+}
+
+export type SceneSelectHandler = (intent: SceneSelectIntent) => void;
 
 export interface GalleryFilter {
   world_kind: "all" | SceneWorldKind;
@@ -202,7 +207,7 @@ export class GalleryView {
       }
 
       const card = new GalleryCard(scene, () => {
-        this.onSelect(scene.id);
+        this.onSelect({ kind: "SelectScene", scene_id: scene.id });
       });
       this.cards.push(card);
       this.grid.appendChild(card.element);

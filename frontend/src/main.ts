@@ -511,12 +511,18 @@ function boot(): void {
 
   let router: ViewRouter;
   const readyCatalog = SCENE_CATALOG.filter((scene) => scene.status === "ready");
-  state.gallery = new GalleryView(appRoot, readyCatalog, (sceneId) => {
-    router.showSim(sceneId);
+  state.gallery = new GalleryView(appRoot, readyCatalog, (intent) => {
+    router.showSim(intent.scene_id);
   });
   state.switcher = new SceneSwitcher(appRoot, readyCatalog, {
-    onPrev: (sceneId) => router.showSim(sceneId),
-    onNext: (sceneId) => router.showSim(sceneId),
+    onPrev: () => {
+      const id = state.switcher?.getAdjacentId("prev");
+      if (id !== null && id !== undefined) router.showSim(id);
+    },
+    onNext: () => {
+      const id = state.switcher?.getAdjacentId("next");
+      if (id !== null && id !== undefined) router.showSim(id);
+    },
     onGallery: () => router.showGallery(),
   });
   router = new ViewRouter(canvas, appRoot, state, renderer);
