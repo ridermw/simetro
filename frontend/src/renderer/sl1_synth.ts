@@ -41,6 +41,14 @@ const ROLE_HINTS: Readonly<Record<string, RoleHint>> = {
 
 const FALLBACK_HINT: RoleHint = { shape: "circle", color: 1 };
 
+/** Public read-only view of role → shape/color mapping. Other
+ *  modules (UI legend, tests) can iterate this to display the legend
+ *  without duplicating the mapping table. */
+export const SL1_ROLE_HINTS: Readonly<Record<string, RoleHint>> = ROLE_HINTS;
+/** Public type alias so external callers (e.g. SL1 legend UI) can
+ *  describe their own hint inputs without importing the local type. */
+export type Sl1RoleHint = RoleHint;
+
 /** Locale-independent string comparator for stable id ordering across
  *  any JS runtime/locale. Use this instead of String.localeCompare. */
 function compareIds(a: string, b: string): number {
