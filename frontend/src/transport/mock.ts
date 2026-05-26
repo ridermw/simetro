@@ -27,6 +27,15 @@ import {
   type Sl1AlertStateView,
   type Sl1MilestoneView,
   type Sl1GameOutcomeView,
+  type Sl1FailureConditionRuntimeView,
+  type Sl1FailureConditionView,
+  type Sl1GamePhase,
+  type Sl1MetricStateView,
+  type Sl1MetricView,
+  type Sl1ObjectiveRuntimeView,
+  type Sl1ObjectiveView,
+  type Sl1VictoryConditionRuntimeView,
+  type Sl1VictoryConditionView,
   type StaticPayload,
   type SnapshotPayload,
   SCHEMA_VERSION,
@@ -58,6 +67,100 @@ export function sl1ModeFromLocation(search: string | undefined): boolean {
   if (search === undefined) return false;
   const params = new URLSearchParams(search);
   return params.get("sl1demo") === "1";
+}
+
+export interface Sl1SceneMeta {
+  metrics: Sl1MetricView[];
+  objectives: Sl1ObjectiveView[];
+  failures: Sl1FailureConditionView[];
+  victories: Sl1VictoryConditionView[];
+}
+
+export interface Sl1MockRuntime {
+  metric_states: Sl1MetricStateView[];
+  objective_states: Sl1ObjectiveRuntimeView[];
+  failure_condition_states: Sl1FailureConditionRuntimeView[];
+  victory_condition_states: Sl1VictoryConditionRuntimeView[];
+  phase: Sl1GamePhase;
+}
+
+const SL1_MOCK_BREACH_START_TICK = 60;
+const SL1_MOCK_BREACH_END_TICK = 100;
+
+function isSl1MockBreachActive(tick: number): boolean {
+  return tick >= SL1_MOCK_BREACH_START_TICK && tick <= SL1_MOCK_BREACH_END_TICK;
+}
+
+function sl1MockBreachTickCount(tick: number): number {
+  return isSl1MockBreachActive(tick) ? tick - SL1_MOCK_BREACH_START_TICK + 1 : 0;
+}
+
+function sl1MockBreachObjectiveId(scene: Sl1SceneMeta): string | undefined {
+  const objectiveIds = new Set(scene.objectives.map((objective) => objective.id));
+  const targetedFailure = scene.failures.find(
+    (failure) =>
+      failure.params.kind === "objective_breach_count" && objectiveIds.has(failure.params.objective_id)
+  );
+  if (targetedFailure?.params.kind === "objective_breach_count") {
+    return targetedFailure.params.objective_id;
+  }
+  return scene.objectives[0]?.id;
+}
+
+function sl1MockBreachFailureId(scene: Sl1SceneMeta, breachObjectiveId: string | undefined): string | undefined {
+  if (breachObjectiveId !== undefined) {
+    const targetedFailure = scene.failures.find(
+      (failure) =>
+        failure.params.kind === "objective_breach_count" && failure.params.objective_id === breachObjectiveId
+    );
+    if (targetedFailure !== undefined) return targetedFailure.id;
+  }
+  return scene.failures[0]?.id;
+}
+
+export function computeSl1MockRuntime(tick: number, scene: Sl1SceneMeta): Sl1MockRuntime {
+  const breachObjectiveId = sl1MockBreachObjectiveId(scene);
+  const breachFailureId = sl1MockBreachFailureId(scene, breachObjectiveId);
+  const breachCount = sl1MockBreachTickCount(tick);
+  const breachActive = breachCount > 0;
+
+  return {
+    metric_states: scene.metrics.map((metric, index) => {
+      switch (metric.source.kind) {
+        case "place_capacity_used_percent":
+          return {
+            metric_id: metric.id,
+            state: "ok",
+            value: Math.max(0, Math.min(100, 50 + 30 * Math.sin(tick / 40 + index * 0.17))),
+          };
+        case "place_inventory_count":
+          return {
+            metric_id: metric.id,
+            state: "ok",
+            value: Math.abs(Math.floor(Math.sin(tick * 0.13 + index) * 200)),
+          };
+        case "dashboard_freshness":
+          return {
+            metric_id: metric.id,
+            state: "ok",
+            value: tick % 90,
+          };
+      }
+    }),
+    objective_states: scene.objectives.map((objective) => ({
+      objective_id: objective.id,
+      status: breachActive && objective.id === breachObjectiveId ? "breached" : "met",
+      breach_tick_count: breachActive && objective.id === breachObjectiveId ? breachCount : 0,
+    })),
+    failure_condition_states: scene.failures.map((failure) => ({
+      failure_condition_id: failure.id,
+      breach_streak_ticks: breachActive && failure.id === breachFailureId ? breachCount : 0,
+    })),
+    victory_condition_states: scene.victories.map((victory) => ({
+      victory_condition_id: victory.id,
+    })),
+    phase: breachActive ? "losing" : "winning",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +406,7 @@ export class MockTransport implements Transport {
   private sl1LastPhase: string | undefined;
   private sl1LastDashboardStates: Sl1DashboardStateView[] | undefined;
   private sl1LastAlertStates: Sl1AlertStateView[] | undefined;
+  private sl1Scene: Sl1SceneMeta | null = null;
 
   constructor(options: MockTransportOptions = {}) {
     this.sl1Mode = options.sl1Mode === true;
@@ -331,7 +435,18 @@ export class MockTransport implements Transport {
         });
         return;
       }
-      handler(this.sl1Mode ? sl1StaticMessage(envelope.payload) : { kind: "static", payload: envelope.payload });
+      const payload = envelope.payload;
+      const hasSl1Scene =
+        (payload.sl1_places?.length ?? 0) > 0 || (payload.sl1_observability_metrics?.length ?? 0) > 0;
+      this.sl1Scene = hasSl1Scene
+        ? {
+            metrics: payload.sl1_observability_metrics ?? [],
+            objectives: payload.sl1_objectives ?? [],
+            failures: payload.sl1_failure_conditions ?? [],
+            victories: payload.sl1_victory_conditions ?? [],
+          }
+        : null;
+      handler(this.sl1Mode ? sl1StaticMessage(payload) : { kind: "static", payload });
     } catch (e) {
       const msg = `failed to load static for ${sceneId}: ${e instanceof Error ? e.message : String(e)}`;
       console.error(`simetro: ${msg}`);
@@ -351,6 +466,7 @@ export class MockTransport implements Transport {
     this.sl1LastPhase = undefined;
     this.sl1LastDashboardStates = undefined;
     this.sl1LastAlertStates = undefined;
+    this.sl1Scene = null;
 
     // Defer initial messages one microtask so callers finish wiring
     // before first dispatch — matches the real transport's async surface.
@@ -396,18 +512,25 @@ export class MockTransport implements Transport {
       on_path: m.pathId,
       speed: m.speed,
     }));
-    if (!this.sl1Mode) {
-      return { kind: "snapshot", payload: { tick, movers: moverStates } };
-    }
     // Only attach SL1 fields when defined; exactOptionalPropertyTypes
     // rejects `undefined` literals on optional properties.
     const payload: SnapshotPayload = { tick, movers: moverStates };
-    if (this.sl1LastOutcome !== undefined) payload.sl1_game_outcome = this.sl1LastOutcome;
-    if (this.sl1LastPhase !== undefined) payload.sl1_game_phase = this.sl1LastPhase;
-    if (this.sl1LastDashboardStates !== undefined) {
-      payload.sl1_dashboard_states = this.sl1LastDashboardStates;
+    if (this.sl1Scene !== null) {
+      const runtime = computeSl1MockRuntime(tick, this.sl1Scene);
+      payload.sl1_metric_states = runtime.metric_states;
+      payload.sl1_objective_states = runtime.objective_states;
+      payload.sl1_failure_condition_states = runtime.failure_condition_states;
+      payload.sl1_victory_condition_states = runtime.victory_condition_states;
+      payload.sl1_game_phase = runtime.phase;
     }
-    if (this.sl1LastAlertStates !== undefined) payload.sl1_alert_states = this.sl1LastAlertStates;
+    if (this.sl1Mode && this.sl1Scene === null) {
+      if (this.sl1LastOutcome !== undefined) payload.sl1_game_outcome = this.sl1LastOutcome;
+      if (this.sl1LastPhase !== undefined) payload.sl1_game_phase = this.sl1LastPhase;
+      if (this.sl1LastDashboardStates !== undefined) {
+        payload.sl1_dashboard_states = this.sl1LastDashboardStates;
+      }
+      if (this.sl1LastAlertStates !== undefined) payload.sl1_alert_states = this.sl1LastAlertStates;
+    }
     return { kind: "snapshot", payload };
   }
 
@@ -449,7 +572,7 @@ export class MockTransport implements Transport {
 
     // Apply scripted SL1 state changes (mutates last* fields so the
     // snapshot emitted below carries the latest values).
-    if (this.sl1Mode) {
+    if (this.sl1Mode && this.sl1Scene === null) {
       for (const stepEntry of SL1_SCRIPT) {
         if (stepEntry.atTick === this.tick) {
           if (stepEntry.outcome !== undefined) this.sl1LastOutcome = stepEntry.outcome;
