@@ -115,7 +115,10 @@ export class GalleryView {
 
     // Grid.
     this.grid = document.createElement("div");
-    this.grid.setAttribute("role", "list");
+    // Do NOT set role="list" — buttons inside would need role="listitem"
+    // which overrides their native button role (Codex P1 on PR #51).
+    // Use a labelled group region instead for screen reader context.
+    this.grid.setAttribute("role", "group");
     this.grid.setAttribute("aria-label", "Available scenes");
     this.grid.style.cssText = `
       max-width: 1200px; margin: 0 auto;

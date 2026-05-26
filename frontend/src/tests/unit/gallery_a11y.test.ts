@@ -55,10 +55,14 @@ describe("GalleryView accessibility", () => {
     expect(root?.getAttribute("aria-label")).toBe("Scene gallery");
   });
 
-  it("grid has list role with descriptive label", () => {
+  it("grid has group role with descriptive label (not list — buttons keep native role)", () => {
     new GalleryView(parent, [makeScene("s1")], () => {});
-    const grid = parent.querySelector("[role='list']");
+    const grid = parent.querySelector("[role='group']");
+    expect(grid).not.toBeNull();
     expect(grid?.getAttribute("aria-label")).toBe("Available scenes");
+    // No role="list" — that would force role="listitem" on buttons
+    // and override their native button role.
+    expect(parent.querySelector("[role='list']")).toBeNull();
   });
 
   it("filter chips form a radio group", () => {
@@ -95,7 +99,7 @@ describe("GalleryView accessibility", () => {
 
     const first = parent.querySelector<HTMLButtonElement>("[data-scene-id='a']");
     first?.focus();
-    const grid = parent.querySelector<HTMLElement>("[role='list']");
+    const grid = parent.querySelector<HTMLElement>("[role='group']");
     grid?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
 
     const focused = document.activeElement;
@@ -110,7 +114,7 @@ describe("GalleryView accessibility", () => {
 
     const first = parent.querySelector<HTMLButtonElement>("[data-scene-id='a']");
     first?.focus();
-    const grid = parent.querySelector<HTMLElement>("[role='list']");
+    const grid = parent.querySelector<HTMLElement>("[role='group']");
     grid?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
 
     expect((document.activeElement as HTMLElement)?.dataset.sceneId).toBe("a");
@@ -124,7 +128,7 @@ describe("GalleryView accessibility", () => {
 
     const last = parent.querySelector<HTMLButtonElement>("[data-scene-id='c']");
     last?.focus();
-    const grid = parent.querySelector<HTMLElement>("[role='list']");
+    const grid = parent.querySelector<HTMLElement>("[role='group']");
     grid?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
 
     expect((document.activeElement as HTMLElement)?.dataset.sceneId).toBe("a");
@@ -138,7 +142,7 @@ describe("GalleryView accessibility", () => {
 
     const first = parent.querySelector<HTMLButtonElement>("[data-scene-id='a']");
     first?.focus();
-    const grid = parent.querySelector<HTMLElement>("[role='list']");
+    const grid = parent.querySelector<HTMLElement>("[role='group']");
     grid?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
 
     expect((document.activeElement as HTMLElement)?.dataset.sceneId).toBe("c");
@@ -151,7 +155,7 @@ describe("GalleryView accessibility", () => {
     if (gallery) gallery.style.display = "block";
 
     (document.activeElement as HTMLElement | null)?.blur();
-    const grid = parent.querySelector<HTMLElement>("[role='list']");
+    const grid = parent.querySelector<HTMLElement>("[role='group']");
     grid?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
 
     expect((document.activeElement as HTMLElement)?.dataset.sceneId).toBe("a");
@@ -165,7 +169,7 @@ describe("GalleryView accessibility", () => {
 
     const first = parent.querySelector<HTMLButtonElement>("[data-scene-id='a']");
     first?.focus();
-    const grid = parent.querySelector<HTMLElement>("[role='list']");
+    const grid = parent.querySelector<HTMLElement>("[role='group']");
     grid?.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
 
     expect((document.activeElement as HTMLElement)?.dataset.sceneId).toBe("a");
@@ -179,11 +183,14 @@ describe("GalleryCard accessibility", () => {
     document.body.appendChild(parent);
   });
 
-  it("card has listitem role", () => {
+  it("card preserves native button role (no role override)", () => {
     const scene = makeScene("test", { title: "Test", subtitle: "Sub", difficulty: "medium" });
     const card = new GalleryCard(scene, () => {});
     parent.appendChild(card.element);
-    expect(card.element.getAttribute("role")).toBe("listitem");
+    // Should NOT have a role override — keeps native button role
+    // so screen readers announce it as an actionable button.
+    expect(card.element.tagName).toBe("BUTTON");
+    expect(card.element.getAttribute("role")).toBeNull();
   });
 
   it("card has descriptive aria-label combining title + subtitle + difficulty", () => {

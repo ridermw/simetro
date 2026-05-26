@@ -32,8 +32,9 @@ export class GalleryCard {
     this.element.type = "button";
     // data-scene-id for E2E selectors (rubber-duck fix: avoid hitting filter chips).
     this.element.dataset.sceneId = scene.id;
-    // List semantics for screen readers — the grid is role="list".
-    this.element.setAttribute("role", "listitem");
+    // Keep native button role — do NOT override with role="listitem" or
+    // similar; that would prevent screen readers from announcing the
+    // card as an actionable button (Codex P1 finding on PR #51).
     // Accessible label so screen readers announce scene title + metadata,
     // not just the button role.
     this.element.setAttribute(
