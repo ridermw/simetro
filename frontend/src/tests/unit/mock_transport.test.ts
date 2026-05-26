@@ -69,8 +69,8 @@ describe("MockTransport", () => {
     t.disconnect();
   });
 
-  it("falls back to demo static when fetched external payload schema mismatches", async () => {
-    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("emits a load_error fault when fetched external payload schema mismatches", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ schema_version: SCHEMA_VERSION + 1, payload: EXTERNAL_STATIC_PAYLOAD }), {
         status: 200,
@@ -86,11 +86,11 @@ describe("MockTransport", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(fetchMock).toHaveBeenCalledWith("/static-payloads/gpu-launch-week.json");
-    expect(received[0]?.kind).toBe("static");
-    if (received[0]?.kind === "static") {
-      expect(received[0].payload.name).toBe("demo-paths");
+    expect(received[0]?.kind).toBe("fault");
+    if (received[0]?.kind === "fault") {
+      expect(received[0].payload.kind).toBe("load_error");
     }
-    expect(consoleWarn).toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
     t.disconnect();
   });
 

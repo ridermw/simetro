@@ -313,24 +313,32 @@ export class MockTransport implements Transport {
     try {
       const resp = await fetch(`/static-payloads/${sceneId}.json`);
       if (!resp.ok) {
-        console.warn(
-          `simetro: static payload fetch failed for ${sceneId} (${resp.status}), using demo`
-        );
-        handler(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+        const msg = `static payload fetch failed for ${sceneId} (HTTP ${resp.status})`;
+        console.error(`simetro: ${msg}`);
+        handler({
+          kind: "fault",
+          payload: { kind: "load_error", message: msg, line: null, col: null },
+        });
         return;
       }
       const envelope = (await resp.json()) as { schema_version: number; payload: StaticPayload };
       if (envelope.schema_version !== SCHEMA_VERSION) {
-        console.warn(
-          `simetro: schema mismatch for ${sceneId} (got ${envelope.schema_version}, want ${SCHEMA_VERSION}), using demo`
-        );
-        handler(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+        const msg = `schema mismatch for ${sceneId}: got ${envelope.schema_version}, want ${SCHEMA_VERSION}`;
+        console.error(`simetro: ${msg}`);
+        handler({
+          kind: "fault",
+          payload: { kind: "load_error", message: msg, line: null, col: null },
+        });
         return;
       }
       handler(this.sl1Mode ? sl1StaticMessage(envelope.payload) : { kind: "static", payload: envelope.payload });
     } catch (e) {
-      console.warn(`simetro: failed to load static for ${sceneId}`, e);
-      handler(this.sl1Mode ? sl1StaticMessage() : DEMO_STATIC);
+      const msg = `failed to load static for ${sceneId}: ${e instanceof Error ? e.message : String(e)}`;
+      console.error(`simetro: ${msg}`);
+      handler({
+        kind: "fault",
+        payload: { kind: "load_error", message: msg, line: null, col: null },
+      });
     }
   }
 
