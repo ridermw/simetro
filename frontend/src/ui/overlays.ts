@@ -98,9 +98,32 @@ export function formatFault(fault: FaultPayload): string {
 
 // ───────────────── WarningStrip ──────────────────────────────
 
+/** Maximum number of distinct warning pills displayed at once. When
+ *  the engine emits many distinct warnings rapidly (e.g. SL1
+ *  transforms repeatedly missing slots — see
+ *  `crates/engine/tests/warning_flood.rs` which characterizes ~670
+ *  warnings per 600-tick run of clinic-triage-desk), older pills are
+ *  dropped from the DOM to keep the strip from cascading down the
+ *  right side of the viewport. */
+const WARNING_STRIP_MAX_VISIBLE = 5;
+
+interface WarningStripItem {
+  el: HTMLDivElement;
+  expiresAt: number;
+  /** Stable key used for coalescing repeats. Same key bumps the
+   *  existing pill's count instead of appending a new one. */
+  coalesceKey: string;
+  /** Times this exact warning has been pushed since the pill was
+   *  created. The pill text shows `original (× N)` when count > 1. */
+  count: number;
+  /** Base text without the multiplier suffix; needed so the pill
+   *  text can be rebuilt as the count grows. */
+  baseText: string;
+}
+
 export class WarningStrip {
   private root: HTMLDivElement;
-  private items: { el: HTMLDivElement; expiresAt: number }[] = [];
+  private items: WarningStripItem[] = [];
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement("div");
@@ -120,6 +143,40 @@ export class WarningStrip {
   }
 
   push(warning: WarningPayload, durationMs = 4000): void {
+    const baseText = formatWarning(warning);
+    const coalesceKey = warningCoalesceKey(warning);
+    const expiresAt =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) + durationMs;
+
+    // Coalesce: if the same warning key is already visible, just bump
+    // the counter on its pill. This prevents the engine emitting "the
+    // same warning every tick" from creating a cascade of identical
+    // pills.
+    const existing = this.items.find((it) => it.coalesceKey === coalesceKey);
+    if (existing !== undefined) {
+      existing.count += 1;
+      existing.expiresAt = expiresAt;
+      // Refresh baseText from the LATEST warning payload so escalating
+      // values (e.g. behind.lag_frames going 3 → 50) actually show in
+      // the pill, not just the multiplier (Codex P2 #1).
+      existing.baseText = baseText;
+      existing.el.textContent = `${baseText} × ${existing.count}`;
+      // Move the coalesced item to the end of the array so the
+      // visibility cap's shift() (which drops the array front) doesn't
+      // evict actively-refreshing warnings just because they were
+      // inserted first (Codex P2 #2). 'Oldest' should mean 'least
+      // recently touched', not 'first inserted'.
+      const idx = this.items.indexOf(existing);
+      if (idx !== -1 && idx !== this.items.length - 1) {
+        this.items.splice(idx, 1);
+        this.items.push(existing);
+        // Reflect the new order in the DOM so visual stacking matches
+        // recency: most-recent at the bottom of the column.
+        this.root.appendChild(existing.el);
+      }
+      return;
+    }
+
     const pill = document.createElement("div");
     pill.style.cssText = [
       "padding: 4px 8px",
@@ -130,11 +187,18 @@ export class WarningStrip {
       "border-radius: 4px",
       "max-width: 320px",
     ].join(";");
-    pill.textContent = formatWarning(warning);
+    pill.textContent = baseText;
     this.root.appendChild(pill);
-    const expiresAt =
-      (typeof performance !== "undefined" ? performance.now() : Date.now()) + durationMs;
-    this.items.push({ el: pill, expiresAt });
+    this.items.push({ el: pill, expiresAt, coalesceKey, count: 1, baseText });
+
+    // Cap visible pills — drop the OLDEST (front of the array) when
+    // the cap is exceeded so the most recent warnings remain visible.
+    // Coalesced items get bumped to the end on each refresh (above),
+    // so 'front of the array' == 'least recently active'.
+    while (this.items.length > WARNING_STRIP_MAX_VISIBLE) {
+      const dropped = this.items.shift();
+      if (dropped !== undefined) dropped.el.remove();
+    }
   }
 
   /** Call every frame. Sweeps expired pills. */
@@ -155,6 +219,23 @@ export class WarningStrip {
 
   __testCount(): number {
     return this.items.length;
+  }
+}
+
+/** Coalesce key — same warning fired again bumps the existing pill's
+ *  count rather than creating a duplicate. For warnings that carry an
+ *  id (agent, transform, demand, etc) we treat each id as its own
+ *  series; for unparameterized variants we coalesce by kind alone. */
+function warningCoalesceKey(w: WarningPayload): string {
+  switch (w.kind) {
+    case "invalid_action":
+      return `invalid_action/${w.agent_id}`;
+    case "behind":
+      return "behind";
+    case "tick_over_budget":
+      return "tick_over_budget";
+    case "agent_log_slow":
+      return "agent_log_slow";
   }
 }
 
