@@ -71,6 +71,13 @@ export interface StaticPayload {
   mover_names: Record<number, string>;
   // --- scenario_language_v1 (SL1) static metadata (PR 12b) ---
   // All optional; non-SL1 scenes simply omit them.
+  /** SL1 places — author-declared locations with role, position,
+   *  capacity, storage, and accept/produce contracts. Static metadata
+   *  only. Empty/omitted for non-SL1 scenes. */
+  sl1_places?: Sl1PlaceView[];
+  /** SL1 links — author-declared transport edges between places.
+   *  Static metadata only. Empty/omitted for non-SL1 scenes. */
+  sl1_links?: Sl1LinkView[];
   sl1_objectives?: Sl1ObjectiveView[];
   sl1_failure_conditions?: Sl1FailureConditionView[];
   sl1_victory_conditions?: Sl1VictoryConditionView[];
@@ -78,6 +85,30 @@ export interface StaticPayload {
   sl1_observability_dashboards?: Sl1DashboardView[];
   sl1_observability_alerts?: Sl1AlertView[];
   sl1_milestones?: Sl1MilestoneView[];
+}
+
+/** SL1 place — author-declared location in a scenario_language_v1 scene.
+ *  Only fields the frontend uses for rendering are typed here; the
+ *  Rust side carries additional metadata that the renderer ignores. */
+export interface Sl1PlaceView {
+  id: string;
+  role: string;
+  pos: [number, number];
+  /** Optional render hint carried opaquely from the scene JSON. */
+  shape?: string;
+  /** Optional palette index, carried opaquely. */
+  color?: number;
+}
+
+/** SL1 link — author-declared transport edge between places. */
+export interface Sl1LinkView {
+  id: string;
+  /** Source place id (matches Sl1PlaceView.id). */
+  from: string;
+  /** Destination place id (matches Sl1PlaceView.id). */
+  to: string;
+  /** Direction: "forward" or "bidirectional" — mirrors Rust enum. */
+  direction: string;
 }
 
 export interface SnapshotPayload {

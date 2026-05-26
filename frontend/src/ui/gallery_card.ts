@@ -8,6 +8,7 @@ import type { SceneCatalogEntry } from "../catalog/scenes";
 import type { StaticPayload } from "../protocol/messages";
 import { SCHEMA_VERSION } from "../protocol/messages";
 import { renderThumbnail, renderPaletteSwatch } from "./thumbnail_renderer";
+import { synthesizeSl1Geometry } from "../renderer/sl1_synth";
 
 const THUMB_WIDTH = 320;
 const THUMB_HEIGHT = 180;
@@ -121,7 +122,7 @@ export class GalleryCard {
         throw new Error(`schema mismatch: ${envelope.schema_version}`);
       }
       const canvas = renderThumbnail(
-        envelope.payload,
+        synthesizeSl1Geometry(envelope.payload),
         THUMB_WIDTH,
         THUMB_HEIGHT
       );

@@ -2,6 +2,7 @@ import type { FaultPayload, MoverState, StaticPayload } from "../protocol/messag
 import { AnimationEngine } from "../renderer/animation_engine";
 import { SnapshotBuffer } from "../store/snapshots";
 import { themeFromStatic, type Theme } from "../renderer/theme";
+import { synthesizeSl1Geometry } from "../renderer/sl1_synth";
 import type { ControlIntent } from "../ui/controls";
 
 export interface SceneSwitchState {
@@ -43,11 +44,14 @@ export function applySceneStatic(
 ): void {
   clearSceneScopedUi(state);
   clearSceneScopedRuntime(state);
-  state.scene = scene;
-  state.theme = themeFromStatic(scene);
+  // Project SL1 places/links into legacy nodes/paths so the renderer
+  // can draw SL1 scenes that don't (yet) carry a transport runtime.
+  const projected = synthesizeSl1Geometry(scene);
+  state.scene = projected;
+  state.theme = themeFromStatic(projected);
   renderer.warm(state.theme);
-  renderer.setScene(scene);
-  state.hover?.setScene(scene);
+  renderer.setScene(projected);
+  state.hover?.setScene(projected);
 }
 
 export function preserveSceneAfterSwitchFailure(
