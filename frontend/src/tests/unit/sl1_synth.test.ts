@@ -83,6 +83,33 @@ describe("synthesizeSl1Geometry", () => {
     const path = result.paths[0]!;
     expect(path.from_pos).toEqual([0, 0]);
     expect(path.to_pos).toEqual([100, 50]);
+    expect(path.arrow).toBe("forward");
+  });
+
+  it("maps bidirectional sl1_links to arrow=bidirectional", () => {
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "a", role: "source", pos: [0, 0] },
+        { id: "b", role: "operator", pos: [100, 0] },
+      ],
+      sl1_links: [
+        { id: "l1", from: "a", to: "b", direction: "bidirectional" },
+      ],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.paths[0]!.arrow).toBe("bidirectional");
+  });
+
+  it("unknown direction values fall back to forward", () => {
+    const payload = emptyPayload({
+      sl1_places: [
+        { id: "a", role: "source", pos: [0, 0] },
+        { id: "b", role: "dashboard", pos: [100, 0] },
+      ],
+      sl1_links: [{ id: "l1", from: "a", to: "b", direction: "weird" }],
+    });
+    const result = synthesizeSl1Geometry(payload);
+    expect(result.paths[0]!.arrow).toBe("forward");
   });
 
   it("skips links referencing unknown place ids", () => {

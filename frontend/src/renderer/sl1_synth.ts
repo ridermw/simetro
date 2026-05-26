@@ -106,11 +106,17 @@ export function synthesizeSl1Geometry(payload: StaticPayload): StaticPayload {
     // trace data flow from origin.
     const color = colorByPlace.get(link.from) ?? FALLBACK_HINT.color;
     const id = pathIdCounter++;
+    // Map SL1 link direction to PathView.arrow. Unknown direction
+    // strings fall back to "forward" (matches the common case in
+    // current SL1 scenes — most flows are unidirectional).
+    const arrow: "forward" | "bidirectional" =
+      link.direction === "bidirectional" ? "bidirectional" : "forward";
     paths.push({
       id,
       from_pos: fromPos,
       to_pos: toPos,
       color: clampColor(color),
+      arrow,
     });
     pathNames[id] = link.id;
   }
