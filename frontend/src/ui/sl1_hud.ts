@@ -61,9 +61,6 @@ export class Sl1StatusPanel {
     this.root.setAttribute("role", "status");
     this.root.setAttribute("aria-label", "Scenario status");
     this.root.style.cssText = [
-      "position: absolute",
-      "top: 12px",
-      "left: 12px",
       "min-width: 200px",
       "padding: 8px 12px",
       "background: rgba(14, 17, 22, 0.85)",
@@ -247,9 +244,6 @@ export class Sl1DashboardChips {
     this.root.setAttribute("role", "list");
     this.root.setAttribute("aria-label", "Dashboard freshness");
     this.root.style.cssText = [
-      "position: absolute",
-      "top: 12px",
-      "right: 12px",
       "display: flex",
       "flex-direction: column",
       "gap: 4px",
@@ -359,9 +353,6 @@ export class Sl1AlertStrip {
     this.root.setAttribute("role", "list");
     this.root.setAttribute("aria-label", "Active alerts");
     this.root.style.cssText = [
-      "position: absolute",
-      "top: 96px",
-      "right: 12px",
       "display: flex",
       "flex-direction: column",
       "gap: 4px",
@@ -478,11 +469,6 @@ export class Sl1ConditionsPanel {
     this.root.setAttribute("role", "region");
     this.root.setAttribute("aria-label", "Win and loss conditions");
     this.root.style.cssText = [
-      "position: absolute",
-      "top: 12px",
-      // Use right-anchor with width clamp so the panel stays inside
-      // the viewport on narrower windows (Codex non-blocking #1).
-      "right: 12px",
       "max-width: min(360px, calc(100vw - 24px))",
       "padding: 8px 12px",
       "background: rgba(14, 17, 22, 0.85)",
@@ -695,9 +681,6 @@ export class Sl1ObjectivesPanel {
     this.root.setAttribute("role", "region");
     this.root.setAttribute("aria-label", "Scenario objectives");
     this.root.style.cssText = [
-      "position: absolute",
-      "top: 12px",
-      "left: 240px",
       "max-width: 380px",
       "padding: 8px 12px",
       "background: rgba(14, 17, 22, 0.85)",
@@ -848,10 +831,7 @@ export class Sl1MetricsPanel {
     this.root.setAttribute("role", "region");
     this.root.setAttribute("aria-label", "Observability metrics");
     this.root.style.cssText = [
-      "position: absolute",
-      "top: 220px",
-      "left: 240px",
-      "max-width: min(360px, calc(100vw - 264px))",
+      "max-width: 100%",
       "padding: 8px 12px",
       "background: rgba(14, 17, 22, 0.85)",
       "border: 1px solid #2a2e39",
@@ -1006,13 +986,57 @@ export interface Sl1Hud {
 }
 
 export function createSl1Hud(parent: HTMLElement): Sl1Hud {
-  const status = new Sl1StatusPanel(parent);
-  const objectives = new Sl1ObjectivesPanel(parent);
-  const metrics = new Sl1MetricsPanel(parent);
-  const conditions = new Sl1ConditionsPanel(parent);
+  const leftStack = document.createElement("div");
+  leftStack.id = "simetro-sl1-hud-left";
+  leftStack.style.cssText = [
+    "position: absolute",
+    "top: 12px",
+    "left: 12px",
+    // fit-content keeps the stack's hit-test area limited to the
+    // widest visible panel rather than the full max-width box, so
+    // pointer-events: auto (needed for overflow-y scrolling on
+    // long HUDs) doesn't swallow canvas clicks in empty space.
+    "width: fit-content",
+    "max-height: calc(100vh - 24px)",
+    "max-width: calc(50vw - 24px)",
+    "display: flex",
+    "flex-direction: column",
+    "gap: 8px",
+    "overflow-y: auto",
+    // pointer-events: auto enables wheel/scrollbar interaction when
+    // the stack overflows. Individual panels remain pointer-events: none
+    // because they are read-only — this means canvas clicks pass
+    // through panel-shaped holes but the stack itself handles scroll.
+    "pointer-events: auto",
+    "z-index: 20",
+  ].join(";");
+  parent.appendChild(leftStack);
+
+  const rightStack = document.createElement("div");
+  rightStack.id = "simetro-sl1-hud-right";
+  rightStack.style.cssText = [
+    "position: absolute",
+    "top: 12px",
+    "right: 12px",
+    "width: fit-content",
+    "max-height: calc(100vh - 24px)",
+    "max-width: calc(50vw - 24px)",
+    "display: flex",
+    "flex-direction: column",
+    "gap: 8px",
+    "overflow-y: auto",
+    "pointer-events: auto",
+    "z-index: 20",
+  ].join(";");
+  parent.appendChild(rightStack);
+
+  const status = new Sl1StatusPanel(leftStack);
+  const objectives = new Sl1ObjectivesPanel(leftStack);
+  const metrics = new Sl1MetricsPanel(leftStack);
+  const conditions = new Sl1ConditionsPanel(rightStack);
+  const dashboards = new Sl1DashboardChips(rightStack);
+  const alerts = new Sl1AlertStrip(rightStack);
   const milestones = new Sl1MilestoneStrip(parent);
-  const dashboards = new Sl1DashboardChips(parent);
-  const alerts = new Sl1AlertStrip(parent);
   return {
     status,
     objectives,

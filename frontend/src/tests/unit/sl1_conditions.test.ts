@@ -279,13 +279,13 @@ describe("Sl1ConditionsPanel", () => {
     expect(panel.__testRoot().querySelectorAll("[data-condition-kind]").length).toBe(2);
   });
 
-  it("panel layout uses right-anchor + viewport-clamped max-width", () => {
+  it("panel styling is viewport-clamped and wraps to avoid horizontal overflow", () => {
     const panel = new Sl1ConditionsPanel(parent);
     const css = panel.__testRoot().style.cssText;
-    // Right-anchor so the panel never overflows past the right edge.
-    expect(css).toContain("right: 12px");
-    // Should NOT use a fixed left position that can collide on narrow viewports.
-    expect(css).not.toContain("left: 640px");
+    expect(parent.contains(panel.__testRoot())).toBe(true);
+    expect(css).toContain("max-width: min(360px, calc(100vw - 24px))");
+    expect(css).toContain("background: rgba(14, 17, 22, 0.85)");
+    expect(css).toContain("overflow-wrap: anywhere");
   });
 
   it("long author ids do not overflow horizontally", () => {
