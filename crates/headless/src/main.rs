@@ -265,6 +265,8 @@ fn cmd_emit_static(scenes_dir: &std::path::Path, output_dir: &std::path::Path) -
 
     let mut total = 0u32;
     let mut failed = 0u32;
+    let mut payloads = Vec::new();
+    let mut written_files = std::collections::HashSet::new();
 
     for path in scene_paths {
         let scene_id = match path.file_stem().and_then(|stem| stem.to_str()) {
@@ -298,23 +300,94 @@ fn cmd_emit_static(scenes_dir: &std::path::Path, output_dir: &std::path::Path) -
             }
         };
 
-        let out_path = output_dir.join(format!("{scene_id}.json"));
-        if let Err(e) = std::fs::write(&out_path, json) {
-            eprintln!("emit-static: write failed for {scene_id}: {e}");
-            failed += 1;
-            continue;
-        }
+        let file_name = format!("{scene_id}.json");
+        written_files.insert(file_name.clone());
+        payloads.push((file_name, json));
     }
 
     eprintln!(
         "emit-static: {}/{total} payloads generated ({failed} failed)",
         total - failed
     );
+
     if failed > 0 {
-        1
-    } else {
-        0
+        return 1;
     }
+
+    let mut write_failed = false;
+    for (file_name, json) in payloads {
+        // Atomic write: tmp file in same directory, then rename into place.
+        // This replaces symlinks rather than following them, and avoids
+        // partial-write corruption visible to readers.
+        let tmp_path = output_dir.join(format!(".{file_name}.tmp"));
+        let out_path = output_dir.join(&file_name);
+        if let Err(e) = std::fs::write(&tmp_path, json) {
+            eprintln!("emit-static: tmp write failed for {file_name}: {e}");
+            write_failed = true;
+            continue;
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, &out_path) {
+            eprintln!("emit-static: rename failed for {file_name}: {e}");
+            let _ = std::fs::remove_file(&tmp_path);
+            write_failed = true;
+        }
+    }
+
+    if write_failed {
+        return 1;
+    }
+
+    let mut cleanup_failed = false;
+    let entries = match std::fs::read_dir(output_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("emit-static: failed to scan output dir for cleanup: {e}");
+            return 1;
+        }
+    };
+    for entry_result in entries {
+        let entry = match entry_result {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!("emit-static: failed to read output dir entry: {e}");
+                cleanup_failed = true;
+                continue;
+            }
+        };
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        // Preserve .gitkeep and any non-JSON files (cleanup is JSON-only).
+        if name == ".gitkeep" || !name.ends_with(".json") {
+            continue;
+        }
+        // Skip leftover tmp files; we'll remove them too to keep dir clean.
+        if name.starts_with('.') && name.ends_with(".tmp") {
+            if let Err(e) = std::fs::remove_file(&path) {
+                eprintln!("emit-static: failed to remove tmp {}: {e}", path.display());
+                cleanup_failed = true;
+            }
+            continue;
+        }
+        if !written_files.contains(&name) {
+            if let Err(e) = std::fs::remove_file(&path) {
+                eprintln!(
+                    "emit-static: failed to remove stale {}: {e}",
+                    path.display()
+                );
+                cleanup_failed = true;
+            } else {
+                eprintln!("emit-static: removed stale {name}");
+            }
+        }
+    }
+
+    if cleanup_failed {
+        return 1;
+    }
+    0
 }
 
 fn cmd_run(scene: &std::path::Path, ticks: u64, seed: u64) -> i32 {
@@ -1294,5 +1367,127 @@ mod tests {
         assert_eq!(count, expected, "should generate payloads for all scenes");
 
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn emit_static_removes_stale_payloads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let scenes_dir = tmp.path().join("games");
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir(&scenes_dir).unwrap();
+        std::fs::create_dir(&out_dir).unwrap();
+
+        let demo =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../games/demo-paths.json");
+        std::fs::copy(&demo, scenes_dir.join("demo-paths.json")).unwrap();
+
+        std::fs::write(out_dir.join("old-scene.json"), "{\"stale\":true}").unwrap();
+        std::fs::write(out_dir.join(".gitkeep"), "").unwrap();
+
+        let code = cmd_emit_static(&scenes_dir, &out_dir);
+        assert_eq!(code, 0);
+
+        assert!(
+            out_dir.join("demo-paths.json").exists(),
+            "new payload should be written"
+        );
+        assert!(
+            !out_dir.join("old-scene.json").exists(),
+            "stale payload should be removed"
+        );
+        assert!(
+            out_dir.join(".gitkeep").exists(),
+            ".gitkeep should be preserved"
+        );
+    }
+
+    #[test]
+    fn emit_static_preserves_non_json_files() {
+        // Non-JSON files (notes, manifests, README, etc.) in the output dir
+        // must not be touched by cleanup.
+        let tmp = tempfile::tempdir().unwrap();
+        let scenes_dir = tmp.path().join("games");
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir(&scenes_dir).unwrap();
+        std::fs::create_dir(&out_dir).unwrap();
+
+        let demo =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../games/demo-paths.json");
+        std::fs::copy(&demo, scenes_dir.join("demo-paths.json")).unwrap();
+
+        std::fs::write(out_dir.join("README.md"), "do not touch").unwrap();
+        std::fs::write(out_dir.join("notes.txt"), "hello").unwrap();
+
+        let code = cmd_emit_static(&scenes_dir, &out_dir);
+        assert_eq!(code, 0);
+
+        assert!(out_dir.join("README.md").exists());
+        assert!(out_dir.join("notes.txt").exists());
+        assert!(out_dir.join("demo-paths.json").exists());
+    }
+
+    #[test]
+    fn emit_static_does_not_clean_on_generation_failure() {
+        // If any scene fails to load, cleanup must NOT run — stale payloads
+        // should remain so the gallery doesn't break mid-regen.
+        let tmp = tempfile::tempdir().unwrap();
+        let scenes_dir = tmp.path().join("games");
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir(&scenes_dir).unwrap();
+        std::fs::create_dir(&out_dir).unwrap();
+
+        // Write an INVALID scene file that will fail to load.
+        std::fs::write(scenes_dir.join("broken.json"), "{not valid json").unwrap();
+
+        // Pre-write a stale payload that should NOT be removed.
+        std::fs::write(out_dir.join("old-scene.json"), "{\"stale\":true}").unwrap();
+
+        let code = cmd_emit_static(&scenes_dir, &out_dir);
+        assert_ne!(code, 0, "should fail when a scene fails to load");
+
+        assert!(
+            out_dir.join("old-scene.json").exists(),
+            "stale payload must remain when generation fails"
+        );
+    }
+
+    #[test]
+    fn emit_static_atomic_write_replaces_symlinks() {
+        // If a generated file is a symlink, atomic rename replaces the symlink
+        // itself rather than following it.
+        #[cfg(unix)]
+        {
+            let tmp = tempfile::tempdir().unwrap();
+            let scenes_dir = tmp.path().join("games");
+            let out_dir = tmp.path().join("out");
+            std::fs::create_dir(&scenes_dir).unwrap();
+            std::fs::create_dir(&out_dir).unwrap();
+
+            let demo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../games/demo-paths.json");
+            std::fs::copy(&demo, scenes_dir.join("demo-paths.json")).unwrap();
+
+            // Create a target file outside the output dir, and a symlink in it.
+            let target = tmp.path().join("target.json");
+            std::fs::write(&target, "original-target").unwrap();
+            std::os::unix::fs::symlink(&target, out_dir.join("demo-paths.json")).unwrap();
+
+            let code = cmd_emit_static(&scenes_dir, &out_dir);
+            assert_eq!(code, 0);
+
+            // The target file outside the output dir must NOT have been overwritten.
+            let target_content = std::fs::read_to_string(&target).unwrap();
+            assert_eq!(
+                target_content, "original-target",
+                "symlink target must not be followed"
+            );
+
+            // The output file must now be a real file (not a symlink) with new content.
+            let meta = std::fs::symlink_metadata(out_dir.join("demo-paths.json")).unwrap();
+            assert!(
+                !meta.file_type().is_symlink(),
+                "output file must be replaced, not a symlink"
+            );
+        }
     }
 }
