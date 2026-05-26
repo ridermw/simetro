@@ -32,11 +32,19 @@ export class GalleryCard {
     this.element.type = "button";
     // data-scene-id for E2E selectors (rubber-duck fix: avoid hitting filter chips).
     this.element.dataset.sceneId = scene.id;
+    // List semantics for screen readers — the grid is role="list".
+    this.element.setAttribute("role", "listitem");
+    // Accessible label so screen readers announce scene title + metadata,
+    // not just the button role.
+    this.element.setAttribute(
+      "aria-label",
+      `${scene.title}: ${scene.subtitle}. ${scene.difficulty} difficulty.`
+    );
     this.element.style.cssText = `
       display: flex; flex-direction: column; border: 1px solid #30363d;
       border-radius: 8px; overflow: hidden; background: #161b22;
       cursor: pointer; padding: 0; text-align: left; width: 100%;
-      transition: transform 0.15s, border-color 0.15s;
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
     `;
     this.element.addEventListener("mouseenter", () => {
       this.element.style.transform = "scale(1.02)";
@@ -45,6 +53,15 @@ export class GalleryCard {
     this.element.addEventListener("mouseleave", () => {
       this.element.style.transform = "scale(1)";
       this.element.style.borderColor = "#30363d";
+    });
+    // Visible focus indicator for keyboard navigation.
+    this.element.addEventListener("focus", () => {
+      this.element.style.borderColor = "#58a6ff";
+      this.element.style.boxShadow = "0 0 0 2px #58a6ff66";
+    });
+    this.element.addEventListener("blur", () => {
+      this.element.style.borderColor = "#30363d";
+      this.element.style.boxShadow = "none";
     });
     this.element.addEventListener("click", this.onClick);
 

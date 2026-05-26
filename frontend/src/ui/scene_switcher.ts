@@ -33,6 +33,8 @@ export class SceneSwitcher {
 
     this.root = document.createElement("div");
     this.root.id = "simetro-switcher";
+    this.root.setAttribute("role", "toolbar");
+    this.root.setAttribute("aria-label", "Scene navigation");
     this.root.style.cssText = `
       position: fixed; top: 12px; right: 12px; z-index: 900;
       display: none; align-items: center; gap: 8px;
@@ -45,12 +47,14 @@ export class SceneSwitcher {
     const prevBtn = document.createElement("button");
     prevBtn.type = "button";
     prevBtn.textContent = "\u25C0";
+    prevBtn.setAttribute("aria-label", "Previous scene");
     prevBtn.style.cssText =
       "background: none; border: none; color: #e6edf3; cursor: pointer; font-size: 14px;";
     prevBtn.addEventListener("click", () => this.handler.onPrev());
     this.root.appendChild(prevBtn);
 
     this.titleEl = document.createElement("span");
+    this.titleEl.setAttribute("aria-live", "polite");
     this.titleEl.style.cssText =
       "max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
     this.root.appendChild(this.titleEl);
@@ -58,6 +62,7 @@ export class SceneSwitcher {
     const nextBtn = document.createElement("button");
     nextBtn.type = "button";
     nextBtn.textContent = "\u25B6";
+    nextBtn.setAttribute("aria-label", "Next scene");
     nextBtn.style.cssText =
       "background: none; border: none; color: #e6edf3; cursor: pointer; font-size: 14px;";
     nextBtn.addEventListener("click", () => this.handler.onNext());
@@ -67,6 +72,7 @@ export class SceneSwitcher {
     galleryBtn.type = "button";
     galleryBtn.textContent = "\u229E";
     galleryBtn.title = "Gallery";
+    galleryBtn.setAttribute("aria-label", "Return to gallery");
     galleryBtn.style.cssText =
       "background: none; border: none; color: #8b949e; cursor: pointer; font-size: 16px; margin-left: 8px;";
     galleryBtn.addEventListener("click", () => this.handler.onGallery());
